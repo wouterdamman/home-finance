@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "pots": "Spaarpotjes",
+    "settings": "Instellingen"
+  },
+  "auth": {
+    "signIn": "Inloggen",
+    "signOut": "Uitloggen",
+    "signInPrompt": "Log in om door te gaan"
+  },
+  "year": {
+    "title": "{{year}} Overzicht",
+    "income": "Inkomsten",
+    "expenses": "Uitgaven",
+    "surplus": "Overschot",
+    "yearTotal": "Jaartotaal",
+    "createMonth": "Nieuwe maand aanmaken"
+  },
+  "month": {
+    "income": "Inkomsten",
+    "expenses": "Gezamenlijk Rekening",
+    "surplusLabel": "Totaal over",
+    "pots": "Sparen potjes",
+    "closeMonth": "Maand afsluiten",
+    "reopenMonth": "Maand heropenen",
+    "transactions": "Transacties",
+    "addIncome": "Inkomst toevoegen",
+    "addExpense": "Uitgave toevoegen"
+  },
+  "pots": {
+    "title": "Spaarpotjes",
+    "balance": "Saldo",
+    "ledger": "Mutatieoverzicht",
+    "withdraw": "Opname",
+    "deposit": "Storting"
+  },
+  "settings": {
+    "title": "Instellingen",
+    "categories": "Categorieën",
+    "incomeSources": "Inkomstenbronnen",
+    "pots": "Potjes"
+  },
+  "common": {
+    "save": "Opslaan",
+    "cancel": "Annuleren",
+    "delete": "Verwijderen",
+    "add": "Toevoegen",
+    "edit": "Bewerken",
+    "archive": "Archiveren",
+    "loading": "Laden...",
+    "error": "Er is een fout opgetreden",
+    "confirm": "Bevestigen",
+    "total": "Totaal",
+    "open": "Open",
+    "closed": "Afgesloten"
+  }
+}

@@ -1,0 +1,129 @@
+export interface User {
+  id: number
+  email: string
+  displayName: string
+}
+
+export interface Period {
+  id: number
+  year: number
+  month: number
+  status: 'open' | 'closed'
+  closedAt?: string
+  incomeTotalCents?: number
+  expenseTotalCents?: number
+  surplusCents?: number
+}
+
+export interface IncomeEntry {
+  id: number
+  periodId: number
+  sourceId?: number
+  label?: string
+  amountCents: number
+  entryType: 'normal' | 'carryover'
+  notes: string
+  sortOrder: number
+}
+
+export interface Category {
+  id: number
+  name: string
+  defaultAmountCents: number
+  isItemized: boolean
+  sortOrder: number
+}
+
+export interface BudgetLine {
+  id: number
+  periodId: number
+  categoryId?: number
+  label?: string
+  amountCents: number
+  tracksTransactions: boolean
+  transactionsTotalCents: number
+  effectiveCents: number
+  sortOrder: number
+}
+
+export interface Transaction {
+  id: number
+  periodId: number
+  categoryId: number
+  amountCents: number
+  description: string
+  txDate?: string
+}
+
+export interface Pot {
+  id: number
+  name: string
+  kind: 'normal' | 'carryover'
+  sortOrder: number
+}
+
+export interface PotSplit {
+  potId: number
+  potName: string
+  potKind: 'normal' | 'carryover'
+  percentage: string
+  projectedCents?: number
+}
+
+export interface PotBalance {
+  potId: number
+  name: string
+  kind: 'normal' | 'carryover'
+  balanceCents: number
+}
+
+export interface PotLedgerEntry {
+  id: number
+  potId: number
+  periodId?: number
+  entryType: string
+  amountCents: number
+  description: string
+  entryDate: string
+  runningBalance: number
+}
+
+export interface MonthOverview {
+  period: Period
+  incomes: IncomeEntry[]
+  incomeTotalCents: number
+  budgetLines: BudgetLine[]
+  expenseTotalCents: number
+  surplusCents: number
+  splits: PotSplit[]
+  splitPercentageTotal: string
+}
+
+export interface YearSummaryMonth {
+  month: number
+  periodId?: number
+  status?: 'open' | 'closed'
+  incomeTotalCents: number
+  expenseTotalCents: number
+  surplusCents: number
+}
+
+export interface YearSummary {
+  year: number
+  months: YearSummaryMonth[]
+  yearIncomeTotalCents: number
+  yearExpenseTotalCents: number
+  yearSurplusCents: number
+  potBalances: PotBalance[]
+}
+
+export interface IncomeSource {
+  id: number
+  name: string
+  defaultAmountCents: number
+  sortOrder: number
+}
+
+export interface ApiError {
+  error: { code: string; message: string }
+}

@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "pots": "Savings Pots",
+    "settings": "Settings"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "signInPrompt": "Please sign in to continue"
+  },
+  "year": {
+    "title": "{{year}} Overview",
+    "income": "Income",
+    "expenses": "Expenses",
+    "surplus": "Surplus",
+    "yearTotal": "Year Total",
+    "createMonth": "Create Month"
+  },
+  "month": {
+    "income": "Income",
+    "expenses": "Joint Account",
+    "surplusLabel": "Total Remaining",
+    "pots": "Savings Pots",
+    "closeMonth": "Close Month",
+    "reopenMonth": "Reopen Month",
+    "transactions": "Transactions",
+    "addIncome": "Add Income",
+    "addExpense": "Add Expense"
+  },
+  "pots": {
+    "title": "Savings Pots",
+    "balance": "Balance",
+    "ledger": "Ledger",
+    "withdraw": "Withdrawal",
+    "deposit": "Deposit"
+  },
+  "settings": {
+    "title": "Settings",
+    "categories": "Categories",
+    "incomeSources": "Income Sources",
+    "pots": "Pots"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "add": "Add",
+    "edit": "Edit",
+    "archive": "Archive",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "confirm": "Confirm",
+    "total": "Total",
+    "open": "Open",
+    "closed": "Closed"
+  }
+}
