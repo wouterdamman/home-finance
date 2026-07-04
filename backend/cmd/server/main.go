@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"os"
 
-	migrations "github.com/TheIronRock95/home-finance/migrations"
-	"github.com/TheIronRock95/home-finance/internal/config"
-	"github.com/TheIronRock95/home-finance/internal/store"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+
+	migrations "github.com/TheIronRock95/home-finance/migrations"
+	"github.com/TheIronRock95/home-finance/internal/auth"
+	"github.com/TheIronRock95/home-finance/internal/config"
+	"github.com/TheIronRock95/home-finance/internal/httpapi"
+	"github.com/TheIronRock95/home-finance/internal/store"
 )
 
 func main() {
@@ -56,14 +59,22 @@ func main() {
 		return
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+	sm := auth.NewSessionManager(pool, cfg.Env != "development")
+
+	var oidcProvider *auth.Provider
+	if !cfg.DevFakeAuth && cfg.OIDCIssuerURL != "" {
+		oidcProvider, err = auth.NewProvider(ctx, cfg.OIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCRedirectURL)
+		if err != nil {
+			slog.Error("oidc init", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	handler := httpapi.NewServer(cfg, pool, sm, oidcProvider)
 
 	addr := ":" + cfg.Port
 	slog.Info("server starting", "addr", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}

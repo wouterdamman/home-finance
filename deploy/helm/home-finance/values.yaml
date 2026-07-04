@@ -1,0 +1,35 @@
+image:
+  repository: ghcr.io/theironrock95/home-finance
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+env:
+  ENV: production
+  AUTO_MIGRATE: "true"
+  PORT: "8080"
+
+oidc:
+  issuerURL: ""
+  clientID: ""
+  redirectURL: ""
+  existingSecret: ""
+  clientSecretKey: clientSecret
+  sessionKeyKey: sessionKey
+
+ingress:
+  enabled: true
+  className: nginx
+  host: finance.example.com
+  tls:
+    enabled: true
+    secretName: home-finance-tls
+
+postgres:
+  clusterName: home-finance-pg
+  instances: 1
+  storageSize: 5Gi
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  databaseName: homefinance
+  ownerName: homefinance
