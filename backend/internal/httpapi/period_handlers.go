@@ -332,6 +332,7 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
+	s.auditLog(ctx, "period.close", "period", id, map[string]any{"year": periodYear, "month": periodMonth, "surplusCents": surplus})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -367,7 +368,96 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
+	s.auditLog(ctx, "period.reopen", "period", id, map[string]any{"year": year, "month": month})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeletePeriod(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+
+	// Credential check: dev mode accepts any non-empty password; prod requires DELETE_PASSWORD
+	if s.cfg.DevFakeAuth {
+		if body.Password == "" {
+			Error(w, http.StatusForbidden, "forbidden", "password required")
+			return
+		}
+	} else {
+		if s.cfg.DeletePassword == "" || body.Password != s.cfg.DeletePassword {
+			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
+			return
+		}
+	}
+
+	ctx := r.Context()
+	var year, month int
+	var status string
+	if err := s.pool.QueryRow(ctx, `SELECT year,month,status FROM periods WHERE id=$1`, id).Scan(&year, &month, &status); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "period not found")
+		return
+	}
+	if status == "closed" {
+		Error(w, http.StatusConflict, "period_closed", "cannot delete a closed period; reopen it first")
+		return
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer tx.Rollback(ctx)
+	tx.Exec(ctx, `DELETE FROM pot_splits WHERE period_id=$1`, id)
+	tx.Exec(ctx, `DELETE FROM transactions WHERE period_id=$1`, id)
+	tx.Exec(ctx, `DELETE FROM budget_lines WHERE period_id=$1`, id)
+	tx.Exec(ctx, `DELETE FROM income_entries WHERE period_id=$1`, id)
+	tx.Exec(ctx, `DELETE FROM pot_ledger WHERE period_id=$1 OR source_period_id=$1`, id)
+	tx.Exec(ctx, `DELETE FROM periods WHERE id=$1`, id)
+	if err := tx.Commit(ctx); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	s.auditLog(ctx, "period.delete", "period", id, map[string]any{"year": year, "month": month})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
+	type row struct {
+		ID         int64   `json:"id"`
+		CreatedAt  string  `json:"createdAt"`
+		UserEmail  *string `json:"userEmail,omitempty"`
+		Action     string  `json:"action"`
+		EntityType *string `json:"entityType,omitempty"`
+		EntityID   *int64  `json:"entityId,omitempty"`
+		Details    *string `json:"details,omitempty"`
+	}
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT id, created_at, user_email, action, entity_type, entity_id, details::text
+		FROM audit_log ORDER BY created_at DESC LIMIT 200`)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]row, 0)
+	for rows.Next() {
+		var ro row
+		var ts time.Time
+		rows.Scan(&ro.ID, &ts, &ro.UserEmail, &ro.Action, &ro.EntityType, &ro.EntityID, &ro.Details)
+		ro.CreatedAt = ts.Format(time.RFC3339)
+		out = append(out, ro)
+	}
+	JSON(w, http.StatusOK, out)
 }
 
 // ── Income entries ───────────────────────────────────────────────

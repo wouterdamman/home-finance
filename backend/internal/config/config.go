@@ -17,6 +17,7 @@ type Config struct {
 	DevFakeAuth      bool     `env:"DEV_FAKE_AUTH" envDefault:"false"`
 	AllowedEmails    []string `env:"ALLOWED_EMAILS" envSeparator:","`
 	StaticDir        string   `env:"STATIC_DIR"`
+	DeletePassword   string   `env:"DELETE_PASSWORD" envDefault:""`
 }
 
 func Load() (*Config, error) {

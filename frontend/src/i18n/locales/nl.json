@@ -43,7 +43,12 @@
     "reopenAction": "Heropenen",
     "notCreated": "Maand niet aangemaakt.",
     "backToYear": "Terug naar overzicht",
-    "toggleTracking": "Transacties bijhouden aan/uit"
+    "toggleTracking": "Transacties bijhouden aan/uit",
+    "delete": "Verwijderen",
+    "deleteTitle": "Maand verwijderen",
+    "deleteWarning": "Dit verwijdert {{month}} {{year}} en alle bijbehorende inkomsten, uitgaven en transacties permanent.",
+    "deletePasswordLabel": "Wachtwoord ter bevestiging",
+    "deleteConfirm": "Definitief verwijderen"
   },
   "pots": {
     "title": "Spaarpotjes",

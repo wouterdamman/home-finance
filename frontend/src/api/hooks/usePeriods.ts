@@ -48,6 +48,18 @@ export function useClosePeriod(periodId: number) {
   })
 }
 
+export function useDeletePeriod(periodId: number, year: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (password: string) =>
+      api.delete_body(`/api/periods/${periodId}`, { password }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['year-summary', year] })
+      qc.invalidateQueries({ queryKey: ['periods', year] })
+    },
+  })
+}
+
 export function useUpdateBudgetLine(periodId: number) {
   const qc = useQueryClient()
   return useMutation({

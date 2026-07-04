@@ -46,6 +46,10 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/periods/{id}/overview", s.handleGetPeriodOverview)
 			r.Post("/periods/{id}/close", s.handleClosePeriod)
 			r.Post("/periods/{id}/reopen", s.handleReopenPeriod)
+			r.Delete("/periods/{id}", s.handleDeletePeriod)
+
+			// Audit log
+			r.Get("/audit-log", s.handleListAuditLog)
 
 			// Income entries
 			r.Post("/periods/{id}/incomes", s.handleCreateIncomeEntry)

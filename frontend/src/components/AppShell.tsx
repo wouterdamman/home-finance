@@ -1,5 +1,5 @@
 import { Outlet, NavLink as RouterNavLink, useNavigate } from 'react-router-dom'
-import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Select } from '@mantine/core'
+import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Select, SegmentedControl, useMantineColorScheme } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
 
@@ -10,6 +10,7 @@ export default function AppShell() {
   const { t, i18n } = useTranslation()
   const { data: user } = useMe()
   const navigate = useNavigate()
+  const { colorScheme, setColorScheme } = useMantineColorScheme()
 
   return (
     <MantineAppShell header={{ height: 56 }} navbar={{ width: 220, breakpoint: 'sm' }} padding="md">
@@ -17,6 +18,16 @@ export default function AppShell() {
         <Group h="100%" px="md" justify="space-between">
           <Text fw={700} size="lg">💰 Home Finance</Text>
           <Group>
+            <SegmentedControl
+              size="xs"
+              value={colorScheme}
+              onChange={(v) => setColorScheme(v as 'light' | 'dark' | 'auto')}
+              data={[
+                { label: '☀️', value: 'light' },
+                { label: '🌙', value: 'dark' },
+                { label: '⚙️', value: 'auto' },
+              ]}
+            />
             <Select
               size="xs"
               data={['nl', 'en']}

@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Title, Text, Group, Button, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput,
+  NumberInput, ActionIcon, Stack, Paper, TextInput, Modal, PasswordInput,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
+import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
-import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine } from '../api/hooks/usePeriods'
+import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
 import MoneyText from '../components/MoneyText'
@@ -33,13 +34,17 @@ export default function MonthOverview() {
   const overviewQuery = useMonthOverview(periodId)
   const overview = overviewQuery.data
 
+  const navigate = useNavigate()
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
 
   const closePeriod = useClosePeriod(periodId ?? 0)
   const reopenPeriod = useReopenPeriod(periodId ?? 0)
   const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0)
+  const deletePeriod = useDeletePeriod(periodId ?? 0, y)
   const createIncome = useCreateIncome(periodId ?? 0)
   const updateIncome = useUpdateIncome(periodId ?? 0)
   const deleteIncome = useDeleteIncome(periodId ?? 0)
@@ -97,6 +102,11 @@ export default function MonthOverview() {
           <Button component={Link} to={`/months/${y}/${m}/transactions`} variant="subtle" size="sm">
             {t('month.transactions')}
           </Button>
+          {!isClosed && (
+            <Button color="red" variant="subtle" size="sm" onClick={() => setDeleteOpen(true)}>
+              {t('month.delete')}
+            </Button>
+          )}
           {isClosed
             ? <Button color="orange" onClick={handleReopen} loading={reopenPeriod.isPending}>{t('month.reopenAction')}</Button>
             : <Button color="green" onClick={handleClose} loading={closePeriod.isPending}>{t('month.closeAction')}</Button>
@@ -279,6 +289,37 @@ export default function MonthOverview() {
           </Table.Tbody>
         </Table>
       </Paper>
+      <Modal opened={deleteOpen} onClose={() => { setDeleteOpen(false); setDeletePassword('') }} title={t('month.deleteTitle')}>
+        <Stack gap="md">
+          <Text size="sm" c="red">{t('month.deleteWarning', { month: monthName, year: y })}</Text>
+          <PasswordInput
+            label={t('month.deletePasswordLabel')}
+            value={deletePassword}
+            onChange={e => setDeletePassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleDelete()}
+          />
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={() => { setDeleteOpen(false); setDeletePassword('') }}>{t('common.cancel')}</Button>
+            <Button color="red" loading={deletePeriod.isPending} disabled={!deletePassword} onClick={handleDelete}>
+              {t('month.deleteConfirm')}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   )
+
+  function handleDelete() {
+    deletePeriod.mutate(deletePassword, {
+      onSuccess: () => {
+        setDeleteOpen(false)
+        setDeletePassword('')
+        navigate(`/years/${y}`)
+      },
+      onError: (err: unknown) => {
+        const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
+        notifications.show({ color: 'red', title: t('common.error'), message: msg })
+      },
+    })
+  }
 }
