@@ -21,7 +21,7 @@ function parseCents(v: number | string): number {
 
 export default function MonthOverview() {
   const { year, month } = useParams<{ year: string; month: string }>()
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const y = Number(year)
   const m = Number(month)
   const monthNames = i18n.language.startsWith('nl') ? MONTH_NL : MONTH_EN
@@ -45,10 +45,10 @@ export default function MonthOverview() {
   const replaceSplits = useReplaceSplits(periodId ?? 0)
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={600} mt="md" />
-  if (summary.error || overviewQuery.error) return <Alert color="red">Fout bij laden.</Alert>
+  if (summary.error || overviewQuery.error) return <Alert color="red">{t('common.error')}</Alert>
   if (!periodId) return (
     <Alert color="yellow">
-      Maand niet aangemaakt. <Text component={Link} to={`/years/${y}`} c="blue">Terug naar overzicht</Text>
+      {t('month.notCreated')} <Text component={Link} to={`/years/${y}`} c="blue">{t('month.backToYear')}</Text>
     </Alert>
   )
   if (!overview) return <Skeleton h={600} />
@@ -58,17 +58,17 @@ export default function MonthOverview() {
   const monthName = monthNames[m]
 
   const handleClose = () => modals.openConfirmModal({
-    title: `${monthName} ${y} afsluiten`,
-    children: <Text size="sm">Spaarpotjes worden bijgewerkt en de maand wordt vergrendeld.</Text>,
-    labels: { confirm: 'Afsluiten', cancel: 'Annuleren' },
+    title: `${monthName} ${y} ${t('month.closeAction').toLowerCase()}`,
+    children: <Text size="sm">{t('month.closingConfirm')}</Text>,
+    labels: { confirm: t('month.closeAction'), cancel: t('common.cancel') },
     confirmProps: { color: 'green' },
     onConfirm: () => closePeriod.mutate(undefined),
   })
 
   const handleReopen = () => modals.openConfirmModal({
-    title: 'Maand heropenen',
-    children: <Text size="sm">Potjes-allocaties worden teruggedraaid. Doorgaan?</Text>,
-    labels: { confirm: 'Heropenen', cancel: 'Annuleren' },
+    title: t('month.reopenMonth'),
+    children: <Text size="sm">{t('month.reopenConfirm')}</Text>,
+    labels: { confirm: t('month.reopenAction'), cancel: t('common.cancel') },
     confirmProps: { color: 'orange' },
     onConfirm: () => reopenPeriod.mutate(undefined),
   })
@@ -88,22 +88,24 @@ export default function MonthOverview() {
         <Group gap="sm">
           <Text component={Link} to={`/years/${y}`} c="blue" size="sm">← {y}</Text>
           <Title order={2}>{monthName} {y}</Title>
-          <Badge color={isClosed ? 'green' : 'orange'}>{isClosed ? 'Gesloten' : 'Open'}</Badge>
+          <Badge color={isClosed ? 'green' : 'orange'}>
+            {isClosed ? t('month.statusClosed') : t('month.statusOpen')}
+          </Badge>
         </Group>
         <Group>
           <Button component={Link} to={`/months/${y}/${m}/transactions`} variant="subtle" size="sm">
-            Transacties
+            {t('month.transactions')}
           </Button>
           {isClosed
-            ? <Button color="orange" onClick={handleReopen} loading={reopenPeriod.isPending}>Heropenen</Button>
-            : <Button color="green" onClick={handleClose} loading={closePeriod.isPending}>Afsluiten</Button>
+            ? <Button color="orange" onClick={handleReopen} loading={reopenPeriod.isPending}>{t('month.reopenAction')}</Button>
+            : <Button color="green" onClick={handleClose} loading={closePeriod.isPending}>{t('month.closeAction')}</Button>
           }
         </Group>
       </Group>
 
       {/* Incomes */}
       <Paper shadow="xs" p="md" withBorder>
-        <Title order={4} mb="sm">Inkomsten</Title>
+        <Title order={4} mb="sm">{t('month.income')}</Title>
         <Table>
           <Table.Tbody>
             {incomes.map(inc => (
@@ -111,7 +113,7 @@ export default function MonthOverview() {
                 <Table.Td>
                   <Text size="sm" c={inc.entryType === 'carryover' ? 'dimmed' : undefined}>
                     {inc.label ?? `Bron #${inc.sourceId}`}
-                    {inc.entryType === 'carryover' && <Badge size="xs" ml="xs" color="gray">doorlopen</Badge>}
+                    {inc.entryType === 'carryover' && <Badge size="xs" ml="xs" color="gray">{t('month.carryoverBadge')}</Badge>}
                   </Text>
                 </Table.Td>
                 <Table.Td ta="right" w={160}>
@@ -146,7 +148,7 @@ export default function MonthOverview() {
             {!isClosed && (
               <Table.Tr>
                 <Table.Td>
-                  <TextInput size="xs" placeholder="Omschrijving..." value={newLabel} onChange={e => setNewLabel(e.target.value)} />
+                  <TextInput size="xs" placeholder={t('common.description')} value={newLabel} onChange={e => setNewLabel(e.target.value)} />
                 </Table.Td>
                 <Table.Td>
                   <NumberInput size="xs" value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls placeholder="0,00" />
@@ -161,7 +163,7 @@ export default function MonthOverview() {
               </Table.Tr>
             )}
             <Table.Tr fw={700}>
-              <Table.Td>Totaal inkomsten</Table.Td>
+              <Table.Td>{t('month.totalIncome')}</Table.Td>
               <Table.Td ta="right"><MoneyText cents={incomeTotalCents} /></Table.Td>
             </Table.Tr>
           </Table.Tfoot>
@@ -170,7 +172,7 @@ export default function MonthOverview() {
 
       {/* Budget lines */}
       <Paper shadow="xs" p="md" withBorder>
-        <Title order={4} mb="sm">Gezamenlijke Rekening</Title>
+        <Title order={4} mb="sm">{t('month.expenses')}</Title>
         <Table>
           <Table.Tbody>
             {budgetLines.map(bl => (
@@ -192,7 +194,7 @@ export default function MonthOverview() {
           </Table.Tbody>
           <Table.Tfoot>
             <Table.Tr fw={700}>
-              <Table.Td>Totaal uitgaven</Table.Td>
+              <Table.Td>{t('month.totalExpenses')}</Table.Td>
               <Table.Td ta="right"><MoneyText cents={expenseTotalCents} /></Table.Td>
             </Table.Tr>
           </Table.Tfoot>
@@ -202,7 +204,7 @@ export default function MonthOverview() {
       {/* Surplus banner */}
       <Paper shadow="xs" p="md" withBorder style={{ background: surplusCents >= 0 ? 'var(--mantine-color-green-0)' : 'var(--mantine-color-red-0)' }}>
         <Group justify="space-between">
-          <Title order={3}>Totaal over</Title>
+          <Title order={3}>{t('month.surplusLabel')}</Title>
           <MoneyText cents={surplusCents} size="xl" fw={800} colored />
         </Group>
       </Paper>
@@ -210,24 +212,24 @@ export default function MonthOverview() {
       {/* Splits */}
       <Paper shadow="xs" p="md" withBorder>
         <Group justify="space-between" mb="sm">
-          <Title order={4}>Spaarpotjes verdeling</Title>
+          <Title order={4}>{t('month.splitSection')}</Title>
           {!isClosed && (
             splitEdits
               ? <Group gap="xs">
-                  <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending}>Opslaan</Button>
-                  <Button size="xs" variant="subtle" onClick={() => setSplitEdits(null)}>Annuleren</Button>
+                  <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending}>{t('common.save')}</Button>
+                  <Button size="xs" variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
                 </Group>
               : <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
-                  Aanpassen
+                  {t('month.adjust')}
                 </Button>
           )}
         </Group>
         <Table>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Potje</Table.Th>
-              <Table.Th ta="right">%</Table.Th>
-              <Table.Th ta="right">Bedrag</Table.Th>
+              <Table.Th>{t('month.pot')}</Table.Th>
+              <Table.Th ta="right">{t('month.percentage')}</Table.Th>
+              <Table.Th ta="right">{t('month.amount')}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>

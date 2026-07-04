@@ -4,11 +4,13 @@ import {
   Title, Text, Group, Button, Skeleton, Alert, Table,
   NumberInput, Select, Stack, Paper, TextInput, Modal,
 } from '@mantine/core'
+import { useTranslation } from 'react-i18next'
 import { usePotBalances, usePotLedger, useAddPotEntry } from '../api/hooks/usePots'
 import MoneyText from '../components/MoneyText'
 
 export default function PotDetail() {
   const { id } = useParams<{ id: string }>()
+  const { t } = useTranslation()
   const potId = Number(id)
   const [opened, setOpened] = useState(false)
   const [entryType, setEntryType] = useState<string>('withdrawal')
@@ -31,39 +33,39 @@ export default function PotDetail() {
   }
 
   if (balLoading || ledLoading) return <Skeleton h={400} />
-  if (!pot) return <Alert color="yellow">Pot niet gevonden. <Link to="/pots">Terug</Link></Alert>
+  if (!pot) return <Alert color="yellow">{t('pots.notFound')} <Link to="/pots">{t('pots.back')}</Link></Alert>
 
   return (
     <Stack gap="lg">
       <Group justify="space-between">
         <Group gap="sm">
-          <Text component={Link} to="/pots" c="blue" size="sm">← Potten</Text>
+          <Text component={Link} to="/pots" c="blue" size="sm">{t('pots.back')}</Text>
           <Title order={2}>{pot.name}</Title>
         </Group>
         <Group>
           <Paper p="sm" shadow="xs" withBorder>
-            <Text size="xs" c="dimmed">Saldo</Text>
+            <Text size="xs" c="dimmed">{t('pots.balance')}</Text>
             <MoneyText cents={pot.balanceCents} size="xl" fw={700} colored />
           </Paper>
-          <Button onClick={() => setOpened(true)}>+ Boeking</Button>
+          <Button onClick={() => setOpened(true)}>{t('pots.booking')}</Button>
         </Group>
       </Group>
 
       <Table>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Datum</Table.Th>
-            <Table.Th>Type</Table.Th>
-            <Table.Th>Omschrijving</Table.Th>
-            <Table.Th ta="right">Bedrag</Table.Th>
-            <Table.Th ta="right">Saldo</Table.Th>
+            <Table.Th>{t('pots.date')}</Table.Th>
+            <Table.Th>{t('pots.type')}</Table.Th>
+            <Table.Th>{t('pots.description')}</Table.Th>
+            <Table.Th ta="right">{t('common.amount')}</Table.Th>
+            <Table.Th ta="right">{t('pots.runningBalance')}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {(ledger ?? []).map(entry => (
             <Table.Tr key={entry.id}>
               <Table.Td><Text size="sm" c="dimmed">{entry.entryDate ?? '-'}</Text></Table.Td>
-              <Table.Td><Text size="sm">{entry.entryType}</Text></Table.Td>
+              <Table.Td><Text size="sm">{t(`pots.entry_${entry.entryType}`, { defaultValue: entry.entryType })}</Text></Table.Td>
               <Table.Td><Text size="sm">{entry.description}</Text></Table.Td>
               <Table.Td ta="right"><MoneyText cents={entry.amountCents} colored /></Table.Td>
               <Table.Td ta="right"><MoneyText cents={entry.runningBalance} /></Table.Td>
@@ -71,28 +73,28 @@ export default function PotDetail() {
           ))}
           {(ledger ?? []).length === 0 && (
             <Table.Tr>
-              <Table.Td colSpan={5} ta="center"><Text c="dimmed" size="sm">Geen boekingen</Text></Table.Td>
+              <Table.Td colSpan={5} ta="center"><Text c="dimmed" size="sm">{t('pots.noEntries')}</Text></Table.Td>
             </Table.Tr>
           )}
         </Table.Tbody>
       </Table>
 
-      <Modal opened={opened} onClose={() => setOpened(false)} title="Handmatige boeking">
+      <Modal opened={opened} onClose={() => setOpened(false)} title={t('pots.manualEntry')}>
         <Stack gap="md">
           <Select
-            label="Type"
+            label={t('pots.type')}
             value={entryType}
             onChange={v => setEntryType(v ?? 'withdrawal')}
             data={[
-              { value: 'withdrawal', label: 'Opname' },
-              { value: 'deposit', label: 'Storting' },
-              { value: 'adjustment', label: 'Correctie' },
-              { value: 'opening_balance', label: 'Beginsaldo' },
+              { value: 'withdrawal', label: t('pots.withdraw') },
+              { value: 'deposit', label: t('pots.deposit') },
+              { value: 'adjustment', label: t('pots.entryAdjustment') },
+              { value: 'opening_balance', label: t('pots.entryOpeningBalance') },
             ]}
           />
-          <TextInput label="Omschrijving" value={desc} onChange={e => setDesc(e.target.value)} />
+          <TextInput label={t('pots.description')} value={desc} onChange={e => setDesc(e.target.value)} />
           <NumberInput
-            label="Bedrag"
+            label={t('common.amount')}
             value={amount}
             onChange={setAmount}
             decimalSeparator=","
@@ -100,7 +102,7 @@ export default function PotDetail() {
             prefix="€ "
             hideControls
           />
-          <Button onClick={handleSubmit} loading={addEntry.isPending}>Boeken</Button>
+          <Button onClick={handleSubmit} loading={addEntry.isPending}>{t('pots.book')}</Button>
         </Stack>
       </Modal>
     </Stack>

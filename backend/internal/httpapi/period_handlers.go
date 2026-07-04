@@ -70,6 +70,16 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+
+	if body.CopyFromPeriodID == nil {
+		var srcID int64
+		if err2 := s.pool.QueryRow(ctx,
+			`SELECT id FROM periods WHERE (year < $1 OR (year = $1 AND month < $2)) ORDER BY year DESC, month DESC LIMIT 1`,
+			body.Year, body.Month).Scan(&srcID); err2 == nil {
+			body.CopyFromPeriodID = &srcID
+		}
+	}
+
 	var id int64
 	err := s.pool.QueryRow(ctx, `INSERT INTO periods (year, month) VALUES ($1, $2) RETURNING id`, body.Year, body.Month).Scan(&id)
 	if err != nil {
@@ -255,10 +265,6 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	inputs := make([]domain.PotSplitInput, len(rawSplits))
 	for i, sr := range rawSplits {
 		inputs[i] = domain.PotSplitInput{PotID: sr.PotID, Percentage: sr.Pct}
-	}
-	if err := domain.ValidateSplits(inputs); err != nil {
-		Error(w, http.StatusConflict, "split_percentage_not_100", err.Error())
-		return
 	}
 	allocs := domain.LargestRemainderSplit(surplus, inputs)
 

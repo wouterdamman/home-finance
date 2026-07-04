@@ -16,7 +16,7 @@ export default function Pots() {
         {(data ?? []).map((b) => (
           <Card key={b.potId} shadow="xs" component={Link} to={`/pots/${b.potId}`} style={{ textDecoration: 'none' }}>
             <Text fw={600} truncate>{b.name}</Text>
-            <Text size="xs" c="dimmed" mb="xs">{b.kind}</Text>
+            <Text size="xs" c="dimmed" mb="xs">{t(`pots.kind_${b.kind}`, { defaultValue: b.kind })}</Text>
             <MoneyText cents={b.balanceCents} size="lg" fw={700} colored />
           </Card>
         ))}

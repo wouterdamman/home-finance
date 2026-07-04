@@ -26,20 +26,64 @@
     "reopenMonth": "Reopen Month",
     "transactions": "Transactions",
     "addIncome": "Add Income",
-    "addExpense": "Add Expense"
+    "addExpense": "Add Expense",
+    "totalIncome": "Total income",
+    "totalExpenses": "Total expenses",
+    "splitSection": "Savings allocation",
+    "pot": "Pot",
+    "percentage": "Percentage",
+    "amount": "Amount",
+    "adjust": "Adjust",
+    "statusOpen": "Open",
+    "statusClosed": "Closed",
+    "carryoverBadge": "carryover",
+    "closingConfirm": "Savings pots will be updated and the month will be locked.",
+    "reopenConfirm": "Pot allocations will be reversed. Continue?",
+    "closeAction": "Close",
+    "reopenAction": "Reopen",
+    "notCreated": "Month not created.",
+    "backToYear": "Back to overview"
   },
   "pots": {
     "title": "Savings Pots",
     "balance": "Balance",
     "ledger": "Ledger",
     "withdraw": "Withdrawal",
-    "deposit": "Deposit"
+    "deposit": "Deposit",
+    "back": "← Savings Pots",
+    "booking": "+ Entry",
+    "date": "Date",
+    "type": "Type",
+    "description": "Description",
+    "runningBalance": "Balance",
+    "noEntries": "No entries",
+    "manualEntry": "Manual entry",
+    "entryAdjustment": "Adjustment",
+    "entryOpeningBalance": "Opening balance",
+    "book": "Save",
+    "kind_normal": "Normal",
+    "kind_carryover": "Carryover",
+    "notFound": "Pot not found.",
+    "entry_allocation": "Allocation",
+    "entry_carryover_out": "Carryover",
+    "entry_withdrawal": "Withdrawal",
+    "entry_deposit": "Deposit",
+    "entry_adjustment": "Adjustment",
+    "entry_opening_balance": "Opening balance"
   },
   "settings": {
     "title": "Settings",
     "categories": "Categories",
     "incomeSources": "Income Sources",
-    "pots": "Pots"
+    "pots": "Pots",
+    "name": "Name",
+    "default": "Default",
+    "itemized": "Itemized",
+    "type": "Type",
+    "kind_normal": "Normal",
+    "kind_carryover": "Carryover",
+    "restore": "Restore",
+    "archived": "archived"
   },
   "common": {
     "save": "Save",
@@ -53,6 +97,8 @@
     "confirm": "Confirm",
     "total": "Total",
     "open": "Open",
-    "closed": "Closed"
+    "closed": "Closed",
+    "description": "Description",
+    "amount": "Amount"
   }
 }
