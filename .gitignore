@@ -1,0 +1,18 @@
+# Environment
+.env
+.env.local
+
+# Go
+backend/bin/
+backend/internal/store/gen/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
