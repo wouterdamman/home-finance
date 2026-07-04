@@ -2,22 +2,37 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
 
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/theironrock95/home-finance
 
 jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: simple
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   build-push:
     name: Build & push image
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -40,8 +55,7 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.release-please.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push
@@ -56,17 +70,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-
   helm-update:
     name: Update Helm chart version
     runs-on: ubuntu-latest
-    needs: build-push
-    permissions:
-      contents: write
+    needs: [release-please, build-push]
+    if: needs.release-please.outputs.release_created == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,7 +82,7 @@ jobs:
 
       - name: Update chart versions
         run: |
-          VERSION="${{ needs.build-push.outputs.version }}"
+          VERSION="${{ needs.release-please.outputs.version }}"
           sed -i "s/^version:.*/version: ${VERSION}/" deploy/helm/home-finance/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/home-finance/Chart.yaml
           sed -i "s/tag:.*/tag: ${VERSION}/" deploy/helm/home-finance/values.yaml
@@ -84,5 +92,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add deploy/helm/home-finance/Chart.yaml deploy/helm/home-finance/values.yaml
-          git diff --staged --quiet || git commit -m "chore: bump helm chart to ${{ needs.build-push.outputs.version }}"
+          git diff --staged --quiet || git commit -m "chore: bump helm chart to ${{ needs.release-please.outputs.version }}"
           git push
