@@ -1,17 +1,44 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
 
+export interface Category {
+  id: number
+  name: string
+  defaultAmountCents: number
+  isItemized: boolean
+  includeInTemplate: boolean
+  sortOrder: number
+  archivedAt?: string
+}
+
+export interface IncomeSource {
+  id: number
+  name: string
+  defaultAmountCents: number
+  includeInTemplate: boolean
+  sortOrder: number
+  archivedAt?: string
+}
+
+export interface Pot {
+  id: number
+  name: string
+  kind: string
+  sortOrder: number
+  archivedAt?: string
+}
+
 export function useCategories() {
-  return useQuery({
+  return useQuery<Category[]>({
     queryKey: ['categories'],
-    queryFn: () => api.get<{ id: number; name: string; defaultAmountCents: number; isItemized: boolean; sortOrder: number; archivedAt?: string }[]>('/api/categories'),
+    queryFn: () => api.get<Category[]>('/api/categories'),
   })
 }
 
 export function useCreateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; sortOrder: number }) =>
+    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
       api.post('/api/categories', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
   })
@@ -20,7 +47,7 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) =>
       api.put(`/api/categories/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
   })
@@ -35,16 +62,16 @@ export function useArchiveCategory() {
 }
 
 export function useIncomeSources() {
-  return useQuery({
+  return useQuery<IncomeSource[]>({
     queryKey: ['income-sources'],
-    queryFn: () => api.get<{ id: number; name: string; defaultAmountCents: number; sortOrder: number; archivedAt?: string }[]>('/api/income-sources'),
+    queryFn: () => api.get<IncomeSource[]>('/api/income-sources'),
   })
 }
 
 export function useCreateIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; defaultAmountCents: number; sortOrder: number }) =>
+    mutationFn: (body: { name: string; defaultAmountCents: number; includeInTemplate: boolean; sortOrder: number }) =>
       api.post('/api/income-sources', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['income-sources'] }),
   })
@@ -53,7 +80,7 @@ export function useCreateIncomeSource() {
 export function useUpdateIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; sortOrder: number }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; includeInTemplate: boolean; sortOrder: number }) =>
       api.put(`/api/income-sources/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['income-sources'] }),
   })
@@ -68,9 +95,9 @@ export function useArchiveIncomeSource() {
 }
 
 export function usePots() {
-  return useQuery({
+  return useQuery<Pot[]>({
     queryKey: ['pots-list'],
-    queryFn: () => api.get<{ id: number; name: string; kind: string; sortOrder: number; archivedAt?: string }[]>('/api/pots'),
+    queryFn: () => api.get<Pot[]>('/api/pots'),
   })
 }
 

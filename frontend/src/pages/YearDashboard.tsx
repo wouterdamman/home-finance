@@ -1,8 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
-import { Title, Table, Text, Button, Group, Skeleton, Alert, Card } from '@mantine/core'
+import { Title, Table, Text, Button, Group, Skeleton, Alert } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useCreatePeriod } from '../api/hooks/usePeriods'
-import { usePotBalances } from '../api/hooks/usePots'
 import MoneyText from '../components/MoneyText'
 
 const MONTHS_NL = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
@@ -13,7 +12,6 @@ export default function YearDashboard() {
   const y = Number(year)
   const { t, i18n } = useTranslation()
   const { data, isLoading, error } = useYearSummary(y)
-  const { data: balances } = usePotBalances()
   const createPeriod = useCreatePeriod()
   const months = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
 
@@ -79,21 +77,6 @@ export default function YearDashboard() {
         </Table.Tbody>
       </Table>
 
-      {balances && balances.length > 0 && (
-        <>
-          <Title order={3} mb="sm">{t('pots.title')}</Title>
-          <Group>
-            {balances.map((b) => (
-              <Link key={b.potId} to={`/pots/${b.potId}`} style={{ textDecoration: 'none' }}>
-                <Card shadow="xs" p="sm" w={140} style={{ cursor: 'pointer' }}>
-                  <Text size="xs" c="dimmed" truncate>{b.name}</Text>
-                  <MoneyText cents={b.balanceCents} fw={600} colored />
-                </Card>
-              </Link>
-            ))}
-          </Group>
-        </>
-      )}
     </>
   )
 }

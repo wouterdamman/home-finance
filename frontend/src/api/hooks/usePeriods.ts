@@ -48,6 +48,15 @@ export function useClosePeriod(periodId: number) {
   })
 }
 
+export function useUpdateBudgetLine(periodId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; label: string; amountCents: number; tracksTransactions: boolean; sortOrder: number }) =>
+      api.put(`/api/budget-lines/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] }),
+  })
+}
+
 export function useReopenPeriod(periodId: number) {
   const qc = useQueryClient()
   return useMutation({

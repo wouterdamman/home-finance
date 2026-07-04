@@ -6,7 +6,7 @@ import {
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { useTranslation } from 'react-i18next'
-import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod } from '../api/hooks/usePeriods'
+import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine } from '../api/hooks/usePeriods'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
 import MoneyText from '../components/MoneyText'
@@ -39,6 +39,7 @@ export default function MonthOverview() {
 
   const closePeriod = useClosePeriod(periodId ?? 0)
   const reopenPeriod = useReopenPeriod(periodId ?? 0)
+  const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0)
   const createIncome = useCreateIncome(periodId ?? 0)
   const updateIncome = useUpdateIncome(periodId ?? 0)
   const deleteIncome = useDeleteIncome(periodId ?? 0)
@@ -189,6 +190,23 @@ export default function MonthOverview() {
                     <Text size="xs" c="dimmed" span> / {(bl.amountCents / 100).toFixed(2)}</Text>
                   )}
                 </Table.Td>
+                {!isClosed && (
+                  <Table.Td w={32}>
+                    <ActionIcon
+                      size="xs"
+                      variant={bl.tracksTransactions ? 'filled' : 'subtle'}
+                      color={bl.tracksTransactions ? 'blue' : 'gray'}
+                      title={t('month.toggleTracking')}
+                      onClick={() => updateBudgetLine.mutate({
+                        id: bl.id,
+                        label: bl.label ?? '',
+                        amountCents: bl.amountCents,
+                        tracksTransactions: !bl.tracksTransactions,
+                        sortOrder: bl.sortOrder,
+                      })}
+                    >≡</ActionIcon>
+                  </Table.Td>
+                )}
               </Table.Tr>
             ))}
           </Table.Tbody>

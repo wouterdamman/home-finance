@@ -13,10 +13,11 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 		Name               string  `json:"name"`
 		DefaultAmountCents int64   `json:"defaultAmountCents"`
 		IsItemized         bool    `json:"isItemized"`
+		IncludeInTemplate  bool    `json:"includeInTemplate"`
 		SortOrder          int     `json:"sortOrder"`
 		ArchivedAt         *string `json:"archivedAt,omitempty"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,sort_order,archived_at FROM categories ORDER BY sort_order,id`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at FROM categories ORDER BY sort_order,id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -26,7 +27,7 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.SortOrder, &aa)
+		rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa)
 		if aa != nil {
 			ts := aa.Format(time.RFC3339)
 			ro.ArchivedAt = &ts
@@ -41,17 +42,19 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		Name               string `json:"name"`
 		DefaultAmountCents int64  `json:"defaultAmountCents"`
 		IsItemized         bool   `json:"isItemized"`
+		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
 	}
+	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	var id int64
 	s.pool.QueryRow(r.Context(),
-		`INSERT INTO categories (name,default_amount_cents,is_itemized,sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.IsItemized, body.SortOrder).Scan(&id)
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "sortOrder": body.SortOrder})
+		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id)
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder})
 }
 
 func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
@@ -64,12 +67,14 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		Name               string `json:"name"`
 		DefaultAmountCents int64  `json:"defaultAmountCents"`
 		IsItemized         bool   `json:"isItemized"`
+		IncludeInTemplate  bool   `json:"includeInTemplate"`
 	}
+	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized)
+	s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -108,10 +113,11 @@ func (s *Server) handleListIncomeSources(w http.ResponseWriter, r *http.Request)
 		ID                 int64   `json:"id"`
 		Name               string  `json:"name"`
 		DefaultAmountCents int64   `json:"defaultAmountCents"`
+		IncludeInTemplate  bool    `json:"includeInTemplate"`
 		SortOrder          int     `json:"sortOrder"`
 		ArchivedAt         *string `json:"archivedAt,omitempty"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,sort_order,archived_at FROM income_sources ORDER BY sort_order,id`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,include_in_template,sort_order,archived_at FROM income_sources ORDER BY sort_order,id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -121,7 +127,7 @@ func (s *Server) handleListIncomeSources(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.SortOrder, &aa)
+		rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IncludeInTemplate, &ro.SortOrder, &aa)
 		if aa != nil {
 			ts := aa.Format(time.RFC3339)
 			ro.ArchivedAt = &ts
@@ -135,17 +141,19 @@ func (s *Server) handleCreateIncomeSource(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Name               string `json:"name"`
 		DefaultAmountCents int64  `json:"defaultAmountCents"`
+		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
 	}
+	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	var id int64
 	s.pool.QueryRow(r.Context(),
-		`INSERT INTO income_sources (name,default_amount_cents,sort_order) VALUES ($1,$2,$3) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.SortOrder).Scan(&id)
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "sortOrder": body.SortOrder})
+		`INSERT INTO income_sources (name,default_amount_cents,include_in_template,sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
+		body.Name, body.DefaultAmountCents, body.IncludeInTemplate, body.SortOrder).Scan(&id)
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder})
 }
 
 func (s *Server) handleUpdateIncomeSource(w http.ResponseWriter, r *http.Request) {
@@ -157,13 +165,15 @@ func (s *Server) handleUpdateIncomeSource(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Name               string `json:"name"`
 		DefaultAmountCents int64  `json:"defaultAmountCents"`
+		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
 	}
+	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE income_sources SET name=$2,default_amount_cents=$3,sort_order=$4 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.SortOrder)
+	s.pool.Exec(r.Context(), `UPDATE income_sources SET name=$2,default_amount_cents=$3,include_in_template=$4,sort_order=$5 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IncludeInTemplate, body.SortOrder)
 	w.WriteHeader(http.StatusNoContent)
 }
 

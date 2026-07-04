@@ -42,7 +42,8 @@
     "closeAction": "Afsluiten",
     "reopenAction": "Heropenen",
     "notCreated": "Maand niet aangemaakt.",
-    "backToYear": "Terug naar overzicht"
+    "backToYear": "Terug naar overzicht",
+    "toggleTracking": "Transacties bijhouden aan/uit"
   },
   "pots": {
     "title": "Spaarpotjes",
@@ -83,7 +84,10 @@
     "kind_normal": "Normaal",
     "kind_carryover": "Doorlopen",
     "restore": "Herstel",
-    "archived": "gearchiveerd"
+    "archived": "gearchiveerd",
+    "template": "In template",
+    "templateHint": "Wordt meegenomen bij aanmaken nieuwe maand",
+    "carryoverExists": "Er is al een actief doorlopen-potje. Archiveer het bestaande eerst."
   },
   "common": {
     "save": "Opslaan",

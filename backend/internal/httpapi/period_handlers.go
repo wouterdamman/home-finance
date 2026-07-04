@@ -88,9 +88,21 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.CopyFromPeriodID != nil {
 		src := *body.CopyFromPeriodID
-		s.pool.Exec(ctx, `INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order) SELECT $1,category_id,label,amount_cents,tracks_transactions,sort_order FROM budget_lines WHERE period_id=$2`, id, src)
+		s.pool.Exec(ctx, `
+			INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
+			SELECT $1,bl.category_id,bl.label,bl.amount_cents,bl.tracks_transactions,bl.sort_order
+			FROM budget_lines bl
+			WHERE bl.period_id=$2
+			AND (bl.category_id IS NULL OR bl.category_id IN (SELECT id FROM categories WHERE include_in_template=true))`,
+			id, src)
 		s.pool.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, id, src)
-		s.pool.Exec(ctx, `INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order) SELECT $1,source_id,label,amount_cents,'normal',notes,sort_order FROM income_entries WHERE period_id=$2 AND entry_type='normal'`, id, src)
+		s.pool.Exec(ctx, `
+			INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
+			SELECT $1,ie.source_id,ie.label,ie.amount_cents,'normal',ie.notes,ie.sort_order
+			FROM income_entries ie
+			WHERE ie.period_id=$2 AND ie.entry_type='normal'
+			AND (ie.source_id IS NULL OR ie.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true))`,
+			id, src)
 	}
 	type out struct {
 		ID     int64  `json:"id"`

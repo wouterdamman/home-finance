@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import {
   useCategories, useCreateCategory, useUpdateCategory, useArchiveCategory,
@@ -36,20 +37,23 @@ function CategoriesTab() {
   const [editName, setEditName] = useState('')
   const [editAmount, setEditAmount] = useState<number | string>('')
   const [editItemized, setEditItemized] = useState(false)
+  const [editTemplate, setEditTemplate] = useState(true)
   const [newName, setNewName] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newItemized, setNewItemized] = useState(false)
+  const [newTemplate, setNewTemplate] = useState(true)
 
-  const startEdit = (cat: { id: number; name: string; defaultAmountCents: number; isItemized: boolean }) => {
+  const startEdit = (cat: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) => {
     setEditing(cat.id)
     setEditName(cat.name)
     setEditAmount(cat.defaultAmountCents / 100)
     setEditItemized(cat.isItemized)
+    setEditTemplate(cat.includeInTemplate)
   }
 
   const saveEdit = () => {
     if (!editing) return
-    update.mutate({ id: editing, name: editName, defaultAmountCents: Math.round(Number(editAmount) * 100), isItemized: editItemized }, {
+    update.mutate({ id: editing, name: editName, defaultAmountCents: Math.round(Number(editAmount) * 100), isItemized: editItemized, includeInTemplate: editTemplate }, {
       onSuccess: () => setEditing(null)
     })
   }
@@ -61,7 +65,10 @@ function CategoriesTab() {
           <Table.Tr>
             <Table.Th>{t('settings.name')}</Table.Th>
             <Table.Th ta="right">{t('settings.default')}</Table.Th>
-            <Table.Th>{t('settings.itemized')}</Table.Th>
+            <Table.Th ta="center">{t('settings.itemized')}</Table.Th>
+            <Table.Th ta="center">
+              <Tooltip label={t('settings.templateHint')}><span>{t('settings.template')}</span></Tooltip>
+            </Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -72,7 +79,8 @@ function CategoriesTab() {
                 ? <>
                     <Table.Td><TextInput size="xs" value={editName} onChange={e => setEditName(e.target.value)} /></Table.Td>
                     <Table.Td><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Table.Td>
-                    <Table.Td><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Table.Td>
+                    <Table.Td ta="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Table.Td>
+                    <Table.Td ta="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" onClick={saveEdit}>OK</Button>
@@ -83,7 +91,8 @@ function CategoriesTab() {
                 : <>
                     <Table.Td>{cat.name} {cat.archivedAt && <Badge size="xs" color="gray">{t('settings.archived')}</Badge>}</Table.Td>
                     <Table.Td ta="right">€ {(cat.defaultAmountCents / 100).toFixed(2)}</Table.Td>
-                    <Table.Td>{cat.isItemized ? '✓' : ''}</Table.Td>
+                    <Table.Td ta="center">{cat.isItemized ? '✓' : ''}</Table.Td>
+                    <Table.Td ta="center">{cat.includeInTemplate ? '✓' : '—'}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" variant="subtle" onClick={() => startEdit(cat)}>{t('common.edit')}</Button>
@@ -102,9 +111,10 @@ function CategoriesTab() {
         <TextInput placeholder={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} size="sm" />
         <NumberInput placeholder={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls size="sm" w={140} />
         <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
+        <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
         <Button size="sm" disabled={!newName} loading={create.isPending} onClick={() => {
-          create.mutate({ name: newName, defaultAmountCents: Math.round(Number(newAmount) * 100), isItemized: newItemized, sortOrder: (data?.length ?? 0) }, {
-            onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false) }
+          create.mutate({ name: newName, defaultAmountCents: Math.round(Number(newAmount) * 100), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+            onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true) }
           })
         }}>{t('common.add')}</Button>
       </Group>
@@ -121,8 +131,10 @@ function SourcesTab() {
   const [editing, setEditing] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editAmount, setEditAmount] = useState<number | string>('')
+  const [editTemplate, setEditTemplate] = useState(true)
   const [newName, setNewName] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
+  const [newTemplate, setNewTemplate] = useState(true)
 
   return (
     <Stack gap="sm">
@@ -131,6 +143,9 @@ function SourcesTab() {
           <Table.Tr>
             <Table.Th>{t('settings.name')}</Table.Th>
             <Table.Th ta="right">{t('settings.default')}</Table.Th>
+            <Table.Th ta="center">
+              <Tooltip label={t('settings.templateHint')}><span>{t('settings.template')}</span></Tooltip>
+            </Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -141,9 +156,10 @@ function SourcesTab() {
                 ? <>
                     <Table.Td><TextInput size="xs" value={editName} onChange={e => setEditName(e.target.value)} /></Table.Td>
                     <Table.Td><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Table.Td>
+                    <Table.Td ta="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: Math.round(Number(editAmount) * 100), sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
+                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: Math.round(Number(editAmount) * 100), includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
                         <Button size="xs" variant="subtle" onClick={() => setEditing(null)}>✕</Button>
                       </Group>
                     </Table.Td>
@@ -151,9 +167,10 @@ function SourcesTab() {
                 : <>
                     <Table.Td>{src.name} {src.archivedAt && <Badge size="xs" color="gray">{t('settings.archived')}</Badge>}</Table.Td>
                     <Table.Td ta="right">€ {(src.defaultAmountCents / 100).toFixed(2)}</Table.Td>
+                    <Table.Td ta="center">{src.includeInTemplate ? '✓' : '—'}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" variant="subtle" onClick={() => { setEditing(src.id); setEditName(src.name); setEditAmount(src.defaultAmountCents / 100) }}>{t('common.edit')}</Button>
+                        <Button size="xs" variant="subtle" onClick={() => { setEditing(src.id); setEditName(src.name); setEditAmount(src.defaultAmountCents / 100); setEditTemplate(src.includeInTemplate) }}>{t('common.edit')}</Button>
                         <Button size="xs" variant="subtle" color={src.archivedAt ? 'green' : 'red'} onClick={() => archive.mutate(src.id)}>
                           {src.archivedAt ? t('settings.restore') : t('common.archive')}
                         </Button>
@@ -168,9 +185,10 @@ function SourcesTab() {
       <Group gap="xs" align="flex-end">
         <TextInput placeholder={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} size="sm" />
         <NumberInput placeholder={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls size="sm" w={140} />
+        <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
         <Button size="sm" disabled={!newName} loading={create.isPending} onClick={() => {
-          create.mutate({ name: newName, defaultAmountCents: Math.round(Number(newAmount) * 100), sortOrder: (data?.length ?? 0) }, {
-            onSuccess: () => { setNewName(''); setNewAmount('') }
+          create.mutate({ name: newName, defaultAmountCents: Math.round(Number(newAmount) * 100), includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+            onSuccess: () => { setNewName(''); setNewAmount(''); setNewTemplate(true) }
           })
         }}>{t('common.add')}</Button>
       </Group>
@@ -191,6 +209,22 @@ function PotsTab() {
 
   const kindLabel = (kind: string) =>
     kind === 'carryover' ? t('settings.kind_carryover') : t('settings.kind_normal')
+
+  const handleCreate = () => {
+    create.mutate({ name: newName, kind: newKind, sortOrder: (data?.length ?? 0) }, {
+      onSuccess: () => { setNewName(''); setNewKind('normal') },
+      onError: (err: unknown) => {
+        const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
+        notifications.show({
+          color: 'red',
+          title: t('common.error'),
+          message: newKind === 'carryover'
+            ? t('settings.carryoverExists')
+            : msg,
+        })
+      },
+    })
+  }
 
   return (
     <Stack gap="sm">
@@ -245,11 +279,9 @@ function PotsTab() {
             { value: 'carryover', label: t('settings.kind_carryover') },
           ]}
         />
-        <Button size="sm" disabled={!newName} loading={create.isPending} onClick={() => {
-          create.mutate({ name: newName, kind: newKind, sortOrder: (data?.length ?? 0) }, {
-            onSuccess: () => { setNewName(''); setNewKind('normal') }
-          })
-        }}>{t('common.add')}</Button>
+        <Button size="sm" disabled={!newName} loading={create.isPending} onClick={handleCreate}>
+          {t('common.add')}
+        </Button>
       </Group>
     </Stack>
   )

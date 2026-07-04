@@ -42,7 +42,8 @@
     "closeAction": "Close",
     "reopenAction": "Reopen",
     "notCreated": "Month not created.",
-    "backToYear": "Back to overview"
+    "backToYear": "Back to overview",
+    "toggleTracking": "Toggle transaction tracking"
   },
   "pots": {
     "title": "Savings Pots",
@@ -83,7 +84,10 @@
     "kind_normal": "Normal",
     "kind_carryover": "Carryover",
     "restore": "Restore",
-    "archived": "archived"
+    "archived": "archived",
+    "template": "In template",
+    "templateHint": "Included when creating a new month",
+    "carryoverExists": "There is already an active carryover pot. Archive the existing one first."
   },
   "common": {
     "save": "Save",
