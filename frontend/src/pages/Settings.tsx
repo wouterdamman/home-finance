@@ -204,6 +204,7 @@ function PotsTab() {
   const archive = useArchivePot()
   const [editing, setEditing] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
+  const [editKind, setEditKind] = useState('normal')
   const [newName, setNewName] = useState('')
   const [newKind, setNewKind] = useState<string>('normal')
 
@@ -242,10 +243,27 @@ function PotsTab() {
               {editing === pot.id
                 ? <>
                     <Table.Td><TextInput size="xs" value={editName} onChange={e => setEditName(e.target.value)} /></Table.Td>
-                    <Table.Td><Badge size="xs" color={pot.kind === 'carryover' ? 'blue' : 'gray'}>{kindLabel(pot.kind)}</Badge></Table.Td>
+                    <Table.Td>
+                      <Select
+                        size="xs"
+                        w={130}
+                        value={editKind}
+                        onChange={v => setEditKind(v ?? 'normal')}
+                        data={[
+                          { value: 'normal', label: t('settings.kind_normal') },
+                          { value: 'carryover', label: t('settings.kind_carryover') },
+                        ]}
+                      />
+                    </Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" onClick={() => update.mutate({ id: pot.id, name: editName, sortOrder: pot.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
+                        <Button size="xs" onClick={() => update.mutate({ id: pot.id, name: editName, kind: editKind, sortOrder: pot.sortOrder }, {
+                          onSuccess: () => setEditing(null),
+                          onError: (err: unknown) => {
+                            const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
+                            notifications.show({ color: 'red', title: t('common.error'), message: editKind === 'carryover' ? t('settings.carryoverExists') : msg })
+                          },
+                        })}>OK</Button>
                         <Button size="xs" variant="subtle" onClick={() => setEditing(null)}>✕</Button>
                       </Group>
                     </Table.Td>
@@ -255,7 +273,7 @@ function PotsTab() {
                     <Table.Td><Badge size="xs" color={pot.kind === 'carryover' ? 'blue' : 'gray'}>{kindLabel(pot.kind)}</Badge></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" variant="subtle" onClick={() => { setEditing(pot.id); setEditName(pot.name) }}>{t('common.edit')}</Button>
+                        <Button size="xs" variant="subtle" onClick={() => { setEditing(pot.id); setEditName(pot.name); setEditKind(pot.kind) }}>{t('common.edit')}</Button>
                         <Button size="xs" variant="subtle" color={pot.archivedAt ? 'green' : 'red'} onClick={() => archive.mutate(pot.id)}>
                           {pot.archivedAt ? t('settings.restore') : t('common.archive')}
                         </Button>

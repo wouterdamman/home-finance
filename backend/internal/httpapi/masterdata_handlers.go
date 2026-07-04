@@ -276,13 +276,20 @@ func (s *Server) handleUpdatePot(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Name      string `json:"name"`
+		Kind      string `json:"kind"`
 		SortOrder int    `json:"sortOrder"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE pots SET name=$2,sort_order=$3 WHERE id=$1`, id, body.Name, body.SortOrder)
+	if body.Kind == "" {
+		body.Kind = "normal"
+	}
+	if _, err := s.pool.Exec(r.Context(), `UPDATE pots SET name=$2,kind=$3,sort_order=$4 WHERE id=$1`, id, body.Name, body.Kind, body.SortOrder); err != nil {
+		Error(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

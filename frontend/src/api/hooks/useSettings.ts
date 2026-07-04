@@ -113,7 +113,7 @@ export function useCreatePot() {
 export function useUpdatePot() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; sortOrder: number }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; kind: string; sortOrder: number }) =>
       api.put(`/api/pots/${id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['pots-list'] }); qc.invalidateQueries({ queryKey: ['pots'] }) },
   })
