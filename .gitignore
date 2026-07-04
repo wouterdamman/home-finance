@@ -4,6 +4,8 @@
 
 # Go
 backend/bin/
+backend/server
+backend/importer
 backend/internal/store/gen/
 
 # Frontend
