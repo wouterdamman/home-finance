@@ -73,8 +73,14 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 
 	if body.CopyFromPeriodID == nil {
 		var srcID int64
-		if err2 := s.pool.QueryRow(ctx,
-			`SELECT id FROM periods WHERE (year < $1 OR (year = $1 AND month < $2)) ORDER BY year DESC, month DESC LIMIT 1`,
+		if err2 := s.pool.QueryRow(ctx, `
+			SELECT id FROM periods
+			WHERE (year < $1 OR (year = $1 AND month < $2))
+			AND (
+				EXISTS (SELECT 1 FROM income_entries WHERE period_id=periods.id AND entry_type='normal')
+				OR EXISTS (SELECT 1 FROM budget_lines WHERE period_id=periods.id)
+			)
+			ORDER BY year DESC, month DESC LIMIT 1`,
 			body.Year, body.Month).Scan(&srcID); err2 == nil {
 			body.CopyFromPeriodID = &srcID
 		}
