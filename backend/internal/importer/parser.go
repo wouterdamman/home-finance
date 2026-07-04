@@ -12,12 +12,13 @@ import (
 
 var sheetRe = regexp.MustCompile(`^(\d+)-(\d{2})-(Overview|Details)$`)
 
-type MonthData struct {
+type SheetData struct {
 	Year    int
 	Month   int
-	Sheet   string // "Overview" or "Details"
+	Kind    string // "Overview" or "Details"
 	Incomes []IncomeRow
 	Lines   []BudgetLineRow
+	Splits  []SplitRow
 	Txs     []TxRow
 }
 
@@ -27,9 +28,13 @@ type IncomeRow struct {
 }
 
 type BudgetLineRow struct {
-	Label              string
-	AmountCents        int64
-	TracksTransactions bool
+	Label       string
+	AmountCents int64
+}
+
+type SplitRow struct {
+	PotName    string
+	Percentage float64 // 0–100
 }
 
 type TxRow struct {
@@ -38,14 +43,14 @@ type TxRow struct {
 	Description   string
 }
 
-func ParseXLSX(path string) ([]MonthData, error) {
+func ParseXLSX(path string) ([]SheetData, error) {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("open xlsx: %w", err)
 	}
 	defer f.Close()
 
-	var months []MonthData
+	var sheets []SheetData
 	for _, sheet := range f.GetSheetList() {
 		m := sheetRe.FindStringSubmatch(sheet)
 		if m == nil {
@@ -53,129 +58,167 @@ func ParseXLSX(path string) ([]MonthData, error) {
 		}
 		monthNum, _ := strconv.Atoi(m[1])
 		year, _ := strconv.Atoi(m[2])
+		if year < 100 {
+			year += 2000
+		}
 		kind := m[3]
 
-		rows, err := f.GetRows(sheet)
-		if err != nil {
-			return nil, fmt.Errorf("get rows %s: %w", sheet, err)
-		}
-
-		md := MonthData{Year: year, Month: monthNum, Sheet: kind}
+		sd := SheetData{Year: year, Month: monthNum, Kind: kind}
 		switch kind {
 		case "Overview":
-			md.Incomes, md.Lines = parseOverview(rows)
+			sd.Incomes, sd.Lines, sd.Splits = parseOverview(f, sheet)
 		case "Details":
-			md.Txs = parseDetails(rows)
+			sd.Txs = parseDetails(f, sheet)
 		}
-		months = append(months, md)
+		sheets = append(sheets, sd)
 	}
-	return months, nil
+	return sheets, nil
 }
 
-func parseOverview(rows [][]string) ([]IncomeRow, []BudgetLineRow) {
+func cell(f *excelize.File, sheet, col string, row int) string {
+	v, _ := f.GetCellValue(sheet, fmt.Sprintf("%s%d", col, row), excelize.Options{RawCellValue: true})
+	return strings.TrimSpace(v)
+}
+
+func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow, []SplitRow) {
 	var incomes []IncomeRow
 	var lines []BudgetLineRow
-	inIncome := false
-	inExpense := false
+	var splits []SplitRow
 
-	for _, row := range rows {
-		if len(row) == 0 {
-			continue
-		}
-		label := strings.TrimSpace(row[0])
-		if label == "" {
-			continue
-		}
-		labelLower := strings.ToLower(label)
+	incomeDone := false
+	for row := 2; row <= 60; row++ {
+		a := cell(f, sheet, "A", row)
+		b := cell(f, sheet, "B", row)
+		c := cell(f, sheet, "C", row)
+		d := cell(f, sheet, "D", row)
+		h := cell(f, sheet, "H", row)
+		ii := cell(f, sheet, "I", row)
 
-		if strings.Contains(labelLower, "inkomsten") || strings.Contains(labelLower, "inkomen") {
-			inIncome = true
-			inExpense = false
-			continue
-		}
-		if strings.Contains(labelLower, "uitgaven") || strings.Contains(labelLower, "kosten") || strings.Contains(labelLower, "vaste") {
-			inIncome = false
-			inExpense = true
-			continue
-		}
-		if strings.Contains(labelLower, "totaal") {
-			inIncome = false
-			inExpense = false
-			continue
+		// ── Income: col A = label, col B = value ──────────────────
+		if !incomeDone {
+			if strings.Contains(strings.ToLower(a), "totale inkomsten") {
+				incomeDone = true
+			} else if a != "" && b != "" {
+				label := strings.TrimSpace(a)
+				if !strings.HasPrefix(strings.ToLower(label), "doorlopen maand") {
+					if cents := parseCents(b); cents > 0 {
+						incomes = append(incomes, IncomeRow{Label: label, AmountCents: cents})
+					}
+				}
+			}
 		}
 
-		val := extractAmount(row)
-		if val == 0 {
-			continue
+		// ── Budget lines: col C = value, col D = label ────────────
+		if c != "" && d != "" {
+			dl := strings.ToLower(d)
+			if !strings.Contains(dl, "totaal af") && !strings.Contains(dl, "totaal over") {
+				if cents := parseCents(c); cents > 0 {
+					lines = append(lines, BudgetLineRow{Label: strings.TrimSpace(d), AmountCents: cents})
+				}
+			}
 		}
 
-		if inIncome {
-			incomes = append(incomes, IncomeRow{Label: label, AmountCents: val})
-		} else if inExpense {
-			lines = append(lines, BudgetLineRow{Label: label, AmountCents: val})
+		// ── Pot splits: col H = fraction (0-1), col I = pot name ──
+		if h != "" && ii != "" {
+			name := strings.TrimSpace(ii)
+			if !strings.EqualFold(name, "totaal") {
+				pct := parseFloat(h)
+				if pct > 0 {
+					splits = append(splits, SplitRow{
+						PotName:    normalizePotName(name),
+						Percentage: pct * 100,
+					})
+				}
+			}
 		}
 	}
-	return incomes, lines
+	return incomes, lines, splits
 }
 
-func parseDetails(rows [][]string) []TxRow {
+func parseDetails(f *excelize.File, sheet string) []TxRow {
+	type catDef struct {
+		name    string
+		valCol  string
+		descCol string
+	}
+
+	// Row 1: category headers at odd column positions (A, C, E, G, ...)
+	var cats []catDef
+	for colNum := 1; colNum <= 30; colNum += 2 {
+		colName, err := excelize.ColumnNumberToName(colNum)
+		if err != nil {
+			break
+		}
+		nextColName, _ := excelize.ColumnNumberToName(colNum + 1)
+		header := cell(f, sheet, colName, 1)
+		if header == "" {
+			break
+		}
+		cats = append(cats, catDef{
+			name:    strings.TrimSpace(header),
+			valCol:  colName,
+			descCol: nextColName,
+		})
+	}
+
 	var txs []TxRow
-	var currentCategory string
-
-	for _, row := range rows {
-		if len(row) == 0 {
-			continue
-		}
-		label := strings.TrimSpace(row[0])
-		if label == "" {
-			continue
-		}
-		labelLower := strings.ToLower(label)
-
-		if strings.Contains(labelLower, "totaal") {
-			continue
-		}
-
-		val := extractAmount(row)
-		desc := ""
-		if len(row) > 1 {
-			desc = strings.TrimSpace(row[1])
-		}
-
-		if val == 0 && desc == "" {
-			currentCategory = label
-			continue
-		}
-
-		if val != 0 {
-			cat := currentCategory
-			if cat == "" {
-				cat = label
+	for _, cat := range cats {
+		for row := 2; row <= 300; row++ {
+			valStr := cell(f, sheet, cat.valCol, row)
+			descStr := cell(f, sheet, cat.descCol, row)
+			if strings.EqualFold(strings.TrimSpace(descStr), "totaal") {
+				break
 			}
-			d := desc
-			if d == "" {
-				d = label
+			if valStr == "" {
+				continue
 			}
-			txs = append(txs, TxRow{CategoryLabel: cat, AmountCents: val, Description: d})
+			cents := parseCents(valStr)
+			if cents > 0 {
+				desc := strings.TrimSpace(descStr)
+				if desc == "" {
+					desc = cat.name
+				}
+				txs = append(txs, TxRow{
+					CategoryLabel: cat.name,
+					AmountCents:   cents,
+					Description:   desc,
+				})
+			}
 		}
 	}
 	return txs
 }
 
-func extractAmount(row []string) int64 {
-	for i := len(row) - 1; i >= 0; i-- {
-		cell := strings.TrimSpace(row[i])
-		if cell == "" {
-			continue
-		}
-		cell = strings.ReplaceAll(cell, "€", "")
-		cell = strings.TrimSpace(cell)
-		cell = strings.ReplaceAll(cell, ".", "")
-		cell = strings.ReplaceAll(cell, ",", ".")
-		f, err := strconv.ParseFloat(cell, 64)
-		if err == nil && f != 0 {
-			return int64(math.Round(f * 100))
+func normalizePotName(name string) string {
+	// "Doorlopen (speling 2.5%)" → "Doorlopen"
+	// "Trouwen * -720" → "Trouwen"
+	for _, sep := range []string{" (", " *", " -"} {
+		if idx := strings.Index(name, sep); idx > 0 {
+			name = name[:idx]
 		}
 	}
-	return 0
+	return strings.TrimSpace(name)
+}
+
+func parseCents(s string) int64 {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, " ", "")
+	// Handle scientific notation like "2.5e-02"
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		// Try comma as decimal
+		s2 := strings.ReplaceAll(s, ".", "")
+		s2 = strings.ReplaceAll(s2, ",", ".")
+		f, err = strconv.ParseFloat(s2, 64)
+		if err != nil {
+			return 0
+		}
+	}
+	return int64(math.Round(f * 100))
+}
+
+func parseFloat(s string) float64 {
+	s = strings.TrimSpace(s)
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
 }

@@ -15,7 +15,8 @@ import (
 type ImportOptions struct {
 	Year         int
 	Wipe         bool
-	CloseThrough int // month number, inclusive; 0 = don't close any
+	ResetMaster  bool // truncate masterdata before import
+	CloseThrough int  // month number, inclusive; 0 = don't close
 }
 
 type Report struct {
@@ -30,33 +31,79 @@ type MonthReport struct {
 	Closed            bool
 }
 
-func Run(ctx context.Context, pool *pgxpool.Pool, months []MonthData, opts ImportOptions) (*Report, error) {
-	if opts.Wipe {
+func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts ImportOptions) (*Report, error) {
+	if opts.ResetMaster {
+		if _, err := pool.Exec(ctx, `
+			DELETE FROM pot_ledger;
+			DELETE FROM pot_splits;
+			DELETE FROM transactions;
+			DELETE FROM budget_lines;
+			DELETE FROM income_entries;
+			DELETE FROM periods;
+			DELETE FROM pots;
+			DELETE FROM categories;
+			DELETE FROM income_sources;
+		`); err != nil {
+			return nil, fmt.Errorf("reset masterdata: %w", err)
+		}
+	} else if opts.Wipe {
 		if err := wipe(ctx, pool, opts.Year); err != nil {
 			return nil, fmt.Errorf("wipe: %w", err)
 		}
 	}
 
+	// Index sheets by year+month
+	overviews := map[int]*SheetData{}
+	details := map[int][]TxRow{}
+	for i := range sheets {
+		sd := &sheets[i]
+		if opts.Year != 0 && sd.Year != opts.Year {
+			continue
+		}
+		if sd.Kind == "Overview" {
+			overviews[sd.Month] = sd
+		} else {
+			details[sd.Month] = append(details[sd.Month], sd.Txs...)
+		}
+	}
+
+	// Load/create masterdata
 	catIDs := map[string]int64{}
 	srcIDs := map[string]int64{}
 	potIDs := map[string]int64{}
-
-	if err := loadMasterdata(ctx, pool, catIDs, srcIDs, potIDs); err != nil {
+	potKinds := map[string]string{}
+	if err := loadMasterdata(ctx, pool, catIDs, srcIDs, potIDs, potKinds); err != nil {
 		return nil, fmt.Errorf("load masterdata: %w", err)
 	}
 
-	overviews := map[int]*MonthData{}
-	details := map[int][]TxRow{}
-	for i := range months {
-		md := &months[i]
-		if md.Year != opts.Year && opts.Year != 0 {
+	// First pass: ensure all pots exist (from first month's splits)
+	for monthNum := 1; monthNum <= 12; monthNum++ {
+		ov, ok := overviews[monthNum]
+		if !ok {
 			continue
 		}
-		if md.Sheet == "Overview" {
-			overviews[md.Month] = md
-		} else {
-			details[md.Month] = append(details[md.Month], md.Txs...)
+		for _, sp := range ov.Splits {
+			name := sp.PotName
+			if _, exists := potIDs[name]; !exists {
+				kind := "normal"
+				if strings.Contains(strings.ToLower(name), "doorlopen") {
+					kind = "carryover"
+				}
+				var id int64
+				if pool.QueryRow(ctx, `SELECT id FROM pots WHERE name=$1`, name).Scan(&id) != nil {
+					pool.QueryRow(ctx,
+						`INSERT INTO pots (name, kind, sort_order) VALUES ($1, $2, $3) RETURNING id`,
+						name, kind, len(potIDs)).Scan(&id)
+				}
+				potIDs[name] = id
+				potKinds[name] = kind
+			}
 		}
+		break // only need first month's splits to create pots
+	}
+	// Reload to capture all pots including any just created
+	if err := loadMasterdata(ctx, pool, catIDs, srcIDs, potIDs, potKinds); err != nil {
+		return nil, fmt.Errorf("reload masterdata: %w", err)
 	}
 
 	var rep Report
@@ -66,70 +113,131 @@ func Run(ctx context.Context, pool *pgxpool.Pool, months []MonthData, opts Impor
 			continue
 		}
 
+		// Upsert income sources
 		for _, inc := range ov.Incomes {
 			if _, exists := srcIDs[inc.Label]; !exists {
 				var id int64
-				pool.QueryRow(ctx, `INSERT INTO income_sources (name,default_amount_cents,sort_order) VALUES ($1,$2,$3) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
-					inc.Label, inc.AmountCents, len(srcIDs)).Scan(&id)
+				if pool.QueryRow(ctx, `SELECT id FROM income_sources WHERE name=$1`, inc.Label).Scan(&id) != nil {
+					pool.QueryRow(ctx,
+						`INSERT INTO income_sources (name, default_amount_cents, sort_order) VALUES ($1, $2, $3) RETURNING id`,
+						inc.Label, inc.AmountCents, len(srcIDs)).Scan(&id)
+				}
 				srcIDs[inc.Label] = id
 			}
 		}
+
+		// Upsert categories from budget lines
 		for _, bl := range ov.Lines {
 			if _, exists := catIDs[bl.Label]; !exists {
 				var id int64
-				pool.QueryRow(ctx, `INSERT INTO categories (name,default_amount_cents,is_itemized,sort_order) VALUES ($1,$2,false,$3) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
-					bl.Label, bl.AmountCents, len(catIDs)).Scan(&id)
+				if pool.QueryRow(ctx, `SELECT id FROM categories WHERE name=$1`, bl.Label).Scan(&id) != nil {
+					pool.QueryRow(ctx,
+						`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1, $2, false, $3) RETURNING id`,
+						bl.Label, bl.AmountCents, len(catIDs)).Scan(&id)
+				}
 				catIDs[bl.Label] = id
 			}
 		}
+
+		// Upsert categories from Details headers
 		for _, tx := range details[monthNum] {
 			if _, exists := catIDs[tx.CategoryLabel]; !exists {
 				var id int64
-				pool.QueryRow(ctx, `INSERT INTO categories (name,default_amount_cents,is_itemized,sort_order) VALUES ($1,0,true,$2) ON CONFLICT (name) DO UPDATE SET is_itemized=true RETURNING id`,
-					tx.CategoryLabel, len(catIDs)).Scan(&id)
+				if pool.QueryRow(ctx, `SELECT id FROM categories WHERE name=$1`, tx.CategoryLabel).Scan(&id) != nil {
+					pool.QueryRow(ctx,
+						`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1, 0, true, $2) RETURNING id`,
+						tx.CategoryLabel, len(catIDs)).Scan(&id)
+				} else {
+					// Mark existing as itemized
+					pool.Exec(ctx, `UPDATE categories SET is_itemized=true WHERE id=$1`, id)
+				}
 				catIDs[tx.CategoryLabel] = id
 			}
 		}
 
+		// Create period
 		var periodID int64
-		pool.QueryRow(ctx, `INSERT INTO periods (year,month) VALUES ($1,$2) ON CONFLICT (year,month) DO UPDATE SET year=EXCLUDED.year RETURNING id`,
+		pool.QueryRow(ctx,
+			`INSERT INTO periods (year, month)
+			 VALUES ($1, $2)
+			 ON CONFLICT (year, month) DO UPDATE SET year=EXCLUDED.year
+			 RETURNING id`,
 			opts.Year, monthNum).Scan(&periodID)
 
+		// Income entries (skip carryover — generated by close)
 		for i, inc := range ov.Incomes {
 			srcID := srcIDs[inc.Label]
-			pool.Exec(ctx, `INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order) VALUES ($1,$2,$3,$4,'normal','',$5)`,
+			pool.Exec(ctx,
+				`INSERT INTO income_entries (period_id, source_id, label, amount_cents, entry_type, notes, sort_order)
+				 VALUES ($1, $2, $3, $4, 'normal', '', $5)
+				 ON CONFLICT DO NOTHING`,
 				periodID, srcID, inc.Label, inc.AmountCents, i)
 		}
 
+		// Budget lines
 		for i, bl := range ov.Lines {
 			catID := catIDs[bl.Label]
+			// tracks_transactions = true if a Details category has the same name
 			tracksTransactions := false
-			if _, hasDet := details[monthNum]; hasDet {
+			if _, ok := catIDs[bl.Label]; ok {
 				for _, tx := range details[monthNum] {
-					if tx.CategoryLabel == bl.Label {
+					if strings.EqualFold(tx.CategoryLabel, bl.Label) {
 						tracksTransactions = true
 						break
 					}
 				}
 			}
-			pool.Exec(ctx, `INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (period_id,category_id) DO NOTHING`,
+			pool.Exec(ctx,
+				`INSERT INTO budget_lines (period_id, category_id, label, amount_cents, tracks_transactions, sort_order)
+				 VALUES ($1, $2, $3, $4, $5, $6)
+				 ON CONFLICT (period_id, category_id) DO NOTHING`,
 				periodID, catID, bl.Label, bl.AmountCents, tracksTransactions, i)
 		}
 
+		// Transactions from Details
 		for _, tx := range details[monthNum] {
 			catID := catIDs[tx.CategoryLabel]
-			pool.Exec(ctx, `INSERT INTO transactions (period_id,category_id,amount_cents,description,tx_date) VALUES ($1,$2,$3,$4,$5)`,
-				periodID, catID, tx.AmountCents, tx.Description, time.Date(opts.Year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02"))
+			txDate := time.Date(opts.Year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+			pool.Exec(ctx,
+				`INSERT INTO transactions (period_id, category_id, amount_cents, description, tx_date)
+				 VALUES ($1, $2, $3, $4, $5)`,
+				periodID, catID, tx.AmountCents, tx.Description, txDate)
 		}
 
+		// Pot splits for this period
+		for _, sp := range ov.Splits {
+			potID, ok := potIDs[sp.PotName]
+			if !ok {
+				slog.Warn("pot not found for split", "pot", sp.PotName)
+				continue
+			}
+			pool.Exec(ctx,
+				`INSERT INTO pot_splits (period_id, pot_id, percentage)
+				 VALUES ($1, $2, $3)
+				 ON CONFLICT (period_id, pot_id) DO UPDATE SET percentage=EXCLUDED.percentage`,
+				periodID, potID, sp.Percentage)
+		}
+
+		// Calculate totals for report
 		var incTotal, expTotal int64
 		pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1 AND entry_type='normal'`, periodID).Scan(&incTotal)
-		pool.QueryRow(ctx, `SELECT COALESCE(SUM(CASE WHEN bl.tracks_transactions THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0) ELSE bl.amount_cents END),0) FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
+		pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(
+				CASE WHEN bl.tracks_transactions
+				THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+				ELSE bl.amount_cents END
+			),0)
+			FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
 
-		mr := MonthReport{Month: monthNum, IncomeTotalCents: incTotal, ExpenseTotalCents: expTotal, SurplusCents: incTotal - expTotal}
+		mr := MonthReport{
+			Month:             monthNum,
+			IncomeTotalCents:  incTotal,
+			ExpenseTotalCents: expTotal,
+			SurplusCents:      incTotal - expTotal,
+		}
 
 		if opts.CloseThrough >= monthNum {
-			if err := closePeriod(ctx, pool, periodID, potIDs, opts.Year, monthNum); err != nil {
+			if err := closePeriod(ctx, pool, periodID, potIDs, potKinds, opts.Year, monthNum); err != nil {
 				slog.Warn("close period", "month", monthNum, "err", err)
 			} else {
 				mr.Closed = true
@@ -142,41 +250,47 @@ func Run(ctx context.Context, pool *pgxpool.Pool, months []MonthData, opts Impor
 	return &rep, nil
 }
 
-func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs map[string]int64, year, month int) error {
-	var splitRows []struct {
+func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs map[string]int64, potKinds map[string]string, year, month int) error {
+	type splitRow struct {
 		PotID int64
 		Pct   float64
 		Kind  string
 	}
-	rows, _ := pool.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, periodID)
+	rows, _ := pool.Query(ctx,
+		`SELECT ps.pot_id, ps.percentage, p.kind
+		 FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id
+		 WHERE ps.period_id=$1`, periodID)
+	var rawSplits []splitRow
 	for rows.Next() {
-		var sr struct {
-			PotID int64
-			Pct   float64
-			Kind  string
-		}
+		var sr splitRow
 		rows.Scan(&sr.PotID, &sr.Pct, &sr.Kind)
-		splitRows = append(splitRows, sr)
+		rawSplits = append(rawSplits, sr)
 	}
 	rows.Close()
 
-	if len(splitRows) == 0 {
-		slog.Info("no splits configured for period, skipping close", "period_id", periodID)
+	if len(rawSplits) == 0 {
+		slog.Info("no splits, skipping close", "period_id", periodID)
 		return nil
 	}
 
-	inputs := make([]domain.PotSplitInput, len(splitRows))
-	for i, sr := range splitRows {
+	inputs := make([]domain.PotSplitInput, len(rawSplits))
+	for i, sr := range rawSplits {
 		inputs[i] = domain.PotSplitInput{PotID: sr.PotID, Percentage: sr.Pct}
 	}
 
 	var incTotal, expTotal int64
 	pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, periodID).Scan(&incTotal)
-	pool.QueryRow(ctx, `SELECT COALESCE(SUM(CASE WHEN bl.tracks_transactions THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0) ELSE bl.amount_cents END),0) FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
+	pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(
+			CASE WHEN bl.tracks_transactions
+			THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+			ELSE bl.amount_cents END
+		),0)
+		FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
 	surplus := incTotal - expTotal
 
 	allocs := domain.LargestRemainderSplit(surplus, inputs)
-	today := time.Date(year, time.Month(month+1), 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	lastDay := time.Date(year, time.Month(month+1), 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -185,10 +299,12 @@ func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs
 	defer tx.Rollback(ctx)
 
 	for i, a := range allocs {
-		tx.Exec(ctx, `INSERT INTO pot_ledger (pot_id,period_id,source_period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$2,'allocation',$3,'Monthly allocation',$4)`,
-			a.PotID, periodID, a.AmountCents, today)
+		tx.Exec(ctx,
+			`INSERT INTO pot_ledger (pot_id, period_id, source_period_id, entry_type, amount_cents, description, entry_date)
+			 VALUES ($1, $2, $2, 'allocation', $3, 'Maandelijkse allocatie', $4)`,
+			a.PotID, periodID, a.AmountCents, lastDay)
 
-		if splitRows[i].Kind == "carryover" {
+		if rawSplits[i].Kind == "carryover" {
 			nextMonth := month + 1
 			nextYear := year
 			if nextMonth > 12 {
@@ -196,17 +312,28 @@ func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs
 				nextYear++
 			}
 			var nextPeriodID int64
-			tx.QueryRow(ctx, `INSERT INTO periods (year,month) VALUES ($1,$2) ON CONFLICT (year,month) DO UPDATE SET year=EXCLUDED.year RETURNING id`, nextYear, nextMonth).Scan(&nextPeriodID)
-			tx.Exec(ctx, `INSERT INTO pot_ledger (pot_id,period_id,source_period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,'carryover_out',$4,'Carryover out',$5)`,
-				a.PotID, nextPeriodID, periodID, -a.AmountCents, today)
-			monthNames := []string{"", "Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"}
-			name := monthNames[month]
-			tx.Exec(ctx, `INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,source_period_id,notes,sort_order) VALUES ($1,NULL,$2,$3,'carryover',$4,'',0)`,
-				nextPeriodID, "Doorlopen maand "+name, a.AmountCents, periodID)
+			tx.QueryRow(ctx,
+				`INSERT INTO periods (year, month) VALUES ($1, $2)
+				 ON CONFLICT (year, month) DO UPDATE SET year=EXCLUDED.year
+				 RETURNING id`,
+				nextYear, nextMonth).Scan(&nextPeriodID)
+
+			tx.Exec(ctx,
+				`INSERT INTO pot_ledger (pot_id, period_id, source_period_id, entry_type, amount_cents, description, entry_date)
+				 VALUES ($1, $2, $3, 'carryover_out', $4, 'Doorlopen', $5)`,
+				a.PotID, nextPeriodID, periodID, -a.AmountCents, lastDay)
+
+			monthNames := []string{"", "Januari", "Februari", "Maart", "April", "Mei", "Juni",
+				"Juli", "Augustus", "September", "Oktober", "November", "December"}
+			label := "Doorlopen maand " + monthNames[month]
+			tx.Exec(ctx,
+				`INSERT INTO income_entries (period_id, source_id, label, amount_cents, entry_type, source_period_id, notes, sort_order)
+				 VALUES ($1, NULL, $2, $3, 'carryover', $4, '', 0)`,
+				nextPeriodID, label, a.AmountCents, periodID)
 		}
 	}
 
-	tx.Exec(ctx, `UPDATE periods SET status='closed',closed_at=now() WHERE id=$1`, periodID)
+	tx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, periodID)
 	return tx.Commit(ctx)
 }
 
@@ -222,40 +349,40 @@ func wipe(ctx context.Context, pool *pgxpool.Pool, year int) error {
 	return err
 }
 
-func loadMasterdata(ctx context.Context, pool *pgxpool.Pool, catIDs, srcIDs, potIDs map[string]int64) error {
-	rows, err := pool.Query(ctx, `SELECT id,name FROM categories`)
+func loadMasterdata(ctx context.Context, pool *pgxpool.Pool, catIDs, srcIDs, potIDs map[string]int64, potKinds map[string]string) error {
+	rows, err := pool.Query(ctx, `SELECT id, name FROM categories`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var id int64
-		var name string
+		var id int64; var name string
 		rows.Scan(&id, &name)
 		catIDs[strings.TrimSpace(name)] = id
 	}
 	rows.Close()
 
-	rows, err = pool.Query(ctx, `SELECT id,name FROM income_sources`)
+	rows, err = pool.Query(ctx, `SELECT id, name FROM income_sources`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var id int64
-		var name string
+		var id int64; var name string
 		rows.Scan(&id, &name)
 		srcIDs[strings.TrimSpace(name)] = id
 	}
 	rows.Close()
 
-	rows, err = pool.Query(ctx, `SELECT id,name FROM pots`)
+	rows, err = pool.Query(ctx, `SELECT id, name, kind FROM pots`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var id int64
-		var name string
-		rows.Scan(&id, &name)
+		var id int64; var name, kind string
+		rows.Scan(&id, &name, &kind)
 		potIDs[strings.TrimSpace(name)] = id
+		if potKinds != nil {
+			potKinds[strings.TrimSpace(name)] = kind
+		}
 	}
 	rows.Close()
 	return nil

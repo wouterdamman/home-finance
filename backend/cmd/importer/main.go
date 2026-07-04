@@ -17,6 +17,7 @@ func main() {
 	year := flag.Int("year", 0, "year to import (e.g. 2026)")
 	dsn := flag.String("dsn", os.Getenv("DATABASE_URL"), "postgres DSN")
 	wipe := flag.Bool("wipe", false, "delete existing data for year before import")
+	resetMaster := flag.Bool("reset-masterdata", false, "truncate ALL data (periods + masterdata) before import")
 	closeThrough := flag.Int("close-through", 0, "close periods through this month number")
 	flag.Parse()
 
@@ -41,16 +42,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	months, err := importer.ParseXLSX(*xlsx)
+	sheets, err := importer.ParseXLSX(*xlsx)
 	if err != nil {
 		slog.Error("parse", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("parsed", "sheets", len(months))
+	slog.Info("parsed", "sheets", len(sheets))
 
-	report, err := importer.Run(ctx, pool, months, importer.ImportOptions{
+	report, err := importer.Run(ctx, pool, sheets, importer.ImportOptions{
 		Year:         *year,
 		Wipe:         *wipe,
+		ResetMaster:  *resetMaster,
 		CloseThrough: *closeThrough,
 	})
 	if err != nil {
