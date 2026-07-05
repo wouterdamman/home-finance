@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/theironrock95/home-finance
-  tag: latest
+  tag: 1.0.1
   pullPolicy: IfNotPresent
 
 replicaCount: 1
