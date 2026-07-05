@@ -15,7 +15,17 @@
     "expenses": "Uitgaven",
     "surplus": "Overschot",
     "yearTotal": "Jaartotaal",
-    "createMonth": "Nieuwe maand aanmaken"
+    "createMonth": "Nieuwe maand aanmaken",
+    "locked": "Vergrendeld",
+    "lockAction": "Jaar vergrendelen",
+    "unlockAction": "Jaar ontgrendelen",
+    "lockTitle": "Jaar vergrendelen",
+    "unlockTitle": "Jaar ontgrendelen",
+    "lockWarning": "{{year}} vergrendelen voorkomt het aanmaken van nieuwe maanden en het wijzigen van gegevens. Alle maanden moeten eerst afgesloten zijn.",
+    "unlockWarning": "{{year}} ontgrendelen maakt bewerking weer mogelijk.",
+    "lockConfirm": "Definitief vergrendelen",
+    "unlockConfirm": "Ontgrendelen",
+    "passwordLabel": "Wachtwoord ter bevestiging"
   },
   "month": {
     "income": "Inkomsten",

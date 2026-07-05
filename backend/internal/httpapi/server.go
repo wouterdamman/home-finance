@@ -94,6 +94,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 
 			// Year summary
 			r.Get("/years/{year}/summary", s.handleYearSummary)
+			r.Post("/years/{year}/lock", s.handleLockYear)
+			r.Post("/years/{year}/unlock", s.handleUnlockYear)
 		})
 	})
 

@@ -15,7 +15,17 @@
     "expenses": "Expenses",
     "surplus": "Surplus",
     "yearTotal": "Year Total",
-    "createMonth": "Create Month"
+    "createMonth": "Create Month",
+    "locked": "Locked",
+    "lockAction": "Lock Year",
+    "unlockAction": "Unlock Year",
+    "lockTitle": "Lock year",
+    "unlockTitle": "Unlock year",
+    "lockWarning": "Locking {{year}} will prevent creating new months and editing any data. All months must be closed first.",
+    "unlockWarning": "Unlocking {{year}} will allow editing again.",
+    "lockConfirm": "Lock permanently",
+    "unlockConfirm": "Unlock",
+    "passwordLabel": "Password to confirm"
   },
   "month": {
     "income": "Income",

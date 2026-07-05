@@ -72,6 +72,22 @@ export function useUpdateBudgetLine(periodId: number, year: number) {
   })
 }
 
+export function useLockYear(year: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (password: string) => api.post(`/api/years/${year}/lock`, { password }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['year-summary', year] }),
+  })
+}
+
+export function useUnlockYear(year: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (password: string) => api.post(`/api/years/${year}/unlock`, { password }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['year-summary', year] }),
+  })
+}
+
 export function useReopenPeriod(periodId: number) {
   const qc = useQueryClient()
   return useMutation({

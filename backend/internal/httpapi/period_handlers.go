@@ -71,6 +71,11 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
+	if locked, _ := isYearLocked(ctx, s.pool, body.Year); locked {
+		Error(w, http.StatusConflict, "year_locked", "year is locked")
+		return
+	}
+
 	if body.CopyFromPeriodID == nil {
 		var srcID int64
 		if err2 := s.pool.QueryRow(ctx, `
@@ -376,6 +381,10 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusConflict, "period_already_open", "period is already open")
 		return
 	}
+	if locked, _ := isYearLocked(ctx, s.pool, year); locked {
+		Error(w, http.StatusConflict, "year_locked", "year is locked")
+		return
+	}
 	nextMonth := month + 1
 	nextYear := year
 	if nextMonth > 12 {
@@ -444,6 +453,10 @@ func (s *Server) handleDeletePeriod(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusConflict, "period_closed", "cannot delete a closed period; reopen it first")
 		return
 	}
+	if locked, _ := isYearLocked(ctx, s.pool, year); locked {
+		Error(w, http.StatusConflict, "year_locked", "year is locked")
+		return
+	}
 
 	if _, err := s.pool.Exec(ctx, `DELETE FROM periods WHERE id=$1`, id); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", "delete failed")
@@ -490,8 +503,7 @@ func (s *Server) handleCreateIncomeEntry(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	var body struct {
@@ -530,8 +542,7 @@ func (s *Server) handleUpdateIncomeEntry(w http.ResponseWriter, r *http.Request)
 	}
 	var periodID int64
 	s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_entries WHERE id=$1`, id).Scan(&periodID)
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	s.pool.Exec(r.Context(), `UPDATE income_entries SET label=$2,amount_cents=$3,notes=$4,sort_order=$5 WHERE id=$1`, id, body.Label, body.AmountCents, body.Notes, body.SortOrder)
@@ -546,8 +557,7 @@ func (s *Server) handleDeleteIncomeEntry(w http.ResponseWriter, r *http.Request)
 	}
 	var periodID int64
 	s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_entries WHERE id=$1`, id).Scan(&periodID)
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	s.pool.Exec(r.Context(), `DELETE FROM income_entries WHERE id=$1`, id)
@@ -562,8 +572,7 @@ func (s *Server) handleCreateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	var body struct {
@@ -602,8 +611,7 @@ func (s *Server) handleUpdateBudgetLine(w http.ResponseWriter, r *http.Request) 
 	}
 	var periodID int64
 	s.pool.QueryRow(r.Context(), `SELECT period_id FROM budget_lines WHERE id=$1`, id).Scan(&periodID)
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	s.pool.Exec(r.Context(), `UPDATE budget_lines SET label=$2,amount_cents=$3,tracks_transactions=$4,sort_order=$5 WHERE id=$1`, id, body.Label, body.AmountCents, body.TracksTransactions, body.SortOrder)
@@ -618,8 +626,7 @@ func (s *Server) handleDeleteBudgetLine(w http.ResponseWriter, r *http.Request) 
 	}
 	var periodID int64
 	s.pool.QueryRow(r.Context(), `SELECT period_id FROM budget_lines WHERE id=$1`, id).Scan(&periodID)
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	s.pool.Exec(r.Context(), `DELETE FROM budget_lines WHERE id=$1`, id)
@@ -675,8 +682,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	var body struct {
@@ -713,8 +719,7 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 	}
 	var periodID int64
 	s.pool.QueryRow(r.Context(), `SELECT period_id FROM transactions WHERE id=$1`, id).Scan(&periodID)
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	s.pool.Exec(r.Context(), `UPDATE transactions SET amount_cents=$2,description=$3,tx_date=$4 WHERE id=$1`, id, body.AmountCents, body.Description, body.TxDate)
@@ -729,8 +734,7 @@ func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request)
 	}
 	var periodID int64
 	s.pool.QueryRow(r.Context(), `SELECT period_id FROM transactions WHERE id=$1`, id).Scan(&periodID)
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	s.pool.Exec(r.Context(), `DELETE FROM transactions WHERE id=$1`, id)
@@ -745,8 +749,7 @@ func (s *Server) handleReplaceSplits(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	if closed, _ := isPeriodClosed(r.Context(), s.pool, periodID); closed {
-		Error(w, http.StatusConflict, "period_closed", "period is closed")
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
 	var body struct {
@@ -838,8 +841,10 @@ func (s *Server) handleYearSummary(w http.ResponseWriter, r *http.Request) {
 		balances = append(balances, b)
 	}
 
+	locked, _ := isYearLocked(ctx, s.pool, year)
 	JSON(w, http.StatusOK, map[string]any{
 		"year":                  year,
+		"locked":                locked,
 		"months":                months,
 		"yearIncomeTotalCents":  yearIncome,
 		"yearExpenseTotalCents": yearExpense,

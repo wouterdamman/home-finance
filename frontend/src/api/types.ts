@@ -110,6 +110,7 @@ export interface YearSummaryMonth {
 
 export interface YearSummary {
   year: number
+  locked: boolean
   months: YearSummaryMonth[]
   yearIncomeTotalCents: number
   yearExpenseTotalCents: number

@@ -59,3 +59,32 @@ func isPeriodClosed(ctx context.Context, pool *pgxpool.Pool, periodID int64) (bo
 	}
 	return status == "closed", nil
 }
+
+func isYearLocked(ctx context.Context, pool *pgxpool.Pool, year int) (bool, error) {
+	var locked bool
+	err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM locked_years WHERE year=$1)`, year).Scan(&locked)
+	return locked, err
+}
+
+func isPeriodWritable(ctx context.Context, pool *pgxpool.Pool, w http.ResponseWriter, periodID int64) bool {
+	if closed, _ := isPeriodClosed(ctx, pool, periodID); closed {
+		Error(w, http.StatusConflict, "period_closed", "period is closed")
+		return false
+	}
+	if locked, _ := isYearLockedForPeriod(ctx, pool, periodID); locked {
+		Error(w, http.StatusConflict, "year_locked", "year is locked")
+		return false
+	}
+	return true
+}
+
+func isYearLockedForPeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64) (bool, error) {
+	var locked bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM locked_years ly
+			JOIN periods p ON p.year = ly.year
+			WHERE p.id = $1
+		)`, periodID).Scan(&locked)
+	return locked, err
+}
