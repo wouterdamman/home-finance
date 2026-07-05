@@ -59,7 +59,7 @@ func main() {
 		return
 	}
 
-	sm := auth.NewSessionManager(pool, cfg.Env != "development")
+	sm := auth.NewSessionManager(pool, cfg.SessionSecure)
 
 	var oidcProvider *auth.Provider
 	if !cfg.DevFakeAuth && cfg.OIDCIssuerURL != "" {

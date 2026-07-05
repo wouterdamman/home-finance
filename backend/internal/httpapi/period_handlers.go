@@ -86,29 +86,48 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var id int64
-	err := s.pool.QueryRow(ctx, `INSERT INTO periods (year, month) VALUES ($1, $2) RETURNING id`, body.Year, body.Month).Scan(&id)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "could not start transaction")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	var id int64
+	if err := tx.QueryRow(ctx, `INSERT INTO periods (year, month) VALUES ($1, $2) RETURNING id`, body.Year, body.Month).Scan(&id); err != nil {
 		Error(w, http.StatusConflict, "already_exists", "period already exists for that month")
 		return
 	}
 	if body.CopyFromPeriodID != nil {
 		src := *body.CopyFromPeriodID
-		s.pool.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
 			SELECT $1,bl.category_id,bl.label,bl.amount_cents,bl.tracks_transactions,bl.sort_order
 			FROM budget_lines bl
 			WHERE bl.period_id=$2
 			AND (bl.category_id IS NULL OR bl.category_id IN (SELECT id FROM categories WHERE include_in_template=true))`,
-			id, src)
-		s.pool.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, id, src)
-		s.pool.Exec(ctx, `
+			id, src); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", "failed to copy budget lines")
+			return
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, id, src); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", "failed to copy pot splits")
+			return
+		}
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
 			SELECT $1,ie.source_id,ie.label,ie.amount_cents,'normal',ie.notes,ie.sort_order
 			FROM income_entries ie
 			WHERE ie.period_id=$2 AND ie.entry_type='normal'
 			AND (ie.source_id IS NULL OR ie.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true))`,
-			id, src)
+			id, src); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", "failed to copy income entries")
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "commit failed")
+		return
 	}
 	type out struct {
 		ID     int64  `json:"id"`
@@ -250,16 +269,28 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "could not start transaction")
+		return
+	}
+	defer tx.Rollback(ctx)
+
 	var status string
-	s.pool.QueryRow(ctx, `SELECT status FROM periods WHERE id=$1`, id).Scan(&status)
+	var periodYear, periodMonth int
+	if err := tx.QueryRow(ctx, `SELECT status, year, month FROM periods WHERE id=$1 FOR UPDATE`, id).
+		Scan(&status, &periodYear, &periodMonth); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "period not found")
+		return
+	}
 	if status == "closed" {
 		Error(w, http.StatusConflict, "period_already_closed", "already closed")
 		return
 	}
 
 	var incomeTotal, expenseTotal int64
-	s.pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, id).Scan(&incomeTotal)
-	s.pool.QueryRow(ctx, `
+	tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, id).Scan(&incomeTotal)
+	tx.QueryRow(ctx, `
 		SELECT COALESCE(SUM(CASE WHEN bl.tracks_transactions
 		  THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
 		  ELSE bl.amount_cents END),0)
@@ -271,7 +302,7 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		Pct   float64
 		Kind  string
 	}
-	spRows, _ := s.pool.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, id)
+	spRows, _ := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, id)
 	var rawSplits []splitRow
 	for spRows.Next() {
 		var sr splitRow
@@ -286,16 +317,7 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	allocs := domain.LargestRemainderSplit(surplus, inputs)
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
-		return
-	}
-	defer tx.Rollback(ctx)
-
 	today := time.Now().Format("2006-01-02")
-	var periodYear, periodMonth int
-	tx.QueryRow(ctx, `SELECT year, month FROM periods WHERE id=$1`, id).Scan(&periodYear, &periodMonth)
 
 	for i, a := range allocs {
 		_, err = tx.Exec(ctx,
@@ -345,7 +367,15 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var year, month int
-	s.pool.QueryRow(ctx, `SELECT year,month FROM periods WHERE id=$1`, id).Scan(&year, &month)
+	var currentStatus string
+	if err := s.pool.QueryRow(ctx, `SELECT year,month,status FROM periods WHERE id=$1`, id).Scan(&year, &month, &currentStatus); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "period not found")
+		return
+	}
+	if currentStatus == "open" {
+		Error(w, http.StatusConflict, "period_already_open", "period is already open")
+		return
+	}
 	nextMonth := month + 1
 	nextYear := year
 	if nextMonth > 12 {
@@ -359,7 +389,11 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, _ := s.pool.Begin(ctx)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "could not start transaction")
+		return
+	}
 	defer tx.Rollback(ctx)
 	tx.Exec(ctx, `DELETE FROM pot_ledger WHERE source_period_id=$1`, id)
 	tx.Exec(ctx, `DELETE FROM income_entries WHERE entry_type='carryover' AND source_period_id=$1`, id)
@@ -411,20 +445,8 @@ func (s *Server) handleDeletePeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
-		return
-	}
-	defer tx.Rollback(ctx)
-	tx.Exec(ctx, `DELETE FROM pot_splits WHERE period_id=$1`, id)
-	tx.Exec(ctx, `DELETE FROM transactions WHERE period_id=$1`, id)
-	tx.Exec(ctx, `DELETE FROM budget_lines WHERE period_id=$1`, id)
-	tx.Exec(ctx, `DELETE FROM income_entries WHERE period_id=$1`, id)
-	tx.Exec(ctx, `DELETE FROM pot_ledger WHERE period_id=$1 OR source_period_id=$1`, id)
-	tx.Exec(ctx, `DELETE FROM periods WHERE id=$1`, id)
-	if err := tx.Commit(ctx); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+	if _, err := s.pool.Exec(ctx, `DELETE FROM periods WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "delete failed")
 		return
 	}
 	s.auditLog(ctx, "period.delete", "period", id, map[string]any{"year": year, "month": month})

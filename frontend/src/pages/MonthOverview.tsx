@@ -43,7 +43,7 @@ export default function MonthOverview() {
 
   const closePeriod = useClosePeriod(periodId ?? 0)
   const reopenPeriod = useReopenPeriod(periodId ?? 0)
-  const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0)
+  const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0, y)
   const deletePeriod = useDeletePeriod(periodId ?? 0, y)
   const createIncome = useCreateIncome(periodId ?? 0)
   const updateIncome = useUpdateIncome(periodId ?? 0)
@@ -123,7 +123,7 @@ export default function MonthOverview() {
               <Table.Tr key={inc.id}>
                 <Table.Td>
                   <Text size="sm" c={inc.entryType === 'carryover' ? 'dimmed' : undefined}>
-                    {inc.label ?? `Bron #${inc.sourceId}`}
+                    {inc.label ?? t('month.unknownSource', { id: inc.sourceId })}
                     {inc.entryType === 'carryover' && <Badge size="xs" ml="xs" color="gray">{t('month.carryoverBadge')}</Badge>}
                   </Text>
                 </Table.Td>
@@ -140,7 +140,7 @@ export default function MonthOverview() {
                         hideControls
                         onBlur={(e) => {
                           const raw = e.target.value.replace('€ ', '').replace(/\./g, '').replace(',', '.')
-                          const newCents = Math.round(parseFloat(raw) * 100) || 0
+                          const newCents = parseCents(raw)
                           if (newCents !== inc.amountCents)
                             updateIncome.mutate({ id: inc.id, amountCents: newCents, notes: inc.notes, sortOrder: inc.sortOrder, label: inc.label })
                         }}
@@ -209,7 +209,7 @@ export default function MonthOverview() {
                       title={t('month.toggleTracking')}
                       onClick={() => updateBudgetLine.mutate({
                         id: bl.id,
-                        label: bl.label ?? '',
+                        label: bl.label ?? null,
                         amountCents: bl.amountCents,
                         tracksTransactions: !bl.tracksTransactions,
                         sortOrder: bl.sortOrder,

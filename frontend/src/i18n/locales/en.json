@@ -48,7 +48,8 @@
     "deleteTitle": "Delete month",
     "deleteWarning": "This permanently deletes {{month}} {{year}} and all associated income, expenses and transactions.",
     "deletePasswordLabel": "Password to confirm",
-    "deleteConfirm": "Delete permanently"
+    "deleteConfirm": "Delete permanently",
+    "unknownSource": "Source #{{id}}"
   },
   "pots": {
     "title": "Savings Pots",

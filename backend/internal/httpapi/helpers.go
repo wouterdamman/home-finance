@@ -9,8 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/TheIronRock95/home-finance/internal/auth"
 )
 
 func (s *Server) upsertUserCtx(ctx context.Context, sub, email, name string) (int64, error) {
@@ -41,9 +39,7 @@ func pathInt64(r *http.Request, key string) (int64, bool) {
 }
 
 func (s *Server) auditLog(ctx context.Context, action, entityType string, entityID int64, details any) {
-	userID, _ := auth.UserIDFromCtx(ctx)
-	var email string
-	s.pool.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, userID).Scan(&email)
+	email, _ := s.sm.Get(ctx, "userEmail").(string)
 	var detJSON []byte
 	if details != nil {
 		detJSON, _ = json.Marshal(details)

@@ -87,12 +87,19 @@ func (s *Server) handleReorderCategories(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ctx := r.Context()
-	tx, _ := s.pool.Begin(ctx)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "could not start transaction")
+		return
+	}
 	defer tx.Rollback(ctx)
 	for i, cid := range body.IDs {
 		tx.Exec(ctx, `UPDATE categories SET sort_order=$2 WHERE id=$1`, cid, i)
 	}
-	tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

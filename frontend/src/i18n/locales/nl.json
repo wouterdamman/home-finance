@@ -48,7 +48,8 @@
     "deleteTitle": "Maand verwijderen",
     "deleteWarning": "Dit verwijdert {{month}} {{year}} en alle bijbehorende inkomsten, uitgaven en transacties permanent.",
     "deletePasswordLabel": "Wachtwoord ter bevestiging",
-    "deleteConfirm": "Definitief verwijderen"
+    "deleteConfirm": "Definitief verwijderen",
+    "unknownSource": "Bron #{{id}}"
   },
   "pots": {
     "title": "Spaarpotjes",
