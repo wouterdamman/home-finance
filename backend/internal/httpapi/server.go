@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
@@ -21,13 +23,26 @@ type Server struct {
 
 func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, oidcProvider *auth.Provider) http.Handler {
 	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider}
+	passwordLimiter := newPasswordRateLimiter()
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(sm.LoadAndSave)
 
+	// healthz is pure liveness (process alive) — no DB check, so a flaky DB
+	// doesn't cause k8s to kill and restart an otherwise-healthy pod.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
-	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	// readyz is readiness — pings the pool so k8s stops routing traffic here
+	// when the DB is unreachable, without restarting the pod.
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := pool.Ping(ctx); err != nil {
+			Error(w, http.StatusServiceUnavailable, "db_unreachable", err.Error())
+			return
+		}
+		w.WriteHeader(200)
+	})
 
 	r.Get("/auth/login", s.handleAuthLogin)
 	r.Get("/auth/callback", s.handleAuthCallback)
@@ -46,7 +61,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/periods/{id}/overview", s.handleGetPeriodOverview)
 			r.Post("/periods/{id}/close", s.handleClosePeriod)
 			r.Post("/periods/{id}/reopen", s.handleReopenPeriod)
-			r.Delete("/periods/{id}", s.handleDeletePeriod)
+			r.With(passwordLimiter.middleware).Delete("/periods/{id}", s.handleDeletePeriod)
 
 			// Audit log
 			r.Get("/audit-log", s.handleListAuditLog)
@@ -94,8 +109,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 
 			// Year summary
 			r.Get("/years/{year}/summary", s.handleYearSummary)
-			r.Post("/years/{year}/lock", s.handleLockYear)
-			r.Post("/years/{year}/unlock", s.handleUnlockYear)
+			r.With(passwordLimiter.middleware).Post("/years/{year}/lock", s.handleLockYear)
+			r.With(passwordLimiter.middleware).Post("/years/{year}/unlock", s.handleUnlockYear)
 		})
 	})
 

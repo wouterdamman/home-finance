@@ -96,7 +96,7 @@ export function useArchiveIncomeSource() {
 
 export function usePots() {
   return useQuery<Pot[]>({
-    queryKey: ['pots-list'],
+    queryKey: ['pots'],
     queryFn: () => api.get<Pot[]>('/api/pots'),
   })
 }
@@ -106,7 +106,7 @@ export function useCreatePot() {
   return useMutation({
     mutationFn: (body: { name: string; kind: string; sortOrder: number }) =>
       api.post('/api/pots', body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pots-list'] }); qc.invalidateQueries({ queryKey: ['pots'] }) },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
   })
 }
 
@@ -115,7 +115,7 @@ export function useUpdatePot() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number; name: string; kind: string; sortOrder: number }) =>
       api.put(`/api/pots/${id}`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pots-list'] }); qc.invalidateQueries({ queryKey: ['pots'] }) },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
   })
 }
 
@@ -123,6 +123,6 @@ export function useArchivePot() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/pots/${id}/archive`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pots-list'] }); qc.invalidateQueries({ queryKey: ['pots'] }) },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
   })
 }

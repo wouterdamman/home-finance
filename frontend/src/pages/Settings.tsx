@@ -7,6 +7,11 @@ import {
   useIncomeSources, useCreateIncomeSource, useUpdateIncomeSource, useArchiveIncomeSource,
   usePots, useCreatePot, useUpdatePot, useArchivePot,
 } from '../api/hooks/useSettings'
+import { parseToCents } from '../lib/money'
+
+function amountToCents(v: number | string): number {
+  return parseToCents(String(v)) ?? 0
+}
 
 export default function Settings() {
   const { t } = useTranslation()
@@ -53,7 +58,7 @@ function CategoriesTab() {
 
   const saveEdit = () => {
     if (!editing) return
-    update.mutate({ id: editing, name: editName, defaultAmountCents: Math.round(Number(editAmount) * 100), isItemized: editItemized, includeInTemplate: editTemplate }, {
+    update.mutate({ id: editing, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate }, {
       onSuccess: () => setEditing(null)
     })
   }
@@ -113,7 +118,7 @@ function CategoriesTab() {
         <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
         <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
         <Button size="sm" disabled={!newName} loading={create.isPending} onClick={() => {
-          create.mutate({ name: newName, defaultAmountCents: Math.round(Number(newAmount) * 100), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+          create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
             onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true) }
           })
         }}>{t('common.add')}</Button>
@@ -159,7 +164,7 @@ function SourcesTab() {
                     <Table.Td ta="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: Math.round(Number(editAmount) * 100), includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
+                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: amountToCents(editAmount), includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
                         <Button size="xs" variant="subtle" onClick={() => setEditing(null)}>✕</Button>
                       </Group>
                     </Table.Td>
@@ -187,7 +192,7 @@ function SourcesTab() {
         <NumberInput placeholder={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls size="sm" w={140} />
         <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
         <Button size="sm" disabled={!newName} loading={create.isPending} onClick={() => {
-          create.mutate({ name: newName, defaultAmountCents: Math.round(Number(newAmount) * 100), includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+          create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
             onSuccess: () => { setNewName(''); setNewAmount(''); setNewTemplate(true) }
           })
         }}>{t('common.add')}</Button>

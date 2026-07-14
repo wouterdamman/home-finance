@@ -31,3 +31,9 @@ export const api = {
   delete_body: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'DELETE', body: JSON.stringify(body) }),
 }
+
+// request() sets Error.message from the server's error body already, so
+// callers never need to reach into err.body.error.message themselves.
+export function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}

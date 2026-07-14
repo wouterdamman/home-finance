@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Title, Text, Group, Button, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput, Modal, PasswordInput,
+  NumberInput, ActionIcon, Stack, Paper, TextInput,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
@@ -11,13 +11,15 @@ import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useU
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
 import MoneyText from '../components/MoneyText'
+import PasswordModal from '../components/PasswordModal'
+import { parseToCents } from '../lib/money'
+import { getErrorMessage } from '../api/client'
 
 const MONTH_NL = ['','Januari','Februari','Maart','April','Mei','Juni','Juli','Augustus','September','Oktober','November','December']
 const MONTH_EN = ['','January','February','March','April','May','June','July','August','September','October','November','December']
 
 function parseCents(v: number | string): number {
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'))
-  return Math.round((n || 0) * 100)
+  return parseToCents(String(v)) ?? 0
 }
 
 export default function MonthOverview() {
@@ -39,10 +41,9 @@ export default function MonthOverview() {
   const [newLabel, setNewLabel] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deletePassword, setDeletePassword] = useState('')
 
-  const closePeriod = useClosePeriod(periodId ?? 0)
-  const reopenPeriod = useReopenPeriod(periodId ?? 0)
+  const closePeriod = useClosePeriod(periodId ?? 0, y, m)
+  const reopenPeriod = useReopenPeriod(periodId ?? 0, y, m)
   const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0, y)
   const deletePeriod = useDeletePeriod(periodId ?? 0, y)
   const createIncome = useCreateIncome(periodId ?? 0)
@@ -139,8 +140,7 @@ export default function MonthOverview() {
                         prefix="€ "
                         hideControls
                         onBlur={(e) => {
-                          const raw = e.target.value.replace('€ ', '').replace(/\./g, '').replace(',', '.')
-                          const newCents = parseCents(raw)
+                          const newCents = parseCents(e.target.value)
                           if (newCents !== inc.amountCents)
                             updateIncome.mutate({ id: inc.id, amountCents: newCents, notes: inc.notes, sortOrder: inc.sortOrder, label: inc.label })
                         }}
@@ -149,7 +149,7 @@ export default function MonthOverview() {
                 </Table.Td>
                 {!isClosed && inc.entryType !== 'carryover' && (
                   <Table.Td w={40}>
-                    <ActionIcon color="red" size="sm" variant="subtle" onClick={() => deleteIncome.mutate(inc.id)}>✕</ActionIcon>
+                    <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteIncome.mutate(inc.id)}>✕</ActionIcon>
                   </Table.Td>
                 )}
               </Table.Tr>
@@ -165,7 +165,7 @@ export default function MonthOverview() {
                   <NumberInput size="xs" value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls placeholder="0,00" />
                 </Table.Td>
                 <Table.Td>
-                  <Button size="xs" disabled={!newLabel} loading={createIncome.isPending} onClick={() => {
+                  <Button size="xs" aria-label={t('common.add')} disabled={!newLabel} loading={createIncome.isPending} onClick={() => {
                     createIncome.mutate({ label: newLabel, amountCents: parseCents(newAmount), notes: '', sortOrder: incomes.length }, {
                       onSuccess: () => { setNewLabel(''); setNewAmount('') }
                     })
@@ -207,6 +207,7 @@ export default function MonthOverview() {
                       variant={bl.tracksTransactions ? 'filled' : 'subtle'}
                       color={bl.tracksTransactions ? 'blue' : 'gray'}
                       title={t('month.toggleTracking')}
+                      aria-label={t('month.toggleTracking')}
                       onClick={() => updateBudgetLine.mutate({
                         id: bl.id,
                         label: bl.label ?? null,
@@ -264,7 +265,7 @@ export default function MonthOverview() {
             {splits.map(sp => (
               <Table.Tr key={sp.potId}>
                 <Table.Td>
-                  <Text component={Link} to={`/pots/${sp.potId}`} c="blue" size="sm">{sp.potName}</Text>
+                  <Text size="sm">{sp.potName}</Text>
                 </Table.Td>
                 <Table.Td ta="right" w={120}>
                   {splitEdits
@@ -289,36 +290,27 @@ export default function MonthOverview() {
           </Table.Tbody>
         </Table>
       </Paper>
-      <Modal opened={deleteOpen} onClose={() => { setDeleteOpen(false); setDeletePassword('') }} title={t('month.deleteTitle')}>
-        <Stack gap="md">
-          <Text size="sm" c="red">{t('month.deleteWarning', { month: monthName, year: y })}</Text>
-          <PasswordInput
-            label={t('month.deletePasswordLabel')}
-            value={deletePassword}
-            onChange={e => setDeletePassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleDelete()}
-          />
-          <Group justify="flex-end">
-            <Button variant="subtle" onClick={() => { setDeleteOpen(false); setDeletePassword('') }}>{t('common.cancel')}</Button>
-            <Button color="red" loading={deletePeriod.isPending} disabled={!deletePassword} onClick={handleDelete}>
-              {t('month.deleteConfirm')}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <PasswordModal
+        opened={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title={t('month.deleteTitle')}
+        warningText={t('month.deleteWarning', { month: monthName, year: y })}
+        confirmLabel={t('month.deleteConfirm')}
+        confirmColor="red"
+        loading={deletePeriod.isPending}
+        onConfirm={handleDelete}
+      />
     </Stack>
   )
 
-  function handleDelete() {
-    deletePeriod.mutate(deletePassword, {
+  function handleDelete(password: string) {
+    deletePeriod.mutate(password, {
       onSuccess: () => {
         setDeleteOpen(false)
-        setDeletePassword('')
         navigate(`/years/${y}`)
       },
       onError: (err: unknown) => {
-        const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
-        notifications.show({ color: 'red', title: t('common.error'), message: msg })
+        notifications.show({ color: 'red', title: t('common.error'), message: getErrorMessage(err, t('common.error')) })
       },
     })
   }

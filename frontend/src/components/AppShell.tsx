@@ -12,6 +12,12 @@ export default function AppShell() {
   const navigate = useNavigate()
   const { colorScheme, setColorScheme } = useMantineColorScheme()
 
+  const handleLogout = () => {
+    fetch('/auth/logout', { method: 'POST' })
+      .then(() => navigate('/login'))
+      .catch(() => navigate('/login'))
+  }
+
   return (
     <MantineAppShell header={{ height: 56 }} navbar={{ width: 220, breakpoint: 'sm' }} padding="md">
       <MantineAppShell.Header>
@@ -22,21 +28,23 @@ export default function AppShell() {
               size="xs"
               value={colorScheme}
               onChange={(v) => setColorScheme(v as 'light' | 'dark' | 'auto')}
+              aria-label={t('common.theme')}
               data={[
-                { label: '☀️', value: 'light' },
-                { label: '🌙', value: 'dark' },
-                { label: '⚙️', value: 'auto' },
+                { label: <span title={t('common.themeLight')} aria-label={t('common.themeLight')}>☀️</span>, value: 'light' },
+                { label: <span title={t('common.themeDark')} aria-label={t('common.themeDark')}>🌙</span>, value: 'dark' },
+                { label: <span title={t('common.themeAuto')} aria-label={t('common.themeAuto')}>⚙️</span>, value: 'auto' },
               ]}
             />
             <Select
               size="xs"
+              aria-label={t('common.language')}
               data={['nl', 'en']}
               value={i18n.language.startsWith('nl') ? 'nl' : 'en'}
               onChange={(v) => v && i18n.changeLanguage(v)}
               w={70}
             />
             {user && (
-              <ActionIcon variant="subtle" onClick={() => fetch('/auth/logout', { method: 'POST' }).then(() => navigate('/login'))}>
+              <ActionIcon variant="subtle" aria-label={t('auth.signOut')} title={t('auth.signOut')} onClick={handleLogout}>
                 <Text size="xs">{user.displayName || user.email}</Text>
               </ActionIcon>
             )}

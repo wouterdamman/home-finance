@@ -4,17 +4,19 @@ import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
   NumberInput, ActionIcon, Stack, TextInput, Button,
 } from '@mantine/core'
+import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
 import MoneyText from '../components/MoneyText'
+import { parseToCents } from '../lib/money'
 
 function parseCents(v: number | string): number {
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'))
-  return Math.round((n || 0) * 100)
+  return parseToCents(String(v)) ?? 0
 }
 
 export default function MonthTransactions() {
   const { year, month } = useParams<{ year: string; month: string }>()
+  const { t } = useTranslation()
   const y = Number(year)
   const m = Number(month)
 
@@ -26,7 +28,11 @@ export default function MonthTransactions() {
   const overview = overviewQuery.data
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={400} />
-  if (!overview || !periodId) return <Alert color="yellow">Maand niet gevonden. <Link to={`/years/${y}`}>Terug</Link></Alert>
+  if (!overview || !periodId) return (
+    <Alert color="yellow">
+      {t('month.notFound')} <Text component={Link} to={`/years/${y}`} c="blue">{t('common.back')}</Text>
+    </Alert>
+  )
 
   const isClosed = overview.period.status === 'closed'
   const itemizedLines = overview.budgetLines.filter(bl => bl.tracksTransactions)
@@ -35,8 +41,8 @@ export default function MonthTransactions() {
   return (
     <Stack gap="md">
       <Group>
-        <Text component={Link} to={`/months/${y}/${m}`} c="blue" size="sm">← Maandoverzicht</Text>
-        <Title order={2}>Transacties — {m}/{y}</Title>
+        <Text component={Link} to={`/months/${y}/${m}`} c="blue" size="sm">← {t('month.overviewLink')}</Text>
+        <Title order={2}>{t('month.transactionsTitle', { month: m, year: y })}</Title>
       </Group>
 
       <Tabs defaultValue={String(defaultCatId)} keepMounted={false}>
@@ -66,6 +72,7 @@ export default function MonthTransactions() {
 }
 
 function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; categoryId: number; isClosed: boolean }) {
+  const { t } = useTranslation()
   const { data: txs, isLoading } = useTransactions(periodId, categoryId)
   const createTx = useCreateTransaction(periodId)
   const deleteTx = useDeleteTransaction(periodId)
@@ -74,7 +81,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const [amount, setAmount] = useState<number | string>('')
   const amountRef = useRef<HTMLInputElement>(null)
 
-  const total = (txs ?? []).reduce((sum, t) => sum + t.amountCents, 0)
+  const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
 
   const handleAdd = () => {
     const cents = parseCents(amount)
@@ -91,7 +98,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
       {!isClosed && (
         <Group gap="xs" align="flex-end">
           <TextInput
-            placeholder="Omschrijving"
+            placeholder={t('common.description')}
             value={desc}
             onChange={e => setDesc(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') amountRef.current?.focus() }}
@@ -109,15 +116,15 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
             w={140}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
           />
-          <Button onClick={handleAdd} loading={createTx.isPending}>+</Button>
+          <Button aria-label={t('common.add')} onClick={handleAdd} loading={createTx.isPending}>+</Button>
         </Group>
       )}
 
       <Table>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Omschrijving</Table.Th>
-            <Table.Th ta="right">Bedrag</Table.Th>
+            <Table.Th>{t('common.description')}</Table.Th>
+            <Table.Th ta="right">{t('common.amount')}</Table.Th>
             {!isClosed && <Table.Th w={40} />}
           </Table.Tr>
         </Table.Thead>
@@ -128,7 +135,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
               <Table.Td ta="right"><MoneyText cents={tx.amountCents} /></Table.Td>
               {!isClosed && (
                 <Table.Td>
-                  <ActionIcon color="red" size="sm" variant="subtle" onClick={() => deleteTx.mutate(tx.id)}>✕</ActionIcon>
+                  <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}>✕</ActionIcon>
                 </Table.Td>
               )}
             </Table.Tr>
@@ -136,7 +143,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
         </Table.Tbody>
         <Table.Tfoot>
           <Table.Tr fw={700}>
-            <Table.Td>Totaal</Table.Td>
+            <Table.Td>{t('common.total')}</Table.Td>
             <Table.Td ta="right"><MoneyText cents={total} /></Table.Td>
           </Table.Tr>
         </Table.Tfoot>

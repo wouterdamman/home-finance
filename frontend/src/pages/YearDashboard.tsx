@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, Modal, PasswordInput } from '@mantine/core'
+import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear } from '../api/hooks/usePeriods'
 import MoneyText from '../components/MoneyText'
+import PasswordModal from '../components/PasswordModal'
+import { getErrorMessage } from '../api/client'
 
 const MONTHS_NL = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -21,7 +23,6 @@ export default function YearDashboard() {
 
   const [lockModalOpen, setLockModalOpen] = useState(false)
   const [unlockModalOpen, setUnlockModalOpen] = useState(false)
-  const [password, setPassword] = useState('')
 
   if (isLoading) return <Skeleton h={400} />
   if (error) return <Alert color="red">{t('common.error')}</Alert>
@@ -29,17 +30,17 @@ export default function YearDashboard() {
 
   const isLocked = data.locked
 
-  const handleLock = () => {
+  const handleLock = (password: string) => {
     lockYear.mutate(password, {
-      onSuccess: () => { setLockModalOpen(false); setPassword('') },
-      onError: (e: any) => notifications.show({ color: 'red', message: e?.error?.message ?? t('common.error') }),
+      onSuccess: () => setLockModalOpen(false),
+      onError: (e: unknown) => notifications.show({ color: 'red', message: getErrorMessage(e, t('common.error')) }),
     })
   }
 
-  const handleUnlock = () => {
+  const handleUnlock = (password: string) => {
     unlockYear.mutate(password, {
-      onSuccess: () => { setUnlockModalOpen(false); setPassword('') },
-      onError: (e: any) => notifications.show({ color: 'red', message: e?.error?.message ?? t('common.error') }),
+      onSuccess: () => setUnlockModalOpen(false),
+      onError: (e: unknown) => notifications.show({ color: 'red', message: getErrorMessage(e, t('common.error')) }),
     })
   }
 
@@ -51,11 +52,11 @@ export default function YearDashboard() {
           {isLocked && <Badge color="red">{t('year.locked')}</Badge>}
         </Group>
         {isLocked ? (
-          <Button size="xs" color="orange" variant="subtle" onClick={() => { setPassword(''); setUnlockModalOpen(true) }}>
+          <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
             {t('year.unlockAction')}
           </Button>
         ) : (
-          <Button size="xs" color="red" variant="subtle" onClick={() => { setPassword(''); setLockModalOpen(true) }}>
+          <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
             {t('year.lockAction')}
           </Button>
         )}
@@ -115,37 +116,27 @@ export default function YearDashboard() {
         </Table.Tbody>
       </Table>
 
-      <Modal opened={lockModalOpen} onClose={() => setLockModalOpen(false)} title={t('year.lockTitle')}>
-        <Text size="sm" mb="md">{t('year.lockWarning', { year: y })}</Text>
-        <PasswordInput
-          label={t('year.passwordLabel')}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          mb="md"
-        />
-        <Group justify="flex-end">
-          <Button variant="subtle" onClick={() => setLockModalOpen(false)}>{t('common.cancel')}</Button>
-          <Button color="red" loading={lockYear.isPending} onClick={handleLock} disabled={!password}>
-            {t('year.lockConfirm')}
-          </Button>
-        </Group>
-      </Modal>
+      <PasswordModal
+        opened={lockModalOpen}
+        onClose={() => setLockModalOpen(false)}
+        title={t('year.lockTitle')}
+        warningText={t('year.lockWarning', { year: y })}
+        confirmLabel={t('year.lockConfirm')}
+        confirmColor="red"
+        loading={lockYear.isPending}
+        onConfirm={handleLock}
+      />
 
-      <Modal opened={unlockModalOpen} onClose={() => setUnlockModalOpen(false)} title={t('year.unlockTitle')}>
-        <Text size="sm" mb="md">{t('year.unlockWarning', { year: y })}</Text>
-        <PasswordInput
-          label={t('year.passwordLabel')}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          mb="md"
-        />
-        <Group justify="flex-end">
-          <Button variant="subtle" onClick={() => setUnlockModalOpen(false)}>{t('common.cancel')}</Button>
-          <Button color="orange" loading={unlockYear.isPending} onClick={handleUnlock} disabled={!password}>
-            {t('year.unlockConfirm')}
-          </Button>
-        </Group>
-      </Modal>
+      <PasswordModal
+        opened={unlockModalOpen}
+        onClose={() => setUnlockModalOpen(false)}
+        title={t('year.unlockTitle')}
+        warningText={t('year.unlockWarning', { year: y })}
+        confirmLabel={t('year.unlockConfirm')}
+        confirmColor="orange"
+        loading={unlockYear.isPending}
+        onConfirm={handleUnlock}
+      />
     </>
   )
 }

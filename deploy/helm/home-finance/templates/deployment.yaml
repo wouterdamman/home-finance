@@ -37,11 +37,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.oidc.existingSecret }}
                   key: {{ .Values.oidc.clientSecretKey }}
-            - name: SESSION_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.oidc.existingSecret }}
-                  key: {{ .Values.oidc.sessionKeyKey }}
             {{- range $key, $val := .Values.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}

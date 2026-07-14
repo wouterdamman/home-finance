@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/caarlos0/env/v11"
 )
 
@@ -10,7 +12,6 @@ type Config struct {
 	OIDCClientID     string   `env:"OIDC_CLIENT_ID"`
 	OIDCClientSecret string   `env:"OIDC_CLIENT_SECRET"`
 	OIDCRedirectURL  string   `env:"OIDC_REDIRECT_URL"`
-	SessionKey       string   `env:"SESSION_KEY,required"`
 	Port             string   `env:"PORT"          envDefault:"8080"`
 	Env              string   `env:"ENV"           envDefault:"development"`
 	AutoMigrate      bool     `env:"AUTO_MIGRATE"  envDefault:"false"`
@@ -23,5 +24,11 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{}
-	return cfg, env.Parse(cfg)
+	if err := env.Parse(cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Env == "production" && cfg.DevFakeAuth {
+		return nil, fmt.Errorf("DEV_FAKE_AUTH must not be enabled when ENV=production")
+	}
+	return cfg, nil
 }

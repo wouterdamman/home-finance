@@ -60,7 +60,6 @@ make import ARGS="--xlsx /path/to/Fam_Finance_2026.xlsx --year 2026 --wipe --clo
 | `OIDC_CLIENT_ID` | — | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | — | OIDC client secret |
 | `OIDC_REDIRECT_URL` | — | OAuth callback URL |
-| `SESSION_KEY` | — | 32-byte session signing key |
 | `ALLOWED_EMAILS` | — | Comma-separated allowlist (empty = all) |
 | `STATIC_DIR` | — | Path to frontend dist (empty = no SPA serving) |
 
@@ -96,7 +95,7 @@ GET  /api/audit-log
 
 ## Releasing
 
-Push a `v*` tag → GitHub Actions builds a multi-arch image, pushes to `ghcr.io/theironrock95/home-finance`, creates a GitHub release, and bumps the Helm chart version on `main`.
+Push a `v*` tag → GitHub Actions builds a multi-arch image, pushes to `ghcr.io/wouterdamman/home-finance`, creates a GitHub release, and bumps the Helm chart version on `main`.
 
 ```bash
 git tag v1.0.0
@@ -116,7 +115,7 @@ helm upgrade --install home-finance deploy/helm/home-finance \
 
 # One-off Excel import
 kubectl run importer --rm -it --restart=Never \
-  --image=ghcr.io/theironrock95/home-finance:latest \
+  --image=ghcr.io/wouterdamman/home-finance:latest \
   --env="DATABASE_URL=$(kubectl get secret home-finance-pg-app -o jsonpath='{.data.uri}' | base64 -d)" \
   -- /app/importer --xlsx /tmp/Finance.xlsx --year 2026 --wipe --close-through 6
 ```

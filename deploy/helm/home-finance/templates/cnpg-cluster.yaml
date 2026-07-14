@@ -13,3 +13,19 @@ spec:
     initdb:
       database: {{ .Values.postgres.databaseName }}
       owner: {{ .Values.postgres.ownerName }}
+{{- if .Values.postgres.backup.enabled }}
+  backup:
+    retentionPolicy: {{ .Values.postgres.backup.retentionPolicy | quote }}
+    barmanObjectStore:
+      destinationPath: {{ .Values.postgres.backup.destinationPath | quote }}
+      {{- if .Values.postgres.backup.endpointURL }}
+      endpointURL: {{ .Values.postgres.backup.endpointURL | quote }}
+      {{- end }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.postgres.backup.existingSecret }}
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ .Values.postgres.backup.existingSecret }}
+          key: ACCESS_SECRET_KEY
+{{- end }}

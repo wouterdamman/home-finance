@@ -36,13 +36,22 @@ export function useCreatePeriod() {
   })
 }
 
-export function useClosePeriod(periodId: number) {
+// Closing/reopening a December period can create or remove a carryover
+// entry in next January's period, so the following year's summary needs
+// invalidating too (not just the current one).
+function yearsTouchedByPeriodMutation(year: number, month: number): number[] {
+  return month === 12 ? [year, year + 1] : [year]
+}
+
+export function useClosePeriod(periodId: number, year: number, month: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => api.post(`/api/periods/${periodId}/close`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['period', periodId] })
-      qc.invalidateQueries({ queryKey: ['year-summary'] })
+      for (const y of yearsTouchedByPeriodMutation(year, month)) {
+        qc.invalidateQueries({ queryKey: ['year-summary', y] })
+      }
       qc.invalidateQueries({ queryKey: ['pots'] })
     },
   })
@@ -88,13 +97,15 @@ export function useUnlockYear(year: number) {
   })
 }
 
-export function useReopenPeriod(periodId: number) {
+export function useReopenPeriod(periodId: number, year: number, month: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => api.post(`/api/periods/${periodId}/reopen`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['period', periodId] })
-      qc.invalidateQueries({ queryKey: ['year-summary'] })
+      for (const y of yearsTouchedByPeriodMutation(year, month)) {
+        qc.invalidateQueries({ queryKey: ['year-summary', y] })
+      }
       qc.invalidateQueries({ queryKey: ['pots'] })
     },
   })

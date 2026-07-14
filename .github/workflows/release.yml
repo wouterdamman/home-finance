@@ -11,7 +11,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/theironrock95/home-finance
+  IMAGE: ghcr.io/wouterdamman/home-finance
 
 jobs:
   release-please:

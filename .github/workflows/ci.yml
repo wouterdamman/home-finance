@@ -72,3 +72,14 @@ jobs:
 
       - name: Build image
         run: docker build -f deploy/docker/Dockerfile -t home-finance:ci .
+
+      # Report-only for now (exit-code 0): surfaces CVEs in the Actions log
+      # without blocking merges. Flip exit-code to 1 once findings are
+      # triaged and you want new HIGH/CRITICAL CVEs to fail CI.
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: home-finance:ci
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          format: table

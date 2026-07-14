@@ -24,8 +24,7 @@
     "lockWarning": "{{year}} vergrendelen voorkomt het aanmaken van nieuwe maanden en het wijzigen van gegevens. Alle maanden moeten eerst afgesloten zijn.",
     "unlockWarning": "{{year}} ontgrendelen maakt bewerking weer mogelijk.",
     "lockConfirm": "Definitief vergrendelen",
-    "unlockConfirm": "Ontgrendelen",
-    "passwordLabel": "Wachtwoord ter bevestiging"
+    "unlockConfirm": "Ontgrendelen"
   },
   "month": {
     "income": "Inkomsten",
@@ -35,6 +34,9 @@
     "closeMonth": "Maand afsluiten",
     "reopenMonth": "Maand heropenen",
     "transactions": "Transacties",
+    "transactionsTitle": "Transacties — {{month}}/{{year}}",
+    "overviewLink": "Maandoverzicht",
+    "notFound": "Maand niet gevonden.",
     "addIncome": "Inkomst toevoegen",
     "addExpense": "Uitgave toevoegen",
     "totalIncome": "Totaal inkomsten",
@@ -57,7 +59,6 @@
     "delete": "Verwijderen",
     "deleteTitle": "Maand verwijderen",
     "deleteWarning": "Dit verwijdert {{month}} {{year}} en alle bijbehorende inkomsten, uitgaven en transacties permanent.",
-    "deletePasswordLabel": "Wachtwoord ter bevestiging",
     "deleteConfirm": "Definitief verwijderen",
     "unknownSource": "Bron #{{id}}"
   },
@@ -119,6 +120,13 @@
     "open": "Open",
     "closed": "Afgesloten",
     "description": "Omschrijving",
-    "amount": "Bedrag"
+    "amount": "Bedrag",
+    "back": "Terug",
+    "passwordLabel": "Wachtwoord ter bevestiging",
+    "theme": "Thema",
+    "themeLight": "Licht",
+    "themeDark": "Donker",
+    "themeAuto": "Systeem",
+    "language": "Taal"
   }
 }

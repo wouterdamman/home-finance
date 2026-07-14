@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/theironrock95/home-finance
+  repository: ghcr.io/wouterdamman/home-finance
   tag: 1.0.1
   pullPolicy: IfNotPresent
 
@@ -7,7 +7,10 @@ replicaCount: 1
 
 env:
   ENV: production
-  AUTO_MIGRATE: "true"
+  # Migrations run via the pre-install/pre-upgrade Job (migrate-job.yaml),
+  # not on every pod startup — avoids concurrent goose runs when
+  # replicaCount > 1 and gives migrations a clear pass/fail before rollout.
+  AUTO_MIGRATE: "false"
   PORT: "8080"
 
 oidc:
@@ -16,7 +19,6 @@ oidc:
   redirectURL: ""
   existingSecret: ""
   clientSecretKey: clientSecret
-  sessionKeyKey: sessionKey
 
 ingress:
   enabled: true
@@ -33,3 +35,13 @@ postgres:
   imageName: ghcr.io/cloudnative-pg/postgresql:16
   databaseName: homefinance
   ownerName: homefinance
+  # Scheduled backups via CNPG barmanObjectStore. Disabled by default — fill
+  # in an S3-compatible bucket + credentials secret to enable. Without this,
+  # a lost PVC means the family's financial data is unrecoverable.
+  backup:
+    enabled: false
+    schedule: "0 0 3 * * *" # daily at 03:00
+    retentionPolicy: "30d"
+    destinationPath: "s3://CHANGEME-bucket/home-finance-pg"
+    endpointURL: ""
+    existingSecret: "" # must provide ACCESS_KEY_ID / ACCESS_SECRET_KEY keys

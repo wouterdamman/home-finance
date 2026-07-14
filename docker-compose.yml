@@ -41,7 +41,6 @@ services:
       OIDC_CLIENT_ID: home-finance
       OIDC_CLIENT_SECRET: dev-secret
       OIDC_REDIRECT_URL: http://localhost:8080/auth/callback
-      SESSION_KEY: dev-session-key-change-in-production-32chars
       ENV: production
       AUTO_MIGRATE: "true"
       PORT: "8080"

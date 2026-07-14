@@ -375,10 +375,17 @@ func (s *Server) handleCreatePotEntry(w http.ResponseWriter, r *http.Request) {
 	if body.EntryType == "withdrawal" && body.AmountCents > 0 {
 		body.AmountCents = -body.AmountCents
 	}
+	if err := validateSignedAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var id int64
-	s.pool.QueryRow(r.Context(),
+	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO pot_ledger (pot_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		potID, body.EntryType, body.AmountCents, body.Description, body.EntryDate).Scan(&id)
+		potID, body.EntryType, body.AmountCents, body.Description, body.EntryDate).Scan(&id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	s.auditLog(r.Context(), "pot.entry", "pot", potID, map[string]any{"entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description})
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "potId": potID, "entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description, "entryDate": body.EntryDate})
 }

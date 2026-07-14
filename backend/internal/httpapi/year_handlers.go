@@ -26,7 +26,7 @@ func (s *Server) handleLockYear(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if s.cfg.DeletePassword == "" || body.Password != s.cfg.DeletePassword {
+		if !checkPassword(s.cfg.DeletePassword, body.Password) {
 			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
 			return
 		}
@@ -73,7 +73,7 @@ func (s *Server) handleUnlockYear(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if s.cfg.DeletePassword == "" || body.Password != s.cfg.DeletePassword {
+		if !checkPassword(s.cfg.DeletePassword, body.Password) {
 			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
 			return
 		}

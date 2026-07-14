@@ -141,7 +141,10 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"`
 	}
 	var o out
-	s.pool.QueryRow(ctx, `SELECT id,year,month,status FROM periods WHERE id=$1`, id).Scan(&o.ID, &o.Year, &o.Month, &o.Status)
+	if err := s.pool.QueryRow(ctx, `SELECT id,year,month,status FROM periods WHERE id=$1`, id).Scan(&o.ID, &o.Year, &o.Month, &o.Status); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	JSON(w, http.StatusCreated, o)
 }
 
@@ -181,12 +184,20 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 		Notes       string  `json:"notes"`
 		SortOrder   int     `json:"sortOrder"`
 	}
-	incRows, _ := s.pool.Query(ctx, `SELECT id,source_id,label,amount_cents,entry_type,notes,sort_order FROM income_entries WHERE period_id=$1 ORDER BY sort_order,id`, id)
+	incRows, err := s.pool.Query(ctx, `SELECT id,source_id,label,amount_cents,entry_type,notes,sort_order FROM income_entries WHERE period_id=$1 ORDER BY sort_order,id`, id)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	incomes := make([]income, 0)
 	var incomeTotal int64
 	for incRows.Next() {
 		var e income
-		incRows.Scan(&e.ID, &e.SourceID, &e.Label, &e.AmountCents, &e.EntryType, &e.Notes, &e.SortOrder)
+		if err := incRows.Scan(&e.ID, &e.SourceID, &e.Label, &e.AmountCents, &e.EntryType, &e.Notes, &e.SortOrder); err != nil {
+			incRows.Close()
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		incomeTotal += e.AmountCents
 		incomes = append(incomes, e)
 	}
@@ -202,15 +213,23 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 		EffectiveCents         int64   `json:"effectiveCents"`
 		SortOrder              int     `json:"sortOrder"`
 	}
-	blRows, _ := s.pool.Query(ctx, `
+	blRows, err := s.pool.Query(ctx, `
 		SELECT bl.id, bl.category_id, bl.label, bl.amount_cents, bl.tracks_transactions, bl.sort_order,
 		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
 		FROM budget_lines bl WHERE bl.period_id=$1 ORDER BY bl.sort_order,bl.id`, id)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	lines := make([]budgetLine, 0)
 	var expenseTotal int64
 	for blRows.Next() {
 		var bl budgetLine
-		blRows.Scan(&bl.ID, &bl.CategoryID, &bl.Label, &bl.AmountCents, &bl.TracksTransactions, &bl.SortOrder, &bl.TransactionsTotalCents)
+		if err := blRows.Scan(&bl.ID, &bl.CategoryID, &bl.Label, &bl.AmountCents, &bl.TracksTransactions, &bl.SortOrder, &bl.TransactionsTotalCents); err != nil {
+			blRows.Close()
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if bl.TracksTransactions {
 			bl.EffectiveCents = bl.TransactionsTotalCents
 		} else {
@@ -230,17 +249,25 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 		Percentage     string `json:"percentage"`
 		ProjectedCents int64  `json:"projectedCents"`
 	}
-	spRows, _ := s.pool.Query(ctx, `
+	spRows, err := s.pool.Query(ctx, `
 		SELECT ps.pot_id, p.name, p.kind, ps.percentage
 		FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id
 		WHERE ps.period_id=$1 ORDER BY p.sort_order,p.id`, id)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	splits := make([]split, 0)
 	var splitPctTotal float64
 	var splitInputs []domain.PotSplitInput
 	for spRows.Next() {
 		var sp split
 		var pct float64
-		spRows.Scan(&sp.PotID, &sp.PotName, &sp.PotKind, &pct)
+		if err := spRows.Scan(&sp.PotID, &sp.PotName, &sp.PotKind, &pct); err != nil {
+			spRows.Close()
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		sp.Percentage = strconv.FormatFloat(pct, 'f', 2, 64)
 		splitPctTotal += pct
 		splitInputs = append(splitInputs, domain.PotSplitInput{PotID: sp.PotID, Percentage: pct})
@@ -294,12 +321,18 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var incomeTotal, expenseTotal int64
-	tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, id).Scan(&incomeTotal)
-	tx.QueryRow(ctx, `
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, id).Scan(&incomeTotal); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if err := tx.QueryRow(ctx, `
 		SELECT COALESCE(SUM(CASE WHEN bl.tracks_transactions
 		  THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
 		  ELSE bl.amount_cents END),0)
-		FROM budget_lines bl WHERE bl.period_id=$1`, id).Scan(&expenseTotal)
+		FROM budget_lines bl WHERE bl.period_id=$1`, id).Scan(&expenseTotal); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	surplus := incomeTotal - expenseTotal
 
 	type splitRow struct {
@@ -307,14 +340,26 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		Pct   float64
 		Kind  string
 	}
-	spRows, _ := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, id)
+	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, id)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	var rawSplits []splitRow
 	for spRows.Next() {
 		var sr splitRow
-		spRows.Scan(&sr.PotID, &sr.Pct, &sr.Kind)
+		if err := spRows.Scan(&sr.PotID, &sr.Pct, &sr.Kind); err != nil {
+			spRows.Close()
+			Error(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
 		rawSplits = append(rawSplits, sr)
 	}
 	spRows.Close()
+	if err := spRows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 
 	inputs := make([]domain.PotSplitInput, len(rawSplits))
 	for i, sr := range rawSplits {
@@ -341,20 +386,32 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 				nextYear++
 			}
 			var nextPeriodID int64
-			tx.QueryRow(ctx, `INSERT INTO periods (year,month) VALUES ($1,$2) ON CONFLICT (year,month) DO UPDATE SET year=EXCLUDED.year RETURNING id`, nextYear, nextMonth).Scan(&nextPeriodID)
-			tx.Exec(ctx, `INSERT INTO pot_ledger (pot_id,period_id,source_period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,'carryover_out',$4,'Carryover out',$5)`,
-				a.PotID, nextPeriodID, id, -a.AmountCents, today)
+			if err := tx.QueryRow(ctx, `INSERT INTO periods (year,month) VALUES ($1,$2) ON CONFLICT (year,month) DO UPDATE SET year=EXCLUDED.year RETURNING id`, nextYear, nextMonth).Scan(&nextPeriodID); err != nil {
+				Error(w, http.StatusInternalServerError, "db_error", err.Error())
+				return
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO pot_ledger (pot_id,period_id,source_period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,'carryover_out',$4,'Carryover out',$5)`,
+				a.PotID, nextPeriodID, id, -a.AmountCents, today); err != nil {
+				Error(w, http.StatusInternalServerError, "db_error", err.Error())
+				return
+			}
 			months := []string{"", "Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"}
 			monthName := ""
 			if periodMonth >= 1 && periodMonth <= 12 {
 				monthName = months[periodMonth]
 			}
-			tx.Exec(ctx, `INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,source_period_id,notes,sort_order) VALUES ($1,NULL,$2,$3,'carryover',$4,'',0)`,
-				nextPeriodID, "Doorlopen maand "+monthName, a.AmountCents, id)
+			if _, err := tx.Exec(ctx, `INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,source_period_id,notes,sort_order) VALUES ($1,NULL,$2,$3,'carryover',$4,'',0)`,
+				nextPeriodID, "Doorlopen maand "+monthName, a.AmountCents, id); err != nil {
+				Error(w, http.StatusInternalServerError, "db_error", err.Error())
+				return
+			}
 		}
 	}
 
-	tx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, id)
+	if _, err := tx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -436,7 +493,7 @@ func (s *Server) handleDeletePeriod(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if s.cfg.DeletePassword == "" || body.Password != s.cfg.DeletePassword {
+		if !checkPassword(s.cfg.DeletePassword, body.Password) {
 			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
 			return
 		}
@@ -517,10 +574,17 @@ func (s *Server) handleCreateIncomeEntry(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var id int64
-	s.pool.QueryRow(r.Context(),
+	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order) VALUES ($1,$2,$3,$4,'normal',$5,$6) RETURNING id`,
-		periodID, body.SourceID, body.Label, body.AmountCents, body.Notes, body.SortOrder).Scan(&id)
+		periodID, body.SourceID, body.Label, body.AmountCents, body.Notes, body.SortOrder).Scan(&id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "sourceId": body.SourceID, "label": body.Label, "amountCents": body.AmountCents, "entryType": "normal", "notes": body.Notes, "sortOrder": body.SortOrder})
 }
 
@@ -540,12 +604,22 @@ func (s *Server) handleUpdateIncomeEntry(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var periodID int64
-	s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_entries WHERE id=$1`, id).Scan(&periodID)
+	if err := s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_entries WHERE id=$1`, id).Scan(&periodID); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "income entry not found")
+		return
+	}
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE income_entries SET label=$2,amount_cents=$3,notes=$4,sort_order=$5 WHERE id=$1`, id, body.Label, body.AmountCents, body.Notes, body.SortOrder)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE income_entries SET label=$2,amount_cents=$3,notes=$4,sort_order=$5 WHERE id=$1`, id, body.Label, body.AmountCents, body.Notes, body.SortOrder); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -586,10 +660,17 @@ func (s *Server) handleCreateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var id int64
-	s.pool.QueryRow(r.Context(),
+	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		periodID, body.CategoryID, body.Label, body.AmountCents, body.TracksTransactions, body.SortOrder).Scan(&id)
+		periodID, body.CategoryID, body.Label, body.AmountCents, body.TracksTransactions, body.SortOrder).Scan(&id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "categoryId": body.CategoryID, "label": body.Label, "amountCents": body.AmountCents, "tracksTransactions": body.TracksTransactions, "sortOrder": body.SortOrder})
 }
 
@@ -609,12 +690,22 @@ func (s *Server) handleUpdateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var periodID int64
-	s.pool.QueryRow(r.Context(), `SELECT period_id FROM budget_lines WHERE id=$1`, id).Scan(&periodID)
+	if err := s.pool.QueryRow(r.Context(), `SELECT period_id FROM budget_lines WHERE id=$1`, id).Scan(&periodID); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "budget line not found")
+		return
+	}
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE budget_lines SET label=$2,amount_cents=$3,tracks_transactions=$4,sort_order=$5 WHERE id=$1`, id, body.Label, body.AmountCents, body.TracksTransactions, body.SortOrder)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE budget_lines SET label=$2,amount_cents=$3,tracks_transactions=$4,sort_order=$5 WHERE id=$1`, id, body.Label, body.AmountCents, body.TracksTransactions, body.SortOrder); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -695,10 +786,17 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var id int64
-	s.pool.QueryRow(r.Context(),
+	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO transactions (period_id,category_id,amount_cents,description,tx_date) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		periodID, body.CategoryID, body.AmountCents, body.Description, body.TxDate).Scan(&id)
+		periodID, body.CategoryID, body.AmountCents, body.Description, body.TxDate).Scan(&id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "categoryId": body.CategoryID, "amountCents": body.AmountCents, "description": body.Description, "txDate": body.TxDate})
 }
 
@@ -717,12 +815,22 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var periodID int64
-	s.pool.QueryRow(r.Context(), `SELECT period_id FROM transactions WHERE id=$1`, id).Scan(&periodID)
+	if err := s.pool.QueryRow(r.Context(), `SELECT period_id FROM transactions WHERE id=$1`, id).Scan(&periodID); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "transaction not found")
+		return
+	}
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE transactions SET amount_cents=$2,description=$3,tx_date=$4 WHERE id=$1`, id, body.AmountCents, body.Description, body.TxDate)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE transactions SET amount_cents=$2,description=$3,tx_date=$4 WHERE id=$1`, id, body.AmountCents, body.Description, body.TxDate); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

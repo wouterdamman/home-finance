@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -10,6 +13,40 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// maxAmountCents caps a single money amount at 1,000,000.00 in the app's
+// currency — generous for a family budget, tight enough to catch fat-finger
+// or malicious input before it corrupts surplus/allocation math.
+const maxAmountCents = 100_000_000
+
+// checkPassword compares body against the configured password using a
+// timing-safe comparison. Empty configured password always fails.
+func checkPassword(configured, supplied string) bool {
+	if configured == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(configured), []byte(supplied)) == 1
+}
+
+// validateAmountCents rejects negative or unreasonably large amounts.
+func validateAmountCents(cents int64) error {
+	if cents < 0 {
+		return errors.New("amount must not be negative")
+	}
+	if cents > maxAmountCents {
+		return fmt.Errorf("amount exceeds maximum of %d cents", maxAmountCents)
+	}
+	return nil
+}
+
+// validateSignedAmountCents allows negative amounts (e.g. pot withdrawals)
+// but still bounds the magnitude.
+func validateSignedAmountCents(cents int64) error {
+	if cents > maxAmountCents || cents < -maxAmountCents {
+		return fmt.Errorf("amount exceeds maximum of %d cents", maxAmountCents)
+	}
+	return nil
+}
 
 func (s *Server) upsertUserCtx(ctx context.Context, sub, email, name string) (int64, error) {
 	var id int64

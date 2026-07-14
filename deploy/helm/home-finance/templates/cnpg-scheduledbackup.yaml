@@ -1,0 +1,13 @@
+{{- if .Values.postgres.backup.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.postgres.clusterName }}-backup
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-pg
+spec:
+  schedule: {{ .Values.postgres.backup.schedule | quote }}
+  backupOwnerReference: self
+  cluster:
+    name: {{ .Values.postgres.clusterName }}
+{{- end }}
