@@ -6,7 +6,7 @@ require (
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/coreos/go-oidc/v3 v3.19.0
-	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/pressly/goose/v3 v3.24.3
 	github.com/xuri/excelize/v2 v2.11.0
