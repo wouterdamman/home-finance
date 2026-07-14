@@ -34,7 +34,7 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -76,7 +76,7 @@ jobs:
     needs: [release-please, build-push]
     if: needs.release-please.outputs.release_created == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
 
