@@ -1,4 +1,8 @@
-issuer: http://localhost:5556/dex
+# dex.localhost (not plain "localhost") so both the browser (host machine)
+# and the containerized api service can reach Dex through the identical
+# issuer hostname: *.localhost is RFC 6761 loopback on the host side, and
+# it's a Docker network alias for the dex service on the container side.
+issuer: http://dex.localhost:5556/dex
 
 storage:
   type: memory

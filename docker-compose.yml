@@ -24,6 +24,12 @@ services:
       - "5556:5556"
     volumes:
       - ./deploy/dex/config.yaml:/etc/dex/config.yaml:ro
+    # dex.localhost alias so the api container reaches dex via the same
+    # hostname the browser uses (see deploy/dex/config.yaml for why).
+    networks:
+      default:
+        aliases:
+          - dex.localhost
     depends_on:
       db:
         condition: service_healthy
@@ -37,7 +43,7 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: postgres://homefinance:homefinance@db:5432/homefinance?sslmode=disable
-      OIDC_ISSUER_URL: http://dex:5556/dex
+      OIDC_ISSUER_URL: http://dex.localhost:5556/dex
       OIDC_CLIENT_ID: home-finance
       OIDC_CLIENT_SECRET: dev-secret
       OIDC_REDIRECT_URL: http://localhost:8080/auth/callback
