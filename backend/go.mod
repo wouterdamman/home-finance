@@ -1,6 +1,6 @@
 module github.com/wouterdamman/home-finance
 
-go 1.25.0
+go 1.25.7
 
 require (
 	github.com/alexedwards/scs/v2 v2.9.0
@@ -8,7 +8,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/pressly/goose/v3 v3.24.3
+	github.com/pressly/goose/v3 v3.27.2
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/time v0.15.0
