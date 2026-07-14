@@ -82,7 +82,7 @@ jobs:
       # without blocking merges. Flip exit-code to 1 once findings are
       # triaged and you want new HIGH/CRITICAL CVEs to fail CI.
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: home-finance:ci
           severity: CRITICAL,HIGH
