@@ -3,7 +3,7 @@ package domain_test
 import (
 	"testing"
 
-	"github.com/TheIronRock95/home-finance/internal/domain"
+	"github.com/wouterdamman/home-finance/internal/domain"
 )
 
 func sumAllocs(allocs []domain.SplitAllocation) int64 {

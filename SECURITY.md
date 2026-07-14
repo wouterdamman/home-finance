@@ -13,7 +13,7 @@ Only the latest release receives security fixes.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Report privately via [GitHub Security Advisories](https://github.com/TheIronRock95/home-finance/security/advisories/new).
+Report privately via [GitHub Security Advisories](https://github.com/wouterdamman/home-finance/security/advisories/new).
 
 Include:
 - Description of the vulnerability

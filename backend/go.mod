@@ -1,4 +1,4 @@
-module github.com/TheIronRock95/home-finance
+module github.com/wouterdamman/home-finance
 
 go 1.25.0
 

@@ -5,7 +5,7 @@ This is a personal family finance app. External contributions are welcome for bu
 ## Getting started
 
 ```bash
-git clone https://github.com/TheIronRock95/home-finance.git
+git clone https://github.com/wouterdamman/home-finance.git
 cd home-finance
 cp .env.example .env
 make dev

@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/TheIronRock95/home-finance/internal/auth"
-	"github.com/TheIronRock95/home-finance/internal/config"
+	"github.com/wouterdamman/home-finance/internal/auth"
+	"github.com/wouterdamman/home-finance/internal/config"
 )
 
 type Server struct {

@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/TheIronRock95/home-finance/internal/auth"
+	"github.com/wouterdamman/home-finance/internal/auth"
 )
 
 func sanitizeReturnTo(returnTo string) string {

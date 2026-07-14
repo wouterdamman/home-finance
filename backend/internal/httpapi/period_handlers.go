@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/TheIronRock95/home-finance/internal/domain"
+	"github.com/wouterdamman/home-finance/internal/domain"
 )
 
 // ── Periods ──────────────────────────────────────────────────────

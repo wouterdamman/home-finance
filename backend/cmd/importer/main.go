@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/TheIronRock95/home-finance/internal/importer"
+	"github.com/wouterdamman/home-finance/internal/importer"
 )
 
 func main() {

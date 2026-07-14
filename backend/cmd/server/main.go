@@ -10,11 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	migrations "github.com/TheIronRock95/home-finance/migrations"
-	"github.com/TheIronRock95/home-finance/internal/auth"
-	"github.com/TheIronRock95/home-finance/internal/config"
-	"github.com/TheIronRock95/home-finance/internal/httpapi"
-	"github.com/TheIronRock95/home-finance/internal/store"
+	migrations "github.com/wouterdamman/home-finance/migrations"
+	"github.com/wouterdamman/home-finance/internal/auth"
+	"github.com/wouterdamman/home-finance/internal/config"
+	"github.com/wouterdamman/home-finance/internal/httpapi"
+	"github.com/wouterdamman/home-finance/internal/store"
 )
 
 func main() {
