@@ -40,6 +40,11 @@ jobs:
       - name: Unit tests
         run: cd backend && go test ./...
 
+      # The integration-tagged tests need real schema — previously a no-op
+      # since no integration tests existed yet, so this gap was invisible.
+      - name: Run migrations
+        run: cd backend && go run ./cmd/server --migrate-only
+
       - name: Integration tests
         run: cd backend && go test -tags integration ./...
 
@@ -77,7 +82,7 @@ jobs:
       # without blocking merges. Flip exit-code to 1 once findings are
       # triaged and you want new HIGH/CRITICAL CVEs to fail CI.
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: home-finance:ci
           severity: CRITICAL,HIGH

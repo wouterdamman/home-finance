@@ -1,14 +1,18 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/wouterdamman/home-finance/internal/domain"
 )
+
+const pgUniqueViolation = "23505"
 
 // ── Periods ──────────────────────────────────────────────────────
 
@@ -100,7 +104,12 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 
 	var id int64
 	if err := tx.QueryRow(ctx, `INSERT INTO periods (year, month) VALUES ($1, $2) RETURNING id`, body.Year, body.Month).Scan(&id); err != nil {
-		Error(w, http.StatusConflict, "already_exists", "period already exists for that month")
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+			Error(w, http.StatusConflict, "already_exists", "period already exists for that month")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
 	if body.CopyFromPeriodID != nil {
