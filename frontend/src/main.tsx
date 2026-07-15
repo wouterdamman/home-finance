@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { MantineProvider } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
+import { ModalsProvider } from '@mantine/modals'
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
@@ -31,8 +32,10 @@ ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <MantineProvider defaultColorScheme="auto">
-        <Notifications />
-        <App />
+        <ModalsProvider>
+          <Notifications />
+          <App />
+        </ModalsProvider>
       </MantineProvider>
     </QueryClientProvider>
   </React.StrictMode>,
