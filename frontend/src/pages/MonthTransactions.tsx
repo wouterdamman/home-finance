@@ -4,9 +4,12 @@ import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
   NumberInput, ActionIcon, Stack, TextInput, Button,
 } from '@mantine/core'
+import { DateInput } from '@mantine/dates'
 import { useTranslation } from 'react-i18next'
+import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
+import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
 
@@ -26,6 +29,7 @@ export default function MonthTransactions() {
 
   const overviewQuery = useMonthOverview(periodId)
   const overview = overviewQuery.data
+  const { data: categories } = useCategories()
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={400} />
   if (!overview || !periodId) return (
@@ -37,6 +41,9 @@ export default function MonthTransactions() {
   const isClosed = overview.period.status === 'closed'
   const itemizedLines = overview.budgetLines.filter(bl => bl.tracksTransactions)
   const defaultCatId = itemizedLines[0]?.categoryId ?? 0
+  const categoryById = new Map((categories ?? []).map(c => [c.id, c.name] as const))
+  const budgetLineLabel = (bl: typeof itemizedLines[number]) =>
+    bl.label ?? (bl.categoryId != null ? categoryById.get(bl.categoryId) : undefined) ?? '—'
 
   return (
     <Stack gap="md">
@@ -49,7 +56,7 @@ export default function MonthTransactions() {
         <Tabs.List>
           {itemizedLines.map(bl => (
             <Tabs.Tab key={bl.categoryId} value={String(bl.categoryId)}>
-              {bl.label}
+              {budgetLineLabel(bl)}
               <Text span size="xs" c="dimmed" ml="xs">
                 (<MoneyText cents={bl.effectiveCents} />)
               </Text>
@@ -79,14 +86,16 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
 
   const [desc, setDesc] = useState('')
   const [amount, setAmount] = useState<number | string>('')
+  const [txDate, setTxDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
   const amountRef = useRef<HTMLInputElement>(null)
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
+  const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))
 
   const handleAdd = () => {
     const cents = parseCents(amount)
     if (!cents) return
-    createTx.mutate({ categoryId, amountCents: cents, description: desc }, {
+    createTx.mutate({ categoryId, amountCents: cents, description: desc, txDate: txDate ?? undefined }, {
       onSuccess: () => { setDesc(''); setAmount('') }
     })
   }
@@ -97,8 +106,15 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
     <Stack gap="sm">
       {!isClosed && (
         <Group gap="xs" align="flex-end">
+          <DateInput
+            value={txDate}
+            onChange={setTxDate}
+            valueFormat="DD-MM-YYYY"
+            label={t('common.date')}
+            w={140}
+          />
           <TextInput
-            placeholder={t('common.description')}
+            label={t('common.description')}
             value={desc}
             onChange={e => setDesc(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') amountRef.current?.focus() }}
@@ -106,6 +122,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
           />
           <NumberInput
             ref={amountRef}
+            label={t('common.amount')}
             placeholder="0,00"
             value={amount}
             onChange={setAmount}
@@ -123,14 +140,20 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
       <Table>
         <Table.Thead>
           <Table.Tr>
+            <Table.Th>{t('common.date')}</Table.Th>
             <Table.Th>{t('common.description')}</Table.Th>
             <Table.Th ta="right">{t('common.amount')}</Table.Th>
             {!isClosed && <Table.Th w={40} />}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {(txs ?? []).map(tx => (
+          {sortedTxs.map(tx => (
             <Table.Tr key={tx.id}>
+              <Table.Td>
+                <Text size="sm" c={tx.txDate ? undefined : 'dimmed'}>
+                  {tx.txDate ? dayjs(tx.txDate).format('DD-MM-YYYY') : '—'}
+                </Text>
+              </Table.Td>
               <Table.Td>{tx.description}</Table.Td>
               <Table.Td ta="right"><MoneyText cents={tx.amountCents} /></Table.Td>
               {!isClosed && (
@@ -143,6 +166,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
         </Table.Tbody>
         <Table.Tfoot>
           <Table.Tr fw={700}>
+            <Table.Td />
             <Table.Td>{t('common.total')}</Table.Td>
             <Table.Td ta="right"><MoneyText cents={total} /></Table.Td>
           </Table.Tr>

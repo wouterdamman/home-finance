@@ -69,6 +69,18 @@ export function useDeletePeriod(periodId: number, year: number) {
   })
 }
 
+export function useCreateBudgetLine(periodId: number, year: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { categoryId: number; amountCents: number; tracksTransactions: boolean; sortOrder: number }) =>
+      api.post(`/api/periods/${periodId}/budget-lines`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['year-summary', year] })
+    },
+  })
+}
+
 export function useUpdateBudgetLine(periodId: number, year: number) {
   const qc = useQueryClient()
   return useMutation({

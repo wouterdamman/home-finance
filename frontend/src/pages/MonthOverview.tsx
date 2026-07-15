@@ -2,14 +2,15 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Title, Text, Group, Button, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput,
+  NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
-import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
+import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
+import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { parseToCents } from '../lib/money'
@@ -40,16 +41,20 @@ export default function MonthOverview() {
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
+  const [newCategoryId, setNewCategoryId] = useState<string | null>(null)
+  const [newBudgetAmount, setNewBudgetAmount] = useState<number | string>('')
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const closePeriod = useClosePeriod(periodId ?? 0, y, m)
   const reopenPeriod = useReopenPeriod(periodId ?? 0, y, m)
   const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0, y)
+  const createBudgetLine = useCreateBudgetLine(periodId ?? 0, y)
   const deletePeriod = useDeletePeriod(periodId ?? 0, y)
   const createIncome = useCreateIncome(periodId ?? 0)
   const updateIncome = useUpdateIncome(periodId ?? 0)
   const deleteIncome = useDeleteIncome(periodId ?? 0)
   const replaceSplits = useReplaceSplits(periodId ?? 0)
+  const { data: categories } = useCategories()
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={600} mt="md" />
   if (summary.error || overviewQuery.error) return <Alert color="red">{t('common.error')}</Alert>
@@ -63,6 +68,23 @@ export default function MonthOverview() {
   const { period, incomes, incomeTotalCents, budgetLines, expenseTotalCents, surplusCents, splits } = overview
   const isClosed = period.status === 'closed'
   const monthName = monthNames[m]
+
+  const categoryById = new Map((categories ?? []).map(c => [c.id, c] as const))
+  const budgetLineLabel = (bl: typeof budgetLines[number]) =>
+    bl.label ?? (bl.categoryId != null ? categoryById.get(bl.categoryId)?.name : undefined) ?? '—'
+  const usedCategoryIds = new Set(budgetLines.map(bl => bl.categoryId).filter((id): id is number => id != null))
+  const availableCategories = (categories ?? []).filter(c => !c.archivedAt && !usedCategoryIds.has(c.id))
+
+  const handleAddBudgetLine = () => {
+    if (!newCategoryId) return
+    const cat = categoryById.get(Number(newCategoryId))
+    createBudgetLine.mutate({
+      categoryId: Number(newCategoryId),
+      amountCents: newBudgetAmount !== '' ? parseCents(newBudgetAmount) : (cat?.defaultAmountCents ?? 0),
+      tracksTransactions: cat?.isItemized ?? false,
+      sortOrder: budgetLines.length,
+    }, { onSuccess: () => { setNewCategoryId(null); setNewBudgetAmount('') } })
+  }
 
   const handleClose = () => modals.openConfirmModal({
     title: `${monthName} ${y} ${t('month.closeAction').toLowerCase()}`,
@@ -186,18 +208,30 @@ export default function MonthOverview() {
         <Title order={4} mb="sm">{t('month.expenses')}</Title>
         <Table>
           <Table.Tbody>
-            {budgetLines.map(bl => (
+            {budgetLines.map(bl => {
+              const budgeted = bl.tracksTransactions && bl.amountCents > 0
+              const pct = budgeted ? (bl.effectiveCents / bl.amountCents) * 100 : 0
+              const progressColor = pct > 100 ? 'red' : pct >= 80 ? 'orange' : 'green'
+              return (
               <Table.Tr key={bl.id}>
                 <Table.Td>
                   {bl.tracksTransactions
-                    ? <Text component={Link} to={`/months/${y}/${m}/transactions`} c="blue" size="sm">{bl.label}</Text>
-                    : <Text size="sm">{bl.label}</Text>
+                    ? <Text component={Link} to={`/months/${y}/${m}/transactions`} c="blue" size="sm">{budgetLineLabel(bl)}</Text>
+                    : <Text size="sm">{budgetLineLabel(bl)}</Text>
                   }
                 </Table.Td>
                 <Table.Td ta="right">
                   <MoneyText cents={bl.effectiveCents} />
                   {bl.tracksTransactions && bl.amountCents > 0 && (
                     <Text size="xs" c="dimmed" span> / {(bl.amountCents / 100).toFixed(2)}</Text>
+                  )}
+                  {budgeted && (
+                    <Stack gap={2} mt={4} align="flex-end">
+                      <Progress value={Math.min(pct, 100)} color={progressColor} size="sm" w="100%" />
+                      <Text size="xs" c="dimmed">
+                        {pct.toFixed(0)}% — {t('month.remaining')}: <MoneyText cents={bl.amountCents - bl.effectiveCents} colored span size="xs" />
+                      </Text>
+                    </Stack>
                   )}
                 </Table.Td>
                 {!isClosed && (
@@ -219,9 +253,40 @@ export default function MonthOverview() {
                   </Table.Td>
                 )}
               </Table.Tr>
-            ))}
+              )
+            })}
           </Table.Tbody>
           <Table.Tfoot>
+            {!isClosed && availableCategories.length > 0 && (
+              <Table.Tr>
+                <Table.Td>
+                  <Select
+                    size="xs"
+                    placeholder={t('month.addCategory')}
+                    data={availableCategories.map(c => ({ value: String(c.id), label: c.name }))}
+                    value={newCategoryId}
+                    onChange={setNewCategoryId}
+                    searchable
+                    clearable
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <NumberInput
+                    size="xs"
+                    value={newBudgetAmount}
+                    onChange={setNewBudgetAmount}
+                    decimalSeparator=","
+                    decimalScale={2}
+                    prefix="€ "
+                    hideControls
+                    placeholder="0,00"
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <Button size="xs" aria-label={t('common.add')} disabled={!newCategoryId} loading={createBudgetLine.isPending} onClick={handleAddBudgetLine}>+</Button>
+                </Table.Td>
+              </Table.Tr>
+            )}
             <Table.Tr fw={700}>
               <Table.Td>{t('month.totalExpenses')}</Table.Td>
               <Table.Td ta="right"><MoneyText cents={expenseTotalCents} /></Table.Td>
@@ -231,7 +296,16 @@ export default function MonthOverview() {
       </Paper>
 
       {/* Surplus banner */}
-      <Paper shadow="xs" p="md" withBorder style={{ background: surplusCents >= 0 ? 'var(--mantine-color-green-0)' : 'var(--mantine-color-red-0)' }}>
+      <Paper
+        shadow="xs"
+        p="md"
+        withBorder
+        style={{
+          background: surplusCents >= 0
+            ? 'light-dark(var(--mantine-color-green-0), var(--mantine-color-green-9))'
+            : 'light-dark(var(--mantine-color-red-0), var(--mantine-color-red-9))',
+        }}
+      >
         <Group justify="space-between">
           <Title order={3}>{t('month.surplusLabel')}</Title>
           <MoneyText cents={surplusCents} size="xl" fw={800} colored />

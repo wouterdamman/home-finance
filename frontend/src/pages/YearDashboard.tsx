@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge } from '@mantine/core'
+import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, SimpleGrid, Paper, Stack } from '@mantine/core'
+import { CompositeChart } from '@mantine/charts'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear } from '../api/hooks/usePeriods'
 import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { getErrorMessage } from '../api/client'
+import { formatCents } from '../lib/money'
 
 const MONTHS_NL = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -29,6 +31,15 @@ export default function YearDashboard() {
   if (!data) return null
 
   const isLocked = data.locked
+  const totalPotBalance = data.potBalances.reduce((sum, p) => sum + p.balanceCents, 0)
+  const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
+
+  const chartData = data.months.map((m) => ({
+    month: months[m.month - 1],
+    [t('year.income')]: m.incomeTotalCents / 100,
+    [t('year.expenses')]: m.expenseTotalCents / 100,
+    [t('year.surplus')]: m.surplusCents / 100,
+  }))
 
   const handleLock = (password: string) => {
     lockYear.mutate(password, {
@@ -61,6 +72,59 @@ export default function YearDashboard() {
           </Button>
         )}
       </Group>
+
+      <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
+        <Paper shadow="xs" p="md" withBorder>
+          <Text size="xs" c="dimmed">{t('year.income')}</Text>
+          <MoneyText cents={data.yearIncomeTotalCents} size="lg" fw={700} />
+        </Paper>
+        <Paper shadow="xs" p="md" withBorder>
+          <Text size="xs" c="dimmed">{t('year.expenses')}</Text>
+          <MoneyText cents={data.yearExpenseTotalCents} size="lg" fw={700} />
+        </Paper>
+        <Paper shadow="xs" p="md" withBorder>
+          <Text size="xs" c="dimmed">{t('year.surplus')}</Text>
+          <MoneyText cents={data.yearSurplusCents} size="lg" fw={700} colored />
+        </Paper>
+        <Paper shadow="xs" p="md" withBorder>
+          <Text size="xs" c="dimmed">{t('pots.balance')}</Text>
+          <MoneyText cents={totalPotBalance} size="lg" fw={700} />
+        </Paper>
+      </SimpleGrid>
+
+      {chartData.some((d) => d[t('year.income')] || d[t('year.expenses')]) && (
+        <Paper shadow="xs" p="md" withBorder mb="lg">
+          <CompositeChart
+            h={260}
+            data={chartData}
+            dataKey="month"
+            valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+            series={[
+              { name: t('year.income'), color: 'teal.6', type: 'bar' },
+              { name: t('year.expenses'), color: 'red.6', type: 'bar' },
+              { name: t('year.surplus'), color: 'blue.6', type: 'line' },
+            ]}
+          />
+        </Paper>
+      )}
+
+      {data.potBalances.length > 0 && (
+        <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} mb="lg">
+          {data.potBalances.map((p) => (
+            <Paper key={p.potId} shadow="xs" p="sm" withBorder>
+              <Group justify="space-between" wrap="nowrap">
+                <Stack gap={2}>
+                  <Text size="sm" fw={600}>{p.name}</Text>
+                  <Badge size="xs" variant="light" color={p.kind === 'carryover' ? 'gray' : 'blue'}>
+                    {t(`pots.kind_${p.kind}`)}
+                  </Badge>
+                </Stack>
+                <MoneyText cents={p.balanceCents} fw={700} />
+              </Group>
+            </Paper>
+          ))}
+        </SimpleGrid>
+      )}
 
       <Table striped highlightOnHover mb="xl">
         <Table.Thead>
@@ -100,9 +164,11 @@ export default function YearDashboard() {
               <Table.Td ta="right"><MoneyText cents={m.expenseTotalCents} /></Table.Td>
               <Table.Td ta="right"><MoneyText cents={m.surplusCents} colored /></Table.Td>
               <Table.Td ta="right">
-                <Text size="xs" c={m.status === 'closed' ? 'green' : 'orange'}>
-                  {m.status ? t(`common.${m.status}`) : '-'}
-                </Text>
+                {m.status ? (
+                  <Badge size="sm" color={m.status === 'closed' ? 'green' : 'orange'}>
+                    {t(`common.${m.status}`)}
+                  </Badge>
+                ) : '-'}
               </Table.Td>
             </Table.Tr>
           ))}
