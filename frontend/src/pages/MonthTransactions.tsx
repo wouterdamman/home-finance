@@ -58,7 +58,7 @@ export default function MonthTransactions() {
             <Tabs.Tab key={bl.categoryId} value={String(bl.categoryId)}>
               {budgetLineLabel(bl)}
               <Text span size="xs" c="dimmed" ml="xs">
-                (<MoneyText cents={bl.effectiveCents} />)
+                (<MoneyText span cents={bl.effectiveCents} />)
               </Text>
             </Tabs.Tab>
           ))}
