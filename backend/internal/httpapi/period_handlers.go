@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -860,6 +861,11 @@ func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request)
 
 // ── Splits ───────────────────────────────────────────────────────
 
+type splitInput struct {
+	PotID      int64  `json:"potId"`
+	Percentage string `json:"percentage"`
+}
+
 func (s *Server) handleReplaceSplits(w http.ResponseWriter, r *http.Request) {
 	periodID, ok := pathInt64(r, "id")
 	if !ok {
@@ -870,16 +876,51 @@ func (s *Server) handleReplaceSplits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Splits []struct {
-			PotID      int64  `json:"potId"`
-			Percentage string `json:"percentage"`
-		} `json:"splits"`
+		Splits []splitInput `json:"splits"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	ctx := r.Context()
+
+	// The carryover pot always absorbs whatever percentage isn't explicitly
+	// allocated to another pot — its percentage is never stored as-submitted,
+	// it's recomputed here so it always keeps the total at exactly 100%.
+	var carryoverPotID int64
+	hasCarryover := s.pool.QueryRow(ctx, `SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL`).Scan(&carryoverPotID) == nil
+
+	var otherTotal float64
+	carryoverIdx := -1
+	for i, sp := range body.Splits {
+		if hasCarryover && sp.PotID == carryoverPotID {
+			carryoverIdx = i
+			continue
+		}
+		pct, _ := strconv.ParseFloat(sp.Percentage, 64)
+		otherTotal += pct
+	}
+
+	if hasCarryover {
+		remainder := 100 - otherTotal
+		if remainder < -0.005 {
+			Error(w, http.StatusBadRequest, "bad_request", "pot percentages exceed 100%")
+			return
+		}
+		if remainder < 0 {
+			remainder = 0
+		}
+		remainderStr := strconv.FormatFloat(remainder, 'f', 2, 64)
+		if carryoverIdx >= 0 {
+			body.Splits[carryoverIdx].Percentage = remainderStr
+		} else {
+			body.Splits = append(body.Splits, splitInput{PotID: carryoverPotID, Percentage: remainderStr})
+		}
+	} else if math.Abs(otherTotal-100) > 0.01 {
+		Error(w, http.StatusBadRequest, "bad_request", "pot percentages must total 100%")
+		return
+	}
+
 	tx, _ := s.pool.Begin(ctx)
 	defer tx.Rollback(ctx)
 	tx.Exec(ctx, `DELETE FROM pot_splits WHERE period_id=$1`, periodID)
