@@ -4,8 +4,12 @@ Family budget tracker — Go API + React SPA + PostgreSQL. Replaces an Excel-bas
 
 ## Features
 
-- Monthly income & expense tracking (budget lines + itemized transactions)
-- Savings pots with % allocation on month close; carryover pot flows to next month as income
+- Monthly income & expense tracking (budget lines + itemized transactions, dated)
+- Budget-vs-actual progress bars per tracked category
+- Year dashboard: income/expense/surplus chart, savings pot balances
+- Savings pots overview with full ledger (deposits, withdrawals, adjustments, opening balance) and balance-trend chart
+- Pot % allocation on month close; carryover pot always absorbs whatever isn't allocated to another pot (percentage is computed, not entered) and flows to next month as income
+- Explicit year registry (Settings > Years) — no hardcoded year range
 - Template system: income sources and categories marked for auto-copy to new months
 - Audit log for close, reopen, delete, and pot entry actions
 - Dark/light/system theme toggle
@@ -69,7 +73,11 @@ All endpoints under `/api`, session-auth via cookie, amounts in cents.
 
 ```
 GET  /api/me
+GET  /api/years
+POST /api/years
 GET  /api/years/:year/summary
+POST /api/years/:year/lock     (body: {"password": "..."})
+POST /api/years/:year/unlock   (body: {"password": "..."})
 
 GET  /api/periods?year=
 POST /api/periods
@@ -81,7 +89,7 @@ DEL  /api/periods/:id          (body: {"password": "..."})
 CRUD /api/income-entries
 CRUD /api/budget-lines
 CRUD /api/transactions
-PUT  /api/periods/:id/splits
+PUT  /api/periods/:id/splits   (carryover pot's percentage is always server-computed)
 
 CRUD /api/categories
 CRUD /api/income-sources
@@ -89,6 +97,7 @@ CRUD /api/pots
 GET  /api/pots/balances
 GET  /api/pots/:id/ledger
 POST /api/pots/:id/entries
+DEL  /api/pot-entries/:id      (manual entries only — allocation/carryover_out are lifecycle-managed)
 
 GET  /api/audit-log
 ```
