@@ -60,6 +60,7 @@ export default function AppShell() {
             to={`/years/${y}`}
           />
         ))}
+        <NavLink label={t('nav.pots')} component={RouterNavLink} to="/pots" />
         <NavLink label={t('settings.title')} component={RouterNavLink} to="/settings" />
       </MantineAppShell.Navbar>
       <MantineAppShell.Main>

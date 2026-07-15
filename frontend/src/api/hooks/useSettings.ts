@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
+import type { PotBalance, PotLedgerEntry } from '../types'
 
 export interface Category {
   id: number
@@ -124,5 +125,45 @@ export function useArchivePot() {
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/pots/${id}/archive`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
+  })
+}
+
+export function usePotBalances() {
+  return useQuery<PotBalance[]>({
+    queryKey: ['pot-balances'],
+    queryFn: () => api.get<PotBalance[]>('/api/pots/balances'),
+  })
+}
+
+export function usePotLedger(potId: number | undefined) {
+  return useQuery<PotLedgerEntry[]>({
+    queryKey: ['pot-ledger', potId],
+    queryFn: () => api.get<PotLedgerEntry[]>(`/api/pots/${potId}/ledger`),
+    enabled: potId != null,
+  })
+}
+
+export function useCreatePotEntry(potId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { entryType: string; amountCents: number; description: string; entryDate?: string }) =>
+      api.post(`/api/pots/${potId}/entries`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pot-ledger', potId] })
+      qc.invalidateQueries({ queryKey: ['pot-balances'] })
+      qc.invalidateQueries({ queryKey: ['year-summary'] })
+    },
+  })
+}
+
+export function useDeletePotEntry(potId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/pot-entries/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pot-ledger', potId] })
+      qc.invalidateQueries({ queryKey: ['pot-balances'] })
+      qc.invalidateQueries({ queryKey: ['year-summary'] })
+    },
   })
 }

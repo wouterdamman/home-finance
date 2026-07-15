@@ -106,6 +106,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Post("/pots/{id}/archive", s.handleArchivePot)
 			r.Get("/pots/{id}/ledger", s.handleGetPotLedger)
 			r.Post("/pots/{id}/entries", s.handleCreatePotEntry)
+			r.Delete("/pot-entries/{id}", s.handleDeletePotEntry)
 
 			// Year summary
 			r.Get("/years/{year}/summary", s.handleYearSummary)

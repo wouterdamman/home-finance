@@ -43,6 +43,8 @@
     "totalExpenses": "Total expenses",
     "remaining": "remaining",
     "addCategory": "Add category",
+    "addPot": "Add pot",
+    "splitOverAllocated": "Pots total more than 100% — lower a percentage.",
     "splitSection": "Savings allocation",
     "pot": "Pot",
     "percentage": "Percentage",

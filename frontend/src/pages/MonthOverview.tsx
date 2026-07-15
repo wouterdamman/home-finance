@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
-import { useCategories } from '../api/hooks/useSettings'
+import { useCategories, usePots } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { parseToCents } from '../lib/money'
@@ -55,6 +55,8 @@ export default function MonthOverview() {
   const deleteIncome = useDeleteIncome(periodId ?? 0)
   const replaceSplits = useReplaceSplits(periodId ?? 0)
   const { data: categories } = useCategories()
+  const { data: potsList } = usePots()
+  const [newSplitPotId, setNewSplitPotId] = useState<string | null>(null)
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={600} mt="md" />
   if (summary.error || overviewQuery.error) return <Alert color="red">{t('common.error')}</Alert>
@@ -102,13 +104,39 @@ export default function MonthOverview() {
     onConfirm: () => reopenPeriod.mutate(undefined),
   })
 
+  const carryoverPot = (potsList ?? []).find(p => p.kind === 'carryover' && !p.archivedAt)
   const currentSplits = splitEdits ?? Object.fromEntries(splits.map(s => [s.potId, s.percentage]))
+  const potNameById = new Map((potsList ?? []).map(p => [p.id, p.name] as const))
+  const baseSplitPotIds = splitEdits ? Object.keys(splitEdits).map(Number) : splits.map(s => s.potId)
+  const splitPotIds = splitEdits && carryoverPot && !baseSplitPotIds.includes(carryoverPot.id)
+    ? [...baseSplitPotIds, carryoverPot.id]
+    : baseSplitPotIds
+  const availablePotsToAdd = (potsList ?? []).filter(p => !p.archivedAt && p.kind !== 'carryover' && !splitPotIds.includes(p.id))
+  const nonCarryoverTotal = carryoverPot
+    ? Object.entries(currentSplits).reduce((sum, [potId, pct]) => Number(potId) === carryoverPot.id ? sum : sum + (Number(pct) || 0), 0)
+    : 0
+  const carryoverRemainder = 100 - nonCarryoverTotal
+  const carryoverOverAllocated = !!carryoverPot && carryoverRemainder < -0.005
 
   const handleSaveSplits = () => {
     replaceSplits.mutate(
       Object.entries(currentSplits).map(([potId, pct]) => ({ potId: Number(potId), percentage: pct })),
       { onSuccess: () => setSplitEdits(null) }
     )
+  }
+
+  const handleAddSplitPot = () => {
+    if (!newSplitPotId) return
+    setSplitEdits(prev => ({ ...(prev ?? {}), [newSplitPotId]: '0' }))
+    setNewSplitPotId(null)
+  }
+
+  const handleRemoveSplitPot = (potId: number) => {
+    setSplitEdits(prev => {
+      const next = { ...(prev ?? {}) }
+      delete next[potId]
+      return next
+    })
   }
 
   return (
@@ -319,7 +347,7 @@ export default function MonthOverview() {
           {!isClosed && (
             splitEdits
               ? <Group gap="xs">
-                  <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending}>{t('common.save')}</Button>
+                  <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
                   <Button size="xs" variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
                 </Group>
               : <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
@@ -327,40 +355,78 @@ export default function MonthOverview() {
                 </Button>
           )}
         </Group>
+        {carryoverOverAllocated && (
+          <Text size="xs" c="red" mb="sm">{t('month.splitOverAllocated')}</Text>
+        )}
         <Table>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>{t('month.pot')}</Table.Th>
               <Table.Th ta="right">{t('month.percentage')}</Table.Th>
               <Table.Th ta="right">{t('month.amount')}</Table.Th>
+              {splitEdits && <Table.Th w={32} />}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {splits.map(sp => (
-              <Table.Tr key={sp.potId}>
+            {splitPotIds.map(potId => {
+              const sp = splits.find(s => s.potId === potId)
+              const name = sp?.potName ?? potNameById.get(potId) ?? '—'
+              const isCarryoverRow = !!carryoverPot && potId === carryoverPot.id
+              return (
+              <Table.Tr key={potId}>
                 <Table.Td>
-                  <Text size="sm">{sp.potName}</Text>
+                  <Text size="sm">{name}</Text>
+                  {isCarryoverRow && <Badge size="xs" ml="xs" color="gray">{t('pots.kind_carryover')}</Badge>}
                 </Table.Td>
                 <Table.Td ta="right" w={120}>
                   {splitEdits
-                    ? <NumberInput
-                        size="xs"
-                        value={Number(splitEdits[sp.potId] ?? sp.percentage)}
-                        onChange={(v) => setSplitEdits(prev => ({ ...prev!, [sp.potId]: String(v) }))}
-                        suffix="%"
-                        decimalScale={2}
-                        hideControls
-                        min={0}
-                        max={100}
-                      />
-                    : <Text size="sm">{sp.percentage}%</Text>
+                    ? (isCarryoverRow
+                        ? <Text size="sm" c={carryoverOverAllocated ? 'red' : 'dimmed'}>{carryoverRemainder.toFixed(2)}%</Text>
+                        : <NumberInput
+                            size="xs"
+                            value={Number(splitEdits[potId] ?? sp?.percentage ?? 0)}
+                            onChange={(v) => setSplitEdits(prev => ({ ...prev!, [potId]: String(v) }))}
+                            suffix="%"
+                            decimalScale={2}
+                            hideControls
+                            min={0}
+                            max={100}
+                          />
+                      )
+                    : <Text size="sm">{sp?.percentage}%</Text>
                   }
                 </Table.Td>
                 <Table.Td ta="right">
-                  <MoneyText cents={sp.projectedCents ?? 0} colored={!isClosed} />
+                  {sp ? <MoneyText cents={sp.projectedCents ?? 0} colored={!isClosed} /> : <Text size="sm" c="dimmed">—</Text>}
+                </Table.Td>
+                {splitEdits && (
+                  <Table.Td>
+                    {!isCarryoverRow && (
+                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleRemoveSplitPot(potId)}>✕</ActionIcon>
+                    )}
+                  </Table.Td>
+                )}
+              </Table.Tr>
+              )
+            })}
+            {splitEdits && availablePotsToAdd.length > 0 && (
+              <Table.Tr>
+                <Table.Td colSpan={2}>
+                  <Select
+                    size="xs"
+                    placeholder={t('month.addPot')}
+                    data={availablePotsToAdd.map(p => ({ value: String(p.id), label: p.name }))}
+                    value={newSplitPotId}
+                    onChange={setNewSplitPotId}
+                    searchable
+                    clearable
+                  />
+                </Table.Td>
+                <Table.Td colSpan={2}>
+                  <Button size="xs" disabled={!newSplitPotId} onClick={handleAddSplitPot}>{t('common.add')}</Button>
                 </Table.Td>
               </Table.Tr>
-            ))}
+            )}
           </Table.Tbody>
         </Table>
       </Paper>

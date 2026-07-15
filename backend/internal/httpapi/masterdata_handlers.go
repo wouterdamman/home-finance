@@ -389,3 +389,25 @@ func (s *Server) handleCreatePotEntry(w http.ResponseWriter, r *http.Request) {
 	s.auditLog(r.Context(), "pot.entry", "pot", potID, map[string]any{"entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description})
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "potId": potID, "entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description, "entryDate": body.EntryDate})
 }
+
+func (s *Server) handleDeletePotEntry(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var potID int64
+	var entryType string
+	if err := s.pool.QueryRow(r.Context(), `SELECT pot_id, entry_type FROM pot_ledger WHERE id=$1`, id).Scan(&potID, &entryType); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "entry not found")
+		return
+	}
+	switch entryType {
+	case "allocation", "carryover_out":
+		Error(w, http.StatusBadRequest, "bad_request", "cannot delete an automatically generated entry")
+		return
+	}
+	s.pool.Exec(r.Context(), `DELETE FROM pot_ledger WHERE id=$1`, id)
+	s.auditLog(r.Context(), "pot.entry.delete", "pot", potID, map[string]any{"entryId": id, "entryType": entryType})
+	w.WriteHeader(http.StatusNoContent)
+}

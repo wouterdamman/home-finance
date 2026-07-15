@@ -43,6 +43,8 @@
     "totalExpenses": "Totaal uitgaven",
     "remaining": "resterend",
     "addCategory": "Categorie toevoegen",
+    "addPot": "Potje toevoegen",
+    "splitOverAllocated": "Potjes samen meer dan 100% — verlaag een percentage.",
     "splitSection": "Spaarpotjes verdeling",
     "pot": "Potje",
     "percentage": "Percentage",

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, SimpleGrid, Paper, Stack } from '@mantine/core'
+import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, SimpleGrid, Paper } from '@mantine/core'
 import { CompositeChart } from '@mantine/charts'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
@@ -108,23 +108,21 @@ export default function YearDashboard() {
         </Paper>
       )}
 
-      {data.potBalances.length > 0 && (
-        <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} mb="lg">
-          {data.potBalances.map((p) => (
-            <Paper key={p.potId} shadow="xs" p="sm" withBorder>
-              <Group justify="space-between" wrap="nowrap">
-                <Stack gap={2}>
+      {(() => {
+        const savingsPotBalances = data.potBalances.filter((p) => p.kind !== 'carryover')
+        return savingsPotBalances.length > 0 && (
+          <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} mb="lg">
+            {savingsPotBalances.map((p) => (
+              <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="sm" withBorder style={{ textDecoration: 'none', color: 'inherit' }}>
+                <Group justify="space-between" wrap="nowrap">
                   <Text size="sm" fw={600}>{p.name}</Text>
-                  <Badge size="xs" variant="light" color={p.kind === 'carryover' ? 'gray' : 'blue'}>
-                    {t(`pots.kind_${p.kind}`)}
-                  </Badge>
-                </Stack>
-                <MoneyText cents={p.balanceCents} fw={700} />
-              </Group>
-            </Paper>
-          ))}
-        </SimpleGrid>
-      )}
+                  <MoneyText cents={p.balanceCents} fw={700} />
+                </Group>
+              </Paper>
+            ))}
+          </SimpleGrid>
+        )
+      })()}
 
       <Table striped highlightOnHover mb="xl">
         <Table.Thead>
