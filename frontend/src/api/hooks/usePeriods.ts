@@ -16,6 +16,21 @@ export function useYearSummary(year: number) {
   })
 }
 
+export function useYears() {
+  return useQuery<number[]>({
+    queryKey: ['years'],
+    queryFn: () => api.get<number[]>('/api/years'),
+  })
+}
+
+export function useCreateYear() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (year: number) => api.post('/api/years', { year }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['years'] }),
+  })
+}
+
 export function useMonthOverview(periodId: number | undefined) {
   return useQuery<MonthOverview>({
     queryKey: ['period', periodId, 'overview'],

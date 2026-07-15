@@ -2,13 +2,12 @@ import { Outlet, NavLink as RouterNavLink, useNavigate } from 'react-router-dom'
 import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Select, SegmentedControl, useMantineColorScheme } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
-
-const currentYear = new Date().getFullYear()
-const years = [currentYear - 1, currentYear, currentYear + 1].map(String)
+import { useYears } from '../api/hooks/usePeriods'
 
 export default function AppShell() {
   const { t, i18n } = useTranslation()
   const { data: user } = useMe()
+  const { data: years } = useYears()
   const navigate = useNavigate()
   const { colorScheme, setColorScheme } = useMantineColorScheme()
 
@@ -52,10 +51,10 @@ export default function AppShell() {
         </Group>
       </MantineAppShell.Header>
       <MantineAppShell.Navbar p="xs">
-        {years.map((y) => (
+        {(years ?? []).map((y) => (
           <NavLink
             key={y}
-            label={y}
+            label={String(y)}
             component={RouterNavLink}
             to={`/years/${y}`}
           />

@@ -7,6 +7,41 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+func (s *Server) handleListYears(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.pool.Query(r.Context(), `SELECT year FROM years ORDER BY year`)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]int, 0)
+	for rows.Next() {
+		var y int
+		rows.Scan(&y)
+		out = append(out, y)
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleCreateYear(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Year int `json:"year"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if body.Year < 2000 || body.Year > 2100 {
+		Error(w, http.StatusBadRequest, "bad_request", "year out of range")
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, body.Year); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, map[string]any{"year": body.Year})
+}
+
 func (s *Server) handleLockYear(w http.ResponseWriter, r *http.Request) {
 	year, err := strconv.Atoi(chi.URLParam(r, "year"))
 	if err != nil {

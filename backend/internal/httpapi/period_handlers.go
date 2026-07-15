@@ -75,6 +75,7 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	s.pool.Exec(ctx, `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, body.Year)
 
 	if locked, _ := isYearLocked(ctx, s.pool, body.Year); locked {
 		Error(w, http.StatusConflict, "year_locked", "year is locked")

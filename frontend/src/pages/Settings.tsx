@@ -7,6 +7,7 @@ import {
   useIncomeSources, useCreateIncomeSource, useUpdateIncomeSource, useArchiveIncomeSource,
   usePots, useCreatePot, useUpdatePot, useArchivePot,
 } from '../api/hooks/useSettings'
+import { useYears, useCreateYear } from '../api/hooks/usePeriods'
 import { parseToCents } from '../lib/money'
 
 function amountToCents(v: number | string): number {
@@ -23,10 +24,12 @@ export default function Settings() {
           <Tabs.Tab value="categories">{t('settings.categories')}</Tabs.Tab>
           <Tabs.Tab value="sources">{t('settings.incomeSources')}</Tabs.Tab>
           <Tabs.Tab value="pots">{t('settings.pots')}</Tabs.Tab>
+          <Tabs.Tab value="years">{t('settings.years')}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="categories" pt="md"><CategoriesTab /></Tabs.Panel>
         <Tabs.Panel value="sources" pt="md"><SourcesTab /></Tabs.Panel>
         <Tabs.Panel value="pots" pt="md"><PotsTab /></Tabs.Panel>
+        <Tabs.Panel value="years" pt="md"><YearsTab /></Tabs.Panel>
       </Tabs>
     </>
   )
@@ -305,6 +308,38 @@ function PotsTab() {
         <Button size="sm" disabled={!newName} loading={create.isPending} onClick={handleCreate}>
           {t('common.add')}
         </Button>
+      </Group>
+    </Stack>
+  )
+}
+
+function YearsTab() {
+  const { t } = useTranslation()
+  const { data } = useYears()
+  const create = useCreateYear()
+  const [newYear, setNewYear] = useState<number | string>('')
+
+  return (
+    <Stack gap="sm">
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>{t('settings.year')}</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {(data ?? []).map(y => (
+            <Table.Tr key={y}>
+              <Table.Td>{y}</Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+      <Group gap="xs" align="flex-end">
+        <NumberInput placeholder={t('settings.year')} value={newYear} onChange={setNewYear} hideControls decimalScale={0} size="sm" w={120} />
+        <Button size="sm" disabled={!newYear} loading={create.isPending} onClick={() => {
+          create.mutate(Number(newYear), { onSuccess: () => setNewYear('') })
+        }}>{t('common.add')}</Button>
       </Group>
     </Stack>
   )

@@ -108,7 +108,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Post("/pots/{id}/entries", s.handleCreatePotEntry)
 			r.Delete("/pot-entries/{id}", s.handleDeletePotEntry)
 
-			// Year summary
+			// Years
+			r.Get("/years", s.handleListYears)
+			r.Post("/years", s.handleCreateYear)
 			r.Get("/years/{year}/summary", s.handleYearSummary)
 			r.With(passwordLimiter.middleware).Post("/years/{year}/lock", s.handleLockYear)
 			r.With(passwordLimiter.middleware).Post("/years/{year}/unlock", s.handleUnlockYear)
