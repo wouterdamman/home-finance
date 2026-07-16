@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.0](https://github.com/wouterdamman/home-finance/compare/v1.2.0...v1.3.0) (2026-07-16)
+
+
+### Features
+
+* **pots:** add savings pots ledger page and period allocation editor ([dde9571](https://github.com/wouterdamman/home-finance/commit/dde9571cc505f19e2ffc2fe12c4130477c9bba5f))
+* **ui:** add year charts, budget progress bars and transaction dates ([e1e91be](https://github.com/wouterdamman/home-finance/commit/e1e91bea8f3ed6b5f058d757132e8a57303f1601))
+* **years:** make years explicit instead of a hardcoded sliding window ([5a1c830](https://github.com/wouterdamman/home-finance/commit/5a1c830aecbc0e67c20df149917a5ab619433bda))
+
+
+### Bug Fixes
+
+* **api:** keep carryover pot percentage authoritative on split save ([c21a159](https://github.com/wouterdamman/home-finance/commit/c21a159b89a9441ca0efad1b36eb961606796974))
+* **dev:** correct postgres 18 volume mount path in docker-compose ([16babf9](https://github.com/wouterdamman/home-finance/commit/16babf9ae1ad21b39884244b9cb1f40b0f29e11f))
+* **ui:** fix category tab label wrapping in transactions view ([4782efe](https://github.com/wouterdamman/home-finance/commit/4782efe0d041a98670c154c5731f924aa95d7706))
+* **ui:** mount ModalsProvider so confirm dialogs actually render ([d3bfd49](https://github.com/wouterdamman/home-finance/commit/d3bfd496ff2e9f16c16ec9c417d41d49aeae3659))
+
 ## [1.2.0](https://github.com/wouterdamman/home-finance/compare/v1.1.0...v1.2.0) (2026-07-14)
 
 
