@@ -56,8 +56,8 @@ export default function MonthOverview() {
 
   const closePeriod = useClosePeriod(periodId ?? 0, y, m)
   const reopenPeriod = useReopenPeriod(periodId ?? 0, y, m)
-  const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0, y)
   const createBudgetLine = useCreateBudgetLine(periodId ?? 0, y)
+  const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0, y)
   const deletePeriod = useDeletePeriod(periodId ?? 0, y)
   const createIncome = useCreateIncome(periodId ?? 0)
   const updateIncome = useUpdateIncome(periodId ?? 0)
@@ -111,6 +111,16 @@ export default function MonthOverview() {
     labels: { confirm: t('month.reopenAction'), cancel: t('common.cancel') },
     confirmProps: { color: 'orange' },
     onConfirm: () => reopenPeriod.mutate(undefined),
+  })
+
+  const handleToggleTracking = (bl: { id: number; label?: string; amountCents: number; tracksTransactions: boolean; sortOrder: number }) => modals.openConfirmModal({
+    title: t('month.toggleTracking'),
+    children: <Text size="sm">{bl.tracksTransactions ? t('month.toggleTrackingOffConfirm') : t('month.toggleTrackingOnConfirm')}</Text>,
+    labels: { confirm: t('common.confirm'), cancel: t('common.cancel') },
+    onConfirm: () => updateBudgetLine.mutate({
+      id: bl.id, label: bl.label ?? null, amountCents: bl.amountCents,
+      tracksTransactions: !bl.tracksTransactions, sortOrder: bl.sortOrder,
+    }),
   })
 
   const carryoverPot = (potsList ?? []).find(p => p.kind === 'carryover' && !p.archivedAt)
@@ -229,7 +239,7 @@ export default function MonthOverview() {
                   key={bl.id}
                   title={budgetLineLabel(bl)}
                   subtitle={budgeted ? <Progress value={Math.min(pct, 100)} color={progressColor} size="sm" mt={2} /> : undefined}
-                  to={bl.tracksTransactions ? `/months/${y}/${m}/transactions` : undefined}
+                  to={bl.tracksTransactions ? `/months/${y}/${m}/transactions?category=${bl.categoryId}` : undefined}
                   chevron={bl.tracksTransactions}
                   trailing={
                     <Group gap={6} wrap="nowrap">
@@ -240,14 +250,7 @@ export default function MonthOverview() {
                           variant={bl.tracksTransactions ? 'filled' : 'subtle'}
                           color={bl.tracksTransactions ? 'blue' : 'gray'}
                           aria-label={t('month.toggleTracking')}
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            updateBudgetLine.mutate({
-                              id: bl.id, label: bl.label ?? null, amountCents: bl.amountCents,
-                              tracksTransactions: !bl.tracksTransactions, sortOrder: bl.sortOrder,
-                            })
-                          }}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleToggleTracking(bl) }}
                         >≡</ActionIcon>
                       )}
                     </Group>
@@ -515,7 +518,7 @@ export default function MonthOverview() {
               <Table.Tr key={bl.id}>
                 <Table.Td>
                   {bl.tracksTransactions
-                    ? <Text component={Link} to={`/months/${y}/${m}/transactions`} c="blue" size="sm">{budgetLineLabel(bl)}</Text>
+                    ? <Text component={Link} to={`/months/${y}/${m}/transactions?category=${bl.categoryId}`} c="blue" size="sm">{budgetLineLabel(bl)}</Text>
                     : <Text size="sm">{budgetLineLabel(bl)}</Text>
                   }
                 </Table.Td>
@@ -541,13 +544,7 @@ export default function MonthOverview() {
                       color={bl.tracksTransactions ? 'blue' : 'gray'}
                       title={t('month.toggleTracking')}
                       aria-label={t('month.toggleTracking')}
-                      onClick={() => updateBudgetLine.mutate({
-                        id: bl.id,
-                        label: bl.label ?? null,
-                        amountCents: bl.amountCents,
-                        tracksTransactions: !bl.tracksTransactions,
-                        sortOrder: bl.sortOrder,
-                      })}
+                      onClick={() => handleToggleTracking(bl)}
                     >≡</ActionIcon>
                   </Table.Td>
                 )}

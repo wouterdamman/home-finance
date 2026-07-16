@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
   NumberInput, ActionIcon, Stack, TextInput, Button,
@@ -24,6 +24,7 @@ function parseCents(v: number | string): number {
 
 export default function MonthTransactions() {
   const { year, month } = useParams<{ year: string; month: string }>()
+  const [searchParams] = useSearchParams()
   const { t } = useTranslation()
   const y = Number(year)
   const m = Number(month)
@@ -46,6 +47,10 @@ export default function MonthTransactions() {
   const isClosed = overview.period.status === 'closed'
   const itemizedLines = overview.budgetLines.filter(bl => bl.tracksTransactions)
   const defaultCatId = itemizedLines[0]?.categoryId ?? 0
+  const categoryParam = searchParams.get('category')
+  const initialCatId = itemizedLines.some(bl => String(bl.categoryId) === categoryParam)
+    ? categoryParam!
+    : String(defaultCatId)
   const categoryById = new Map((categories ?? []).map(c => [c.id, c.name] as const))
   const budgetLineLabel = (bl: typeof itemizedLines[number]) =>
     bl.label ?? (bl.categoryId != null ? categoryById.get(bl.categoryId) : undefined) ?? '—'
@@ -57,7 +62,7 @@ export default function MonthTransactions() {
         <Title order={2}>{t('month.transactionsTitle', { month: m, year: y })}</Title>
       </Group>
 
-      <Tabs defaultValue={String(defaultCatId)} keepMounted={false}>
+      <Tabs defaultValue={initialCatId} keepMounted={false}>
         <Tabs.List>
           {itemizedLines.map(bl => (
             <Tabs.Tab key={bl.categoryId} value={String(bl.categoryId)}>

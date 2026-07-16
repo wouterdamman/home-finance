@@ -118,8 +118,9 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		src := *body.CopyFromPeriodID
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
-			SELECT $1,bl.category_id,bl.label,bl.amount_cents,bl.tracks_transactions,bl.sort_order
+			SELECT $1,bl.category_id,bl.label,bl.amount_cents,COALESCE(c.is_itemized,false),bl.sort_order
 			FROM budget_lines bl
+			LEFT JOIN categories c ON c.id = bl.category_id
 			WHERE bl.period_id=$2
 			AND (bl.category_id IS NULL OR bl.category_id IN (SELECT id FROM categories WHERE include_in_template=true))`,
 			id, src); err != nil {
@@ -661,11 +662,10 @@ func (s *Server) handleCreateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		CategoryID         *int64  `json:"categoryId"`
-		Label              *string `json:"label"`
-		AmountCents        int64   `json:"amountCents"`
-		TracksTransactions bool    `json:"tracksTransactions"`
-		SortOrder          int     `json:"sortOrder"`
+		CategoryID  *int64  `json:"categoryId"`
+		Label       *string `json:"label"`
+		AmountCents int64   `json:"amountCents"`
+		SortOrder   int     `json:"sortOrder"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -675,14 +675,20 @@ func (s *Server) handleCreateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	// tracksTransactions is never client-supplied — it always mirrors the
+	// category's is_itemized flag at creation time, so a month can never
+	// drift out of sync with its category's Settings-defined itemized state.
 	var id int64
+	var tracksTransactions bool
 	if err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		periodID, body.CategoryID, body.Label, body.AmountCents, body.TracksTransactions, body.SortOrder).Scan(&id); err != nil {
+		`INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
+		 VALUES ($1,$2,$3,$4,COALESCE((SELECT is_itemized FROM categories WHERE id=$2),false),$5)
+		 RETURNING id, tracks_transactions`,
+		periodID, body.CategoryID, body.Label, body.AmountCents, body.SortOrder).Scan(&id, &tracksTransactions); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "categoryId": body.CategoryID, "label": body.Label, "amountCents": body.AmountCents, "tracksTransactions": body.TracksTransactions, "sortOrder": body.SortOrder})
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "categoryId": body.CategoryID, "label": body.Label, "amountCents": body.AmountCents, "tracksTransactions": tracksTransactions, "sortOrder": body.SortOrder})
 }
 
 func (s *Server) handleUpdateBudgetLine(w http.ResponseWriter, r *http.Request) {
