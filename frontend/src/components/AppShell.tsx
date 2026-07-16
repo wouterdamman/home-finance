@@ -4,6 +4,7 @@ import { IconWallet, IconSun, IconMoon, IconDeviceDesktop, IconLogout, IconPigMo
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
 import { useYears } from '../api/hooks/usePeriods'
+import BottomTabBar from './BottomTabBar'
 
 export default function AppShell() {
   const { t, i18n } = useTranslation()
@@ -19,14 +20,19 @@ export default function AppShell() {
   }
 
   return (
-    <MantineAppShell header={{ height: 56 }} navbar={{ width: 220, breakpoint: 'sm' }} padding="md">
+    <MantineAppShell
+      header={{ height: 56 }}
+      navbar={{ width: 220, breakpoint: 'sm', collapsed: { mobile: true } }}
+      footer={{ height: { base: 60, sm: 0 } }}
+      padding="md"
+    >
       <MantineAppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group gap="xs">
+        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap">
             <IconWallet size={22} />
-            <Text fw={700} size="lg">Home Finance</Text>
+            <Text fw={700} size="lg" visibleFrom="xs">Home Finance</Text>
           </Group>
-          <Group>
+          <Group gap="xs" wrap="nowrap">
             <SegmentedControl
               size="xs"
               value={colorScheme}
@@ -47,8 +53,8 @@ export default function AppShell() {
               w={70}
             />
             {user && (
-              <Group gap={6}>
-                <Text size="xs" c="dimmed">{user.displayName || user.email}</Text>
+              <Group gap={6} wrap="nowrap">
+                <Text size="xs" c="dimmed" visibleFrom="sm">{user.displayName || user.email}</Text>
                 <ActionIcon variant="subtle" aria-label={t('auth.signOut')} title={t('auth.signOut')} onClick={handleLogout}>
                   <IconLogout size={18} />
                 </ActionIcon>
@@ -74,6 +80,9 @@ export default function AppShell() {
       <MantineAppShell.Main>
         <Outlet />
       </MantineAppShell.Main>
+      <MantineAppShell.Footer hiddenFrom="sm">
+        <BottomTabBar />
+      </MantineAppShell.Footer>
     </MantineAppShell>
   )
 }

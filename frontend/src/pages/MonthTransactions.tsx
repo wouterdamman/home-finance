@@ -4,6 +4,7 @@ import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
   NumberInput, ActionIcon, Stack, TextInput, Button,
 } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import { IconTrash } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +15,8 @@ import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../
 import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
+import MobileList, { MobileListRow } from '../components/mobile/MobileList'
+import BottomSheet from '../components/mobile/BottomSheet'
 
 function parseCents(v: number | string): number {
   return parseToCents(String(v)) ?? 0
@@ -82,6 +85,7 @@ export default function MonthTransactions() {
 
 function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; categoryId: number; isClosed: boolean }) {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data: txs, isLoading } = useTransactions(periodId, categoryId)
   const createTx = useCreateTransaction(periodId)
   const deleteTx = useDeleteTransaction(periodId)
@@ -89,6 +93,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const [desc, setDesc] = useState('')
   const [amount, setAmount] = useState<number | string>('')
   const [txDate, setTxDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
+  const [dateSheetOpen, setDateSheetOpen] = useState(false)
   const amountRef = useRef<HTMLInputElement>(null)
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
@@ -103,6 +108,77 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   }
 
   if (isLoading) return <Skeleton h={200} />
+
+  if (isMobile) {
+    return (
+      <Stack gap="sm">
+        {!isClosed && (
+          <Stack gap="xs">
+            <Group gap="xs" wrap="nowrap">
+              <Button variant="light" size="sm" onClick={() => setDateSheetOpen(true)}>
+                {dayjs(txDate).format('DD-MM')}
+              </Button>
+              <TextInput
+                placeholder={t('common.description')}
+                value={desc}
+                onChange={e => setDesc(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') amountRef.current?.focus() }}
+                style={{ flex: 1 }}
+              />
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              <NumberInput
+                ref={amountRef}
+                placeholder="0,00"
+                value={amount}
+                onChange={setAmount}
+                decimalSeparator=","
+                decimalScale={2}
+                prefix="€ "
+                hideControls
+                style={{ flex: 1 }}
+                onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+              />
+              <ActionIcon size="lg" variant="filled" aria-label={t('common.add')} loading={createTx.isPending} onClick={handleAdd}>+</ActionIcon>
+            </Group>
+          </Stack>
+        )}
+
+        {sortedTxs.length === 0 ? (
+          <EmptyState message={t('month.noTransactions')} />
+        ) : (
+          <MobileList>
+            {sortedTxs.map(tx => (
+              <MobileListRow
+                key={tx.id}
+                title={tx.description || '—'}
+                subtitle={tx.txDate ? dayjs(tx.txDate).format('DD-MM-YYYY') : undefined}
+                trailing={<MoneyText cents={tx.amountCents} fw={600} />}
+                swipeAction={!isClosed ? {
+                  label: <IconTrash size={18} />,
+                  destructive: true,
+                  onTrigger: () => deleteTx.mutate(tx.id),
+                } : undefined}
+              />
+            ))}
+          </MobileList>
+        )}
+
+        <Group justify="space-between" px="xs">
+          <Text fw={700} size="sm">{t('common.total')}</Text>
+          <MoneyText cents={total} fw={700} />
+        </Group>
+
+        <BottomSheet opened={dateSheetOpen} onClose={() => setDateSheetOpen(false)} title={t('common.date')}>
+          <DateInput
+            value={txDate}
+            onChange={(v) => { setTxDate(v); setDateSheetOpen(false) }}
+            valueFormat="DD-MM-YYYY"
+          />
+        </BottomSheet>
+      </Stack>
+    )
+  }
 
   return (
     <Stack gap="sm">
@@ -139,6 +215,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
         </Group>
       )}
 
+      <Table.ScrollContainer minWidth={420}>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -181,6 +258,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
           </Table.Tr>
         </Table.Tfoot>
       </Table>
+      </Table.ScrollContainer>
     </Stack>
   )
 }

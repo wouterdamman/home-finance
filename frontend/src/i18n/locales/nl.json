@@ -1,6 +1,8 @@
 {
   "nav": {
     "dashboard": "Dashboard",
+    "home": "Overzicht",
+    "log": "Loggen",
     "pots": "Spaarpotjes",
     "settings": "Instellingen",
     "apiDocs": "API-documentatie"
@@ -25,7 +27,9 @@
     "lockWarning": "{{year}} vergrendelen voorkomt het aanmaken van nieuwe maanden en het wijzigen van gegevens. Alle maanden moeten eerst afgesloten zijn.",
     "unlockWarning": "{{year}} ontgrendelen maakt bewerking weer mogelijk.",
     "lockConfirm": "Definitief vergrendelen",
-    "unlockConfirm": "Ontgrendelen"
+    "unlockConfirm": "Ontgrendelen",
+    "prevYear": "Vorig jaar",
+    "nextYear": "Volgend jaar"
   },
   "month": {
     "income": "Inkomsten",
@@ -96,7 +100,8 @@
     "entry_opening_balance": "Beginsaldo",
     "target": "Spaardoel",
     "targetDate": "Streefdatum",
-    "targetProgress": "{{percent}}% van doel"
+    "targetProgress": "{{percent}}% van doel",
+    "totalSavedLabel": "Totaal gespaard ({{count}} potjes)"
   },
   "settings": {
     "title": "Instellingen",
@@ -146,6 +151,7 @@
     "language": "Taal",
     "saved": "Opgeslagen",
     "search": "Zoeken...",
-    "addNew": "Nieuw toevoegen"
+    "addNew": "Nieuw toevoegen",
+    "sortBy": "Sorteer op"
   }
 }

@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Title, Text, Group, Button, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select,
+  NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select, Menu,
 } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
-import { IconTrash, IconX } from '@tabler/icons-react'
+import { IconTrash, IconX, IconDotsVertical, IconPlus } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
@@ -16,6 +17,9 @@ import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
+import HeroStat from '../components/mobile/HeroStat'
+import MobileList, { MobileListRow } from '../components/mobile/MobileList'
+import BottomSheet from '../components/mobile/BottomSheet'
 
 const MONTH_NL = ['','Januari','Februari','Maart','April','Mei','Juni','Juli','Augustus','September','Oktober','November','December']
 const MONTH_EN = ['','January','February','March','April','May','June','July','August','September','October','November','December']
@@ -39,12 +43,16 @@ export default function MonthOverview() {
   const overview = overviewQuery.data
 
   const navigate = useNavigate()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newCategoryId, setNewCategoryId] = useState<string | null>(null)
   const [newBudgetAmount, setNewBudgetAmount] = useState<number | string>('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [incomeSheet, setIncomeSheet] = useState<'create' | number | null>(null)
+  const [editIncomeAmount, setEditIncomeAmount] = useState<number | string>('')
+  const [budgetSheetOpen, setBudgetSheetOpen] = useState(false)
 
   const closePeriod = useClosePeriod(periodId ?? 0, y, m)
   const reopenPeriod = useReopenPeriod(periodId ?? 0, y, m)
@@ -140,6 +148,265 @@ export default function MonthOverview() {
     })
   }
 
+  if (isMobile) {
+    const editingIncome = typeof incomeSheet === 'number' ? incomes.find(inc => inc.id === incomeSheet) : undefined
+
+    const handleSaveIncomeEdit = () => {
+      if (!editingIncome) return
+      const cents = parseCents(editIncomeAmount)
+      updateIncome.mutate(
+        { id: editingIncome.id, amountCents: cents, notes: editingIncome.notes, sortOrder: editingIncome.sortOrder, label: editingIncome.label },
+        { onSuccess: () => setIncomeSheet(null) }
+      )
+    }
+
+    const handleCreateIncome = () => {
+      createIncome.mutate({ label: newLabel, amountCents: parseCents(newAmount), notes: '', sortOrder: incomes.length }, {
+        onSuccess: () => { setNewLabel(''); setNewAmount(''); setIncomeSheet(null) }
+      })
+    }
+
+    return (
+      <Stack gap="md">
+        <Group justify="space-between" wrap="nowrap">
+          <Group gap="sm">
+            <Text component={Link} to={`/years/${y}`} c="blue" size="sm">← {y}</Text>
+            <Badge color={isClosed ? 'green' : 'orange'}>{isClosed ? t('month.statusClosed') : t('month.statusOpen')}</Badge>
+          </Group>
+          <Menu position="bottom-end">
+            <Menu.Target>
+              <ActionIcon variant="subtle" aria-label={t('common.edit')}><IconDotsVertical size={18} /></ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item component={Link} to={`/months/${y}/${m}/transactions`}>{t('month.transactions')}</Menu.Item>
+              {isClosed
+                ? <Menu.Item color="orange" onClick={handleReopen}>{t('month.reopenAction')}</Menu.Item>
+                : <Menu.Item color="green" onClick={handleClose}>{t('month.closeAction')}</Menu.Item>}
+              {!isClosed && <Menu.Item color="red" onClick={() => setDeleteOpen(true)}>{t('month.delete')}</Menu.Item>}
+            </Menu.Dropdown>
+          </Menu>
+        </Group>
+        <Title order={3}>{monthName} {y}</Title>
+
+        <HeroStat label={t('month.surplusLabel')} value={<MoneyText cents={surplusCents} span fw={800} size="2.5rem" colored />} />
+
+        <Stack gap="xs">
+          <Text fw={600} size="sm">{t('month.income')}</Text>
+          <MobileList>
+            {incomes.map(inc => (
+              <MobileListRow
+                key={inc.id}
+                title={inc.label ?? t('month.unknownSource', { id: inc.sourceId })}
+                subtitle={inc.entryType === 'carryover' ? t('month.carryoverBadge') : undefined}
+                trailing={<MoneyText cents={inc.amountCents} fw={600} />}
+                chevron={!isClosed && inc.entryType !== 'carryover'}
+                onClick={!isClosed && inc.entryType !== 'carryover' ? () => { setIncomeSheet(inc.id); setEditIncomeAmount(inc.amountCents / 100) } : undefined}
+              />
+            ))}
+            {!isClosed && (
+              <MobileListRow
+                title={t('month.addIncome')}
+                leftSection={<IconPlus size={16} />}
+                onClick={() => { setNewLabel(''); setNewAmount(''); setIncomeSheet('create') }}
+              />
+            )}
+          </MobileList>
+          <Group justify="space-between" px="xs">
+            <Text fw={700} size="sm">{t('month.totalIncome')}</Text>
+            <MoneyText cents={incomeTotalCents} fw={700} />
+          </Group>
+        </Stack>
+
+        <Stack gap="xs">
+          <Text fw={600} size="sm">{t('month.expenses')}</Text>
+          <MobileList>
+            {budgetLines.map(bl => {
+              const budgeted = bl.tracksTransactions && bl.amountCents > 0
+              const pct = budgeted ? (bl.effectiveCents / bl.amountCents) * 100 : 0
+              const progressColor = pct > 100 ? 'red' : pct >= 80 ? 'orange' : 'green'
+              return (
+                <MobileListRow
+                  key={bl.id}
+                  title={budgetLineLabel(bl)}
+                  subtitle={budgeted ? <Progress value={Math.min(pct, 100)} color={progressColor} size="sm" mt={2} /> : undefined}
+                  to={bl.tracksTransactions ? `/months/${y}/${m}/transactions` : undefined}
+                  chevron={bl.tracksTransactions}
+                  trailing={
+                    <Group gap={6} wrap="nowrap">
+                      <MoneyText cents={bl.effectiveCents} fw={600} />
+                      {!isClosed && (
+                        <ActionIcon
+                          size="sm"
+                          variant={bl.tracksTransactions ? 'filled' : 'subtle'}
+                          color={bl.tracksTransactions ? 'blue' : 'gray'}
+                          aria-label={t('month.toggleTracking')}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateBudgetLine.mutate({
+                              id: bl.id, label: bl.label ?? null, amountCents: bl.amountCents,
+                              tracksTransactions: !bl.tracksTransactions, sortOrder: bl.sortOrder,
+                            })
+                          }}
+                        >≡</ActionIcon>
+                      )}
+                    </Group>
+                  }
+                />
+              )
+            })}
+            {!isClosed && availableCategories.length > 0 && (
+              <MobileListRow title={t('month.addCategory')} leftSection={<IconPlus size={16} />} onClick={() => setBudgetSheetOpen(true)} />
+            )}
+          </MobileList>
+          <Group justify="space-between" px="xs">
+            <Text fw={700} size="sm">{t('month.totalExpenses')}</Text>
+            <MoneyText cents={expenseTotalCents} fw={700} />
+          </Group>
+        </Stack>
+
+        <Stack gap="xs">
+          <Group justify="space-between">
+            <Text fw={600} size="sm">{t('month.splitSection')}</Text>
+            {!isClosed && !splitEdits && (
+              <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
+                {t('month.adjust')}
+              </Button>
+            )}
+          </Group>
+          <MobileList>
+            {splitPotIds.map(potId => {
+              const sp = splits.find(s => s.potId === potId)
+              const name = sp?.potName ?? potNameById.get(potId) ?? '—'
+              const isCarryoverRow = !!carryoverPot && potId === carryoverPot.id
+              return (
+                <MobileListRow
+                  key={potId}
+                  title={name}
+                  subtitle={`${sp?.percentage ?? 0}%${isCarryoverRow ? ` · ${t('pots.kind_carryover')}` : ''}`}
+                  trailing={sp ? <MoneyText cents={sp.projectedCents ?? 0} colored={!isClosed} fw={600} /> : undefined}
+                />
+              )
+            })}
+          </MobileList>
+        </Stack>
+
+        <BottomSheet opened={incomeSheet !== null} onClose={() => setIncomeSheet(null)} title={incomeSheet === 'create' ? t('month.addIncome') : t('common.edit')}>
+          {incomeSheet === 'create' ? (
+            <>
+              <TextInput label={t('common.description')} value={newLabel} onChange={e => setNewLabel(e.target.value)} />
+              <NumberInput label={t('common.amount')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls placeholder="0,00" />
+              <Button disabled={!newLabel} loading={createIncome.isPending} onClick={handleCreateIncome}>{t('common.add')}</Button>
+            </>
+          ) : editingIncome && (
+            <>
+              <NumberInput
+                label={t('common.amount')}
+                value={editIncomeAmount}
+                onChange={setEditIncomeAmount}
+                decimalSeparator=","
+                decimalScale={2}
+                prefix="€ "
+                hideControls
+              />
+              <Group grow>
+                <Button onClick={handleSaveIncomeEdit} loading={updateIncome.isPending}>{t('common.save')}</Button>
+                <Button
+                  color="red"
+                  variant="light"
+                  loading={deleteIncome.isPending}
+                  onClick={() => deleteIncome.mutate(editingIncome.id, { onSuccess: () => setIncomeSheet(null) })}
+                >
+                  {t('common.delete')}
+                </Button>
+              </Group>
+            </>
+          )}
+        </BottomSheet>
+
+        <BottomSheet opened={budgetSheetOpen} onClose={() => setBudgetSheetOpen(false)} title={t('month.addCategory')}>
+          <Select
+            label={t('settings.categories')}
+            placeholder={t('month.addCategory')}
+            data={availableCategories.map(c => ({ value: String(c.id), label: c.name }))}
+            value={newCategoryId}
+            onChange={setNewCategoryId}
+            searchable
+            clearable
+          />
+          <NumberInput label={t('common.amount')} value={newBudgetAmount} onChange={setNewBudgetAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls placeholder="0,00" />
+          <Button disabled={!newCategoryId} loading={createBudgetLine.isPending} onClick={() => { handleAddBudgetLine(); setBudgetSheetOpen(false) }}>
+            {t('common.add')}
+          </Button>
+        </BottomSheet>
+
+        <BottomSheet opened={!!splitEdits} onClose={() => setSplitEdits(null)} title={t('month.splitSection')}>
+          {carryoverOverAllocated && <Text size="xs" c="red">{t('month.splitOverAllocated')}</Text>}
+          <Stack gap="sm">
+            {splitPotIds.map(potId => {
+              const sp = splits.find(s => s.potId === potId)
+              const name = sp?.potName ?? potNameById.get(potId) ?? '—'
+              const isCarryoverRow = !!carryoverPot && potId === carryoverPot.id
+              return (
+                <Group key={potId} justify="space-between" wrap="nowrap">
+                  <Text size="sm" style={{ flex: 1 }}>{name}{isCarryoverRow && <Text span size="xs" c="dimmed"> ({t('pots.kind_carryover')})</Text>}</Text>
+                  {isCarryoverRow ? (
+                    <Text size="sm" c={carryoverOverAllocated ? 'red' : 'dimmed'}>{carryoverRemainder.toFixed(2)}%</Text>
+                  ) : (
+                    <NumberInput
+                      size="sm"
+                      value={Number(splitEdits?.[potId] ?? sp?.percentage ?? 0)}
+                      onChange={(v) => setSplitEdits(prev => ({ ...prev!, [potId]: String(v) }))}
+                      suffix="%"
+                      decimalScale={2}
+                      hideControls
+                      min={0}
+                      max={100}
+                      w={100}
+                    />
+                  )}
+                  {!isCarryoverRow && (
+                    <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleRemoveSplitPot(potId)}><IconX size={14} /></ActionIcon>
+                  )}
+                </Group>
+              )
+            })}
+            {availablePotsToAdd.length > 0 && (
+              <Group wrap="nowrap">
+                <Select
+                  size="sm"
+                  placeholder={t('month.addPot')}
+                  data={availablePotsToAdd.map(p => ({ value: String(p.id), label: p.name }))}
+                  value={newSplitPotId}
+                  onChange={setNewSplitPotId}
+                  searchable
+                  clearable
+                  style={{ flex: 1 }}
+                />
+                <Button size="sm" disabled={!newSplitPotId} onClick={handleAddSplitPot}>{t('common.add')}</Button>
+              </Group>
+            )}
+            <Group grow>
+              <Button onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
+              <Button variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
+            </Group>
+          </Stack>
+        </BottomSheet>
+
+        <PasswordModal
+          opened={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          title={t('month.deleteTitle')}
+          warningText={t('month.deleteWarning', { month: monthName, year: y })}
+          confirmLabel={t('month.deleteConfirm')}
+          confirmColor="red"
+          loading={deletePeriod.isPending}
+          onConfirm={handleDelete}
+        />
+      </Stack>
+    )
+  }
+
   return (
     <Stack gap="lg">
       <Group justify="space-between">
@@ -169,6 +436,7 @@ export default function MonthOverview() {
       {/* Incomes */}
       <Paper shadow="xs" p="md" withBorder>
         <Title order={4} mb="sm">{t('month.income')}</Title>
+        <Table.ScrollContainer minWidth={420}>
         <Table>
           <Table.Tbody>
             {incomes.map(inc => (
@@ -230,11 +498,13 @@ export default function MonthOverview() {
             </Table.Tr>
           </Table.Tfoot>
         </Table>
+        </Table.ScrollContainer>
       </Paper>
 
       {/* Budget lines */}
       <Paper shadow="xs" p="md" withBorder>
         <Title order={4} mb="sm">{t('month.expenses')}</Title>
+        <Table.ScrollContainer minWidth={420}>
         <Table>
           <Table.Tbody>
             {budgetLines.map(bl => {
@@ -322,6 +592,7 @@ export default function MonthOverview() {
             </Table.Tr>
           </Table.Tfoot>
         </Table>
+        </Table.ScrollContainer>
       </Paper>
 
       {/* Surplus banner */}
@@ -359,6 +630,7 @@ export default function MonthOverview() {
         {carryoverOverAllocated && (
           <Text size="xs" c="red" mb="sm">{t('month.splitOverAllocated')}</Text>
         )}
+        <Table.ScrollContainer minWidth={420}>
         <Table>
           <Table.Thead>
             <Table.Tr>
@@ -430,6 +702,7 @@ export default function MonthOverview() {
             )}
           </Table.Tbody>
         </Table>
+        </Table.ScrollContainer>
       </Paper>
       <PasswordModal
         opened={deleteOpen}

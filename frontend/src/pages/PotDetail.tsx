@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
-  Title, Text, Group, Badge, Skeleton, Alert, Table,
+  Title, Text, Group, Badge, Skeleton, Alert, Table, Button, Box,
   NumberInput, ActionIcon, Stack, Paper, TextInput, Select, Progress,
 } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import { AreaChart } from '@mantine/charts'
 import { modals } from '@mantine/modals'
-import { IconTrash } from '@tabler/icons-react'
+import { IconTrash, IconPlus } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import { usePots, usePotLedger, useCreatePotEntry, useDeletePotEntry } from '../api/hooks/useSettings'
@@ -16,6 +17,9 @@ import EmptyState from '../components/EmptyState'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
 import { notifications } from '@mantine/notifications'
+import HeroStat from '../components/mobile/HeroStat'
+import MobileList, { MobileListRow } from '../components/mobile/MobileList'
+import BottomSheet from '../components/mobile/BottomSheet'
 
 const ENTRY_TYPE_COLORS: Record<string, string> = {
   allocation: 'blue',
@@ -36,6 +40,7 @@ export default function PotDetail() {
   const { id } = useParams<{ id: string }>()
   const potId = Number(id)
   const { t, i18n } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
 
   const { data: pots, isLoading: potsLoading } = usePots()
@@ -47,6 +52,7 @@ export default function PotDetail() {
   const [amount, setAmount] = useState<number | string>('')
   const [description, setDescription] = useState('')
   const [entryDate, setEntryDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
+  const [addSheetOpen, setAddSheetOpen] = useState(false)
 
   if (potsLoading || ledgerLoading) return <Skeleton h={400} mt="md" />
 
@@ -67,7 +73,7 @@ export default function PotDetail() {
     createEntry.mutate(
       { entryType, amountCents: cents, description, entryDate: entryDate ?? undefined },
       {
-        onSuccess: () => { setAmount(''); setDescription('') },
+        onSuccess: () => { setAmount(''); setDescription(''); setAddSheetOpen(false) },
         onError: (err: unknown) => notifications.show({ color: 'red', message: getErrorMessage(err, t('common.error')) }),
       }
     )
@@ -80,6 +86,114 @@ export default function PotDetail() {
     confirmProps: { color: 'red' },
     onConfirm: () => deleteEntry.mutate(entryId),
   })
+
+  if (isMobile) {
+    return (
+      <Stack gap="md">
+        <Group gap="sm">
+          <Text component={Link} to="/pots" c="blue" size="sm">{t('pots.back')}</Text>
+        </Group>
+
+        <HeroStat label={pot.name} value={<MoneyText cents={currentBalance} span fw={800} size="2.5rem" />} />
+        <Group justify="center">
+          <Badge size="sm" variant="light" color={pot.kind === 'carryover' ? 'gray' : 'blue'}>
+            {t(`pots.kind_${pot.kind}`)}
+          </Badge>
+        </Group>
+
+        {pot.targetCents != null && pot.targetCents > 0 && (
+          <Paper shadow="xs" p="md" withBorder>
+            <Group justify="space-between" mb="xs">
+              <Text size="sm" fw={600}>{t('pots.target')}</Text>
+              <Group gap="xs">
+                <MoneyText cents={pot.targetCents} size="sm" span />
+                {pot.targetDate && <Text size="sm" c="dimmed">· {dayjs(pot.targetDate).format('DD-MM-YYYY')}</Text>}
+              </Group>
+            </Group>
+            <Progress
+              value={Math.min(100, Math.max(0, (currentBalance / pot.targetCents) * 100))}
+              color={currentBalance >= pot.targetCents ? 'green' : 'blue'}
+            />
+          </Paper>
+        )}
+
+        {chartData.length > 1 && (
+          <Paper shadow="xs" p="sm" withBorder>
+            <AreaChart
+              h={160}
+              data={chartData}
+              dataKey="date"
+              series={[{ name: t('pots.runningBalance'), color: 'blue.6' }]}
+              curveType="linear"
+              valueFormatter={(v) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(v)}
+            />
+          </Paper>
+        )}
+
+        <Group justify="space-between">
+          <Text fw={600} size="sm">{t('pots.ledger')}</Text>
+          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setAddSheetOpen(true)}>{t('pots.booking')}</Button>
+        </Group>
+
+        {entries.length === 0 ? (
+          <EmptyState message={t('pots.noEntries')} />
+        ) : (
+          <MobileList>
+            {[...entries].reverse().map((e) => (
+              <MobileListRow
+                key={e.id}
+                leftSection={<Box w={10} h={10} bg={`${ENTRY_TYPE_COLORS[e.entryType] ?? 'gray'}.6`} style={{ borderRadius: '50%', flexShrink: 0 }} />}
+                title={e.description || t(`pots.entry_${e.entryType}`)}
+                subtitle={e.entryDate ? dayjs(e.entryDate).format('DD-MM-YYYY') : undefined}
+                trailing={
+                  <Stack gap={0} align="flex-end">
+                    <MoneyText cents={e.amountCents} colored fw={600} size="sm" />
+                    <MoneyText cents={e.runningBalance} c="dimmed" size="xs" />
+                  </Stack>
+                }
+                swipeAction={MANUAL_ENTRY_TYPES.includes(e.entryType) ? {
+                  label: <IconTrash size={18} />,
+                  destructive: true,
+                  onTrigger: () => deleteEntry.mutate(e.id),
+                } : undefined}
+              />
+            ))}
+          </MobileList>
+        )}
+
+        <BottomSheet opened={addSheetOpen} onClose={() => setAddSheetOpen(false)} title={t('pots.booking')}>
+          <Select
+            label={t('pots.type')}
+            data={MANUAL_ENTRY_TYPES.map((v) => ({ value: v, label: t(`pots.entry_${v}`) }))}
+            value={entryType}
+            onChange={setEntryType}
+          />
+          <DateInput
+            label={t('common.date')}
+            value={entryDate}
+            onChange={setEntryDate}
+            valueFormat="DD-MM-YYYY"
+          />
+          <TextInput
+            label={t('pots.description')}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <NumberInput
+            label={t('common.amount')}
+            value={amount}
+            onChange={setAmount}
+            decimalSeparator=","
+            decimalScale={2}
+            prefix="€ "
+            hideControls
+            placeholder="0,00"
+          />
+          <Button loading={createEntry.isPending} onClick={handleAdd}>{t('pots.book')}</Button>
+        </BottomSheet>
+      </Stack>
+    )
+  }
 
   return (
     <Stack gap="lg">
@@ -164,6 +278,7 @@ export default function PotDetail() {
         {entries.length === 0 ? (
           <EmptyState message={t('pots.noEntries')} />
         ) : (
+          <Table.ScrollContainer minWidth={650}>
           <Table>
             <Table.Thead>
               <Table.Tr>
@@ -198,6 +313,7 @@ export default function PotDetail() {
               ))}
             </Table.Tbody>
           </Table>
+          </Table.ScrollContainer>
         )}
       </Paper>
     </Stack>

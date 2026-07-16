@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal, Menu, ActionIcon, Anchor } from '@mantine/core'
+import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import { IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
@@ -15,6 +15,8 @@ import { useYears, useCreateYear } from '../api/hooks/usePeriods'
 import { parseToCents } from '../lib/money'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
+import MobileList, { MobileListRow } from '../components/mobile/MobileList'
+import BottomSheet from '../components/mobile/BottomSheet'
 
 function amountToCents(v: number | string): number {
   return parseToCents(String(v)) ?? 0
@@ -52,8 +54,60 @@ function cmp(a: number | string, b: number | string): number {
   return (a as number) - (b as number)
 }
 
+function SortMenu<K extends string>({ sort, onSort, options }: {
+  sort: SortState<K>
+  onSort: (key: K) => void
+  options: { key: K; label: string }[]
+}) {
+  const { t } = useTranslation()
+  const activeLabel = options.find(o => o.key === sort.key)?.label ?? ''
+  return (
+    <Menu position="bottom-end">
+      <Menu.Target>
+        <Button size="xs" variant="subtle" rightSection={sort.dir === 'asc' ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}>
+          {t('common.sortBy')}: {activeLabel}
+        </Button>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {options.map(o => (
+          <Menu.Item key={o.key} onClick={() => onSort(o.key)} fw={sort.key === o.key ? 700 : 400}>
+            {o.label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  )
+}
+
 export default function Settings() {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
+
+  if (isMobile) {
+    const sections = [
+      { id: 'section-categories', label: t('settings.categories'), content: <CategoriesTab /> },
+      { id: 'section-sources', label: t('settings.incomeSources'), content: <SourcesTab /> },
+      { id: 'section-pots', label: t('settings.pots'), content: <PotsTab /> },
+      { id: 'section-years', label: t('settings.years'), content: <YearsTab /> },
+    ]
+    return (
+      <Stack gap="lg">
+        <Title order={2}>{t('settings.title')}</Title>
+        <Group gap="xs" wrap="nowrap" style={{ overflowX: 'auto' }}>
+          {sections.map(s => (
+            <Anchor key={s.id} href={`#${s.id}`} size="sm" style={{ whiteSpace: 'nowrap' }}>{s.label}</Anchor>
+          ))}
+        </Group>
+        {sections.map(s => (
+          <Stack key={s.id} gap="sm" id={s.id} style={{ scrollMarginTop: 70 }}>
+            <Title order={4}>{s.label}</Title>
+            {s.content}
+          </Stack>
+        ))}
+      </Stack>
+    )
+  }
+
   return (
     <>
       <Title order={2} mb="md">{t('settings.title')}</Title>
@@ -77,6 +131,7 @@ type CategorySortKey = 'name' | 'default' | 'itemized' | 'template'
 
 function CategoriesTab() {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data } = useCategories()
   const create = useCreateCategory()
   const update = useUpdateCategory()
@@ -120,6 +175,83 @@ function CategoriesTab() {
     })
   }, [data, search, sort])
 
+  if (isMobile) {
+    const editingCat = rows.find(c => c.id === editing)
+    return (
+      <Stack gap="sm">
+        <TextInput
+          placeholder={t('common.search')}
+          leftSection={<IconSearch size={14} />}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <Group justify="space-between">
+          <SortMenu
+            sort={sort}
+            onSort={k => setSort(s => toggleSort(s, k))}
+            options={[
+              { key: 'name', label: t('settings.name') },
+              { key: 'default', label: t('settings.default') },
+              { key: 'itemized', label: t('settings.itemized') },
+              { key: 'template', label: t('settings.template') },
+            ]}
+          />
+          <ActionIcon variant="filled" aria-label={t('common.add')} onClick={openAdd}><IconPlus size={16} /></ActionIcon>
+        </Group>
+        {rows.length === 0 ? (
+          <EmptyState message={t('settings.noCategories')} />
+        ) : (
+          <MobileList>
+            {rows.map(cat => (
+              <MobileListRow
+                key={cat.id}
+                title={<>{cat.name} {cat.archivedAt && <Badge size="xs" color="gray" ml="xs">{t('settings.archived')}</Badge>}</>}
+                subtitle={[cat.isItemized && t('settings.itemized'), cat.includeInTemplate && t('settings.template')].filter(Boolean).join(' · ')}
+                trailing={<Text size="sm">€ {(cat.defaultAmountCents / 100).toFixed(2)}</Text>}
+                chevron
+                onClick={() => startEdit(cat)}
+              />
+            ))}
+          </MobileList>
+        )}
+
+        <BottomSheet opened={editing !== null} onClose={() => setEditing(null)} title={t('common.edit')}>
+          {editingCat && (
+            <>
+              <TextInput label={t('settings.name')} value={editName} onChange={e => setEditName(e.target.value)} />
+              <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+              <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
+              <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
+              <Group grow>
+                <Button onClick={saveEdit} loading={update.isPending}>{t('common.save')}</Button>
+                <Button
+                  color={editingCat.archivedAt ? 'green' : 'red'}
+                  variant="light"
+                  loading={archive.isPending}
+                  onClick={() => archive.mutate(editingCat.id, { onSuccess: () => setEditing(null) })}
+                >
+                  {editingCat.archivedAt ? t('settings.restore') : t('common.archive')}
+                </Button>
+              </Group>
+            </>
+          )}
+        </BottomSheet>
+
+        <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
+          <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
+          <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
+          <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Button disabled={!newName} loading={create.isPending} onClick={() => {
+            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
+            })
+          }}>{t('common.add')}</Button>
+        </BottomSheet>
+      </Stack>
+    )
+  }
+
   return (
     <Stack gap="sm">
       <Group justify="space-between">
@@ -132,6 +264,7 @@ function CategoriesTab() {
         />
         <Button leftSection={<IconPlus size={14} />} onClick={openAdd}>{t('common.add')}</Button>
       </Group>
+      <Table.ScrollContainer minWidth={520}>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -183,6 +316,7 @@ function CategoriesTab() {
           ))}
         </Table.Tbody>
       </Table>
+      </Table.ScrollContainer>
       <Modal opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
         <Stack gap="sm">
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
@@ -204,6 +338,7 @@ type SourceSortKey = 'name' | 'default' | 'template'
 
 function SourcesTab() {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data } = useIncomeSources()
   const create = useCreateIncomeSource()
   const update = useUpdateIncomeSource()
@@ -229,6 +364,92 @@ function SourcesTab() {
     })
   }, [data, search, sort])
 
+  const startEdit = (src: { id: number; name: string; defaultAmountCents: number; includeInTemplate: boolean }) => {
+    setEditing(src.id)
+    setEditName(src.name)
+    setEditAmount(src.defaultAmountCents / 100)
+    setEditTemplate(src.includeInTemplate)
+  }
+
+  if (isMobile) {
+    const editingSrc = rows.find(s => s.id === editing)
+    return (
+      <Stack gap="sm">
+        <TextInput
+          placeholder={t('common.search')}
+          leftSection={<IconSearch size={14} />}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <Group justify="space-between">
+          <SortMenu
+            sort={sort}
+            onSort={k => setSort(s => toggleSort(s, k))}
+            options={[
+              { key: 'name', label: t('settings.name') },
+              { key: 'default', label: t('settings.default') },
+              { key: 'template', label: t('settings.template') },
+            ]}
+          />
+          <ActionIcon variant="filled" aria-label={t('common.add')} onClick={openAdd}><IconPlus size={16} /></ActionIcon>
+        </Group>
+        {rows.length === 0 ? (
+          <EmptyState message={t('settings.noSources')} />
+        ) : (
+          <MobileList>
+            {rows.map(src => (
+              <MobileListRow
+                key={src.id}
+                title={<>{src.name} {src.archivedAt && <Badge size="xs" color="gray" ml="xs">{t('settings.archived')}</Badge>}</>}
+                subtitle={src.includeInTemplate ? t('settings.template') : undefined}
+                trailing={<Text size="sm">€ {(src.defaultAmountCents / 100).toFixed(2)}</Text>}
+                chevron
+                onClick={() => startEdit(src)}
+              />
+            ))}
+          </MobileList>
+        )}
+
+        <BottomSheet opened={editing !== null} onClose={() => setEditing(null)} title={t('common.edit')}>
+          {editingSrc && (
+            <>
+              <TextInput label={t('settings.name')} value={editName} onChange={e => setEditName(e.target.value)} />
+              <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+              <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
+              <Group grow>
+                <Button
+                  onClick={() => update.mutate({ id: editingSrc.id, name: editName, defaultAmountCents: amountToCents(editAmount), includeInTemplate: editTemplate, sortOrder: editingSrc.sortOrder }, { onSuccess: () => setEditing(null) })}
+                  loading={update.isPending}
+                >
+                  {t('common.save')}
+                </Button>
+                <Button
+                  color={editingSrc.archivedAt ? 'green' : 'red'}
+                  variant="light"
+                  loading={archive.isPending}
+                  onClick={() => archive.mutate(editingSrc.id, { onSuccess: () => setEditing(null) })}
+                >
+                  {editingSrc.archivedAt ? t('settings.restore') : t('common.archive')}
+                </Button>
+              </Group>
+            </>
+          )}
+        </BottomSheet>
+
+        <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
+          <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
+          <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+          <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Button disabled={!newName} loading={create.isPending} onClick={() => {
+            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewTemplate(true); closeAdd() }
+            })
+          }}>{t('common.add')}</Button>
+        </BottomSheet>
+      </Stack>
+    )
+  }
+
   return (
     <Stack gap="sm">
       <Group justify="space-between">
@@ -241,6 +462,7 @@ function SourcesTab() {
         />
         <Button leftSection={<IconPlus size={14} />} onClick={openAdd}>{t('common.add')}</Button>
       </Group>
+      <Table.ScrollContainer minWidth={480}>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -289,6 +511,7 @@ function SourcesTab() {
           ))}
         </Table.Tbody>
       </Table>
+      </Table.ScrollContainer>
       <Modal opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
         <Stack gap="sm">
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
@@ -309,6 +532,7 @@ type PotSortKey = 'name' | 'kind' | 'target'
 
 function PotsTab() {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data } = usePots()
   const create = useCreatePot()
   const update = useUpdatePot()
@@ -361,6 +585,156 @@ function PotsTab() {
     })
   }, [data, search, sort])
 
+  const startEdit = (pot: { id: number; name: string; kind: string; targetCents?: number | null; targetDate?: string | null }) => {
+    setEditing(pot.id)
+    setEditName(pot.name)
+    setEditKind(pot.kind)
+    setEditTarget(pot.targetCents != null ? pot.targetCents / 100 : '')
+    setEditTargetDate(pot.targetDate ?? null)
+  }
+
+  const saveEdit = (pot: { id: number; sortOrder: number }) => {
+    update.mutate({
+      id: pot.id,
+      name: editName,
+      kind: editKind,
+      sortOrder: pot.sortOrder,
+      targetCents: editKind === 'normal' && editTarget !== '' ? amountToCents(editTarget) : null,
+      targetDate: editKind === 'normal' ? editTargetDate : null,
+    }, {
+      onSuccess: () => setEditing(null),
+      onError: (err: unknown) => {
+        const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
+        notifications.show({ color: 'red', title: t('common.error'), message: editKind === 'carryover' ? t('settings.carryoverExists') : msg })
+      },
+    })
+  }
+
+  if (isMobile) {
+    const editingPot = rows.find(p => p.id === editing)
+    return (
+      <Stack gap="sm">
+        <TextInput
+          placeholder={t('common.search')}
+          leftSection={<IconSearch size={14} />}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <Group justify="space-between">
+          <SortMenu
+            sort={sort}
+            onSort={k => setSort(s => toggleSort(s, k))}
+            options={[
+              { key: 'name', label: t('settings.name') },
+              { key: 'kind', label: t('settings.type') },
+              { key: 'target', label: t('pots.target') },
+            ]}
+          />
+          <ActionIcon variant="filled" aria-label={t('common.add')} onClick={openAdd}><IconPlus size={16} /></ActionIcon>
+        </Group>
+        {rows.length === 0 ? (
+          <EmptyState message={t('settings.noPots')} />
+        ) : (
+          <MobileList>
+            {rows.map(pot => (
+              <MobileListRow
+                key={pot.id}
+                title={<>{pot.name} {pot.archivedAt && <Badge size="xs" color="gray" ml="xs">{t('settings.archived')}</Badge>}</>}
+                subtitle={kindLabel(pot.kind)}
+                trailing={pot.targetCents != null ? <MoneyText cents={pot.targetCents} size="sm" /> : undefined}
+                chevron
+                onClick={() => startEdit(pot)}
+              />
+            ))}
+          </MobileList>
+        )}
+
+        <BottomSheet opened={editing !== null} onClose={() => setEditing(null)} title={t('common.edit')}>
+          {editingPot && (
+            <>
+              <TextInput label={t('settings.name')} value={editName} onChange={e => setEditName(e.target.value)} />
+              <Select
+                label={t('settings.type')}
+                value={editKind}
+                onChange={v => setEditKind(v ?? 'normal')}
+                data={[
+                  { value: 'normal', label: t('settings.kind_normal') },
+                  { value: 'carryover', label: t('settings.kind_carryover') },
+                ]}
+              />
+              {editKind === 'normal' && (
+                <>
+                  <NumberInput
+                    label={t('pots.target')}
+                    value={editTarget}
+                    onChange={setEditTarget}
+                    decimalSeparator=","
+                    decimalScale={2}
+                    prefix="€ "
+                    hideControls
+                    placeholder="0,00"
+                  />
+                  <DateInput
+                    label={t('pots.targetDate')}
+                    value={editTargetDate}
+                    onChange={setEditTargetDate}
+                    valueFormat="DD-MM-YYYY"
+                    clearable
+                  />
+                </>
+              )}
+              <Group grow>
+                <Button onClick={() => saveEdit(editingPot)} loading={update.isPending}>{t('common.save')}</Button>
+                <Button
+                  color={editingPot.archivedAt ? 'green' : 'red'}
+                  variant="light"
+                  loading={archive.isPending}
+                  onClick={() => archive.mutate(editingPot.id, { onSuccess: () => setEditing(null) })}
+                >
+                  {editingPot.archivedAt ? t('settings.restore') : t('common.archive')}
+                </Button>
+              </Group>
+            </>
+          )}
+        </BottomSheet>
+
+        <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
+          <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
+          <Select
+            label={t('settings.type')}
+            value={newKind}
+            onChange={v => setNewKind(v ?? 'normal')}
+            data={[
+              { value: 'normal', label: t('settings.kind_normal') },
+              { value: 'carryover', label: t('settings.kind_carryover') },
+            ]}
+          />
+          {newKind === 'normal' && (
+            <>
+              <NumberInput
+                label={t('pots.target')}
+                value={newTarget}
+                onChange={setNewTarget}
+                decimalSeparator=","
+                decimalScale={2}
+                prefix="€ "
+                hideControls
+              />
+              <DateInput
+                label={t('pots.targetDate')}
+                value={newTargetDate}
+                onChange={setNewTargetDate}
+                valueFormat="DD-MM-YYYY"
+                clearable
+              />
+            </>
+          )}
+          <Button disabled={!newName} loading={create.isPending} onClick={handleCreate}>{t('common.add')}</Button>
+        </BottomSheet>
+      </Stack>
+    )
+  }
+
   return (
     <Stack gap="sm">
       <Group justify="space-between">
@@ -373,6 +747,7 @@ function PotsTab() {
         />
         <Button leftSection={<IconPlus size={14} />} onClick={openAdd}>{t('common.add')}</Button>
       </Group>
+      <Table.ScrollContainer minWidth={480}>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -477,6 +852,7 @@ function PotsTab() {
           ))}
         </Table.Tbody>
       </Table>
+      </Table.ScrollContainer>
       <Modal opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
         <Stack gap="sm">
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
@@ -520,6 +896,7 @@ function PotsTab() {
 
 function YearsTab() {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data } = useYears()
   const create = useCreateYear()
   const [newYear, setNewYear] = useState<number | string>('')
@@ -531,6 +908,38 @@ function YearsTab() {
     const filtered = (data ?? []).filter(y => String(y).includes(search))
     return [...filtered].sort((a, b) => sortDir === 'asc' ? a - b : b - a)
   }, [data, search, sortDir])
+
+  if (isMobile) {
+    return (
+      <Stack gap="sm">
+        <TextInput
+          placeholder={t('common.search')}
+          leftSection={<IconSearch size={14} />}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <Group justify="space-between">
+          <Button size="xs" variant="subtle" rightSection={sortDir === 'asc' ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />} onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}>
+            {t('settings.year')}
+          </Button>
+          <ActionIcon variant="filled" aria-label={t('common.add')} onClick={openAdd}><IconPlus size={16} /></ActionIcon>
+        </Group>
+        {rows.length === 0 ? (
+          <EmptyState message={t('settings.noYears')} />
+        ) : (
+          <MobileList>
+            {rows.map(y => <MobileListRow key={y} title={String(y)} />)}
+          </MobileList>
+        )}
+        <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
+          <NumberInput label={t('settings.year')} value={newYear} onChange={setNewYear} hideControls decimalScale={0} />
+          <Button disabled={!newYear} loading={create.isPending} onClick={() => {
+            create.mutate(Number(newYear), { onSuccess: () => { setNewYear(''); closeAdd() } })
+          }}>{t('common.add')}</Button>
+        </BottomSheet>
+      </Stack>
+    )
+  }
 
   return (
     <Stack gap="sm">

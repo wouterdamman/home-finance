@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Title, SimpleGrid, Paper, Group, Text, Skeleton, Alert, Progress, Stack } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import { IconPigMoney } from '@tabler/icons-react'
@@ -9,10 +10,12 @@ import EmptyState from '../components/EmptyState'
 
 export default function Pots() {
   const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data, isLoading, error } = usePotBalances()
   // Carryover pots always net to zero (surplus passes through to next
   // month's income) — they aren't a savings goal, so they don't belong here.
   const savingsPots = (data ?? []).filter((p) => p.kind !== 'carryover')
+  const totalSaved = savingsPots.reduce((sum, p) => sum + p.balanceCents, 0)
 
   if (isLoading) return <Skeleton h={200} mt="md" />
   if (error) return <Alert color="red">{t('common.error')}</Alert>
@@ -20,6 +23,12 @@ export default function Pots() {
   return (
     <>
       <Title order={2} mb="md">{t('pots.title')}</Title>
+      {isMobile && savingsPots.length > 0 && (
+        <Group justify="space-between" mb="md" px="xs">
+          <Text size="sm" c="dimmed">{t('pots.totalSavedLabel', { count: savingsPots.length })}</Text>
+          <MoneyText cents={totalSaved} fw={700} />
+        </Group>
+      )}
       {savingsPots.length === 0 && (
         <EmptyState message={t('pots.noEntries')} icon={<IconPigMoney size={22} />} />
       )}

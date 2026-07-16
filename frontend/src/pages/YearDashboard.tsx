@@ -1,14 +1,18 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, SimpleGrid, Paper } from '@mantine/core'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, SimpleGrid, Paper, ActionIcon, ScrollArea, Stack } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { CompositeChart } from '@mantine/charts'
 import { notifications } from '@mantine/notifications'
+import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
-import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear } from '../api/hooks/usePeriods'
+import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear, useYears } from '../api/hooks/usePeriods'
 import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { getErrorMessage } from '../api/client'
 import { formatCents } from '../lib/money'
+import HeroStat from '../components/mobile/HeroStat'
+import MobileList, { MobileListRow } from '../components/mobile/MobileList'
 
 const MONTHS_NL = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -17,7 +21,10 @@ export default function YearDashboard() {
   const { year } = useParams<{ year: string }>()
   const y = Number(year)
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data, isLoading, error } = useYearSummary(y)
+  const { data: years } = useYears()
   const createPeriod = useCreatePeriod()
   const lockYear = useLockYear(y)
   const unlockYear = useUnlockYear(y)
@@ -33,6 +40,9 @@ export default function YearDashboard() {
   const isLocked = data.locked
   const totalPotBalance = data.potBalances.reduce((sum, p) => sum + p.balanceCents, 0)
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
+  const savingsPotBalances = data.potBalances.filter((p) => p.kind !== 'carryover')
+  const hasPrevYear = (years ?? []).includes(y - 1)
+  const hasNextYear = (years ?? []).includes(y + 1)
 
   const chartData = data.months.map((m) => ({
     month: months[m.month - 1],
@@ -53,6 +63,120 @@ export default function YearDashboard() {
       onSuccess: () => setUnlockModalOpen(false),
       onError: (e: unknown) => notifications.show({ color: 'red', message: getErrorMessage(e, t('common.error')) }),
     })
+  }
+
+  if (isMobile) {
+    return (
+      <Stack gap="md">
+        <Group justify="space-between" wrap="nowrap">
+          <ActionIcon variant="subtle" disabled={!hasPrevYear} aria-label={t('year.prevYear')} onClick={() => navigate(`/years/${y - 1}`)}>
+            <IconChevronLeft size={18} />
+          </ActionIcon>
+          <Group gap="xs">
+            <Title order={3}>{y}</Title>
+            {isLocked && <Badge color="red">{t('year.locked')}</Badge>}
+          </Group>
+          <ActionIcon variant="subtle" disabled={!hasNextYear} aria-label={t('year.nextYear')} onClick={() => navigate(`/years/${y + 1}`)}>
+            <IconChevronRight size={18} />
+          </ActionIcon>
+        </Group>
+
+        <HeroStat label={t('year.surplus')} value={<MoneyText cents={data.yearSurplusCents} span fw={800} size="2.5rem" colored />} />
+
+        <SimpleGrid cols={3}>
+          <Stack gap={0} align="center">
+            <Text size="xs" c="dimmed">{t('year.income')}</Text>
+            <MoneyText cents={data.yearIncomeTotalCents} fw={600} size="sm" />
+          </Stack>
+          <Stack gap={0} align="center">
+            <Text size="xs" c="dimmed">{t('year.expenses')}</Text>
+            <MoneyText cents={data.yearExpenseTotalCents} fw={600} size="sm" />
+          </Stack>
+          <Stack gap={0} align="center">
+            <Text size="xs" c="dimmed">{t('pots.balance')}</Text>
+            <MoneyText cents={totalPotBalance} fw={600} size="sm" />
+          </Stack>
+        </SimpleGrid>
+
+        {chartData.some((d) => d[t('year.income')] || d[t('year.expenses')]) && (
+          <Paper shadow="xs" p="sm" withBorder>
+            <CompositeChart
+              h={160}
+              data={chartData}
+              dataKey="month"
+              withLegend={false}
+              valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+              series={[
+                { name: t('year.income'), color: 'teal.6', type: 'bar' },
+                { name: t('year.expenses'), color: 'red.6', type: 'bar' },
+                { name: t('year.surplus'), color: 'blue.6', type: 'line' },
+              ]}
+            />
+          </Paper>
+        )}
+
+        {savingsPotBalances.length > 0 && (
+          <ScrollArea type="auto" offsetScrollbars>
+            <Group wrap="nowrap" gap="sm">
+              {savingsPotBalances.map((p) => (
+                <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="sm" withBorder miw={140} style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <Text size="xs" c="dimmed" truncate>{p.name}</Text>
+                  <MoneyText cents={p.balanceCents} fw={700} />
+                </Paper>
+              ))}
+            </Group>
+          </ScrollArea>
+        )}
+
+        <MobileList>
+          {data.months.map((m) => (
+            <MobileListRow
+              key={m.month}
+              title={months[m.month - 1]}
+              subtitle={m.status ? t(`common.${m.status}`) : t('year.createMonth')}
+              trailing={m.periodId ? <MoneyText cents={m.surplusCents} colored fw={600} /> : undefined}
+              to={m.periodId ? `/months/${y}/${m.month}` : undefined}
+              onClick={!m.periodId && !isLocked ? () => createPeriod.mutate({ year: y, month: m.month }) : undefined}
+              chevron
+            />
+          ))}
+        </MobileList>
+
+        <Group justify="center">
+          {isLocked ? (
+            <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
+              {t('year.unlockAction')}
+            </Button>
+          ) : (
+            <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
+              {t('year.lockAction')}
+            </Button>
+          )}
+        </Group>
+
+        <PasswordModal
+          opened={lockModalOpen}
+          onClose={() => setLockModalOpen(false)}
+          title={t('year.lockTitle')}
+          warningText={t('year.lockWarning', { year: y })}
+          confirmLabel={t('year.lockConfirm')}
+          confirmColor="red"
+          loading={lockYear.isPending}
+          onConfirm={handleLock}
+        />
+
+        <PasswordModal
+          opened={unlockModalOpen}
+          onClose={() => setUnlockModalOpen(false)}
+          title={t('year.unlockTitle')}
+          warningText={t('year.unlockWarning', { year: y })}
+          confirmLabel={t('year.unlockConfirm')}
+          confirmColor="orange"
+          loading={unlockYear.isPending}
+          onConfirm={handleUnlock}
+        />
+      </Stack>
+    )
   }
 
   return (
@@ -108,22 +232,20 @@ export default function YearDashboard() {
         </Paper>
       )}
 
-      {(() => {
-        const savingsPotBalances = data.potBalances.filter((p) => p.kind !== 'carryover')
-        return savingsPotBalances.length > 0 && (
-          <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} mb="lg">
-            {savingsPotBalances.map((p) => (
-              <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="sm" withBorder style={{ textDecoration: 'none', color: 'inherit' }}>
-                <Group justify="space-between" wrap="nowrap">
-                  <Text size="sm" fw={600}>{p.name}</Text>
-                  <MoneyText cents={p.balanceCents} fw={700} />
-                </Group>
-              </Paper>
-            ))}
-          </SimpleGrid>
-        )
-      })()}
+      {savingsPotBalances.length > 0 && (
+        <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} mb="lg">
+          {savingsPotBalances.map((p) => (
+            <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="sm" withBorder style={{ textDecoration: 'none', color: 'inherit' }}>
+              <Group justify="space-between" wrap="nowrap">
+                <Text size="sm" fw={600}>{p.name}</Text>
+                <MoneyText cents={p.balanceCents} fw={700} />
+              </Group>
+            </Paper>
+          ))}
+        </SimpleGrid>
+      )}
 
+      <Table.ScrollContainer minWidth={500}>
       <Table striped highlightOnHover mb="xl">
         <Table.Thead>
           <Table.Tr>
@@ -179,6 +301,7 @@ export default function YearDashboard() {
           </Table.Tr>
         </Table.Tbody>
       </Table>
+      </Table.ScrollContainer>
 
       <PasswordModal
         opened={lockModalOpen}

@@ -1,6 +1,8 @@
 {
   "nav": {
     "dashboard": "Dashboard",
+    "home": "Home",
+    "log": "Log",
     "pots": "Savings Pots",
     "settings": "Settings",
     "apiDocs": "API docs"
@@ -25,7 +27,9 @@
     "lockWarning": "Locking {{year}} will prevent creating new months and editing any data. All months must be closed first.",
     "unlockWarning": "Unlocking {{year}} will allow editing again.",
     "lockConfirm": "Lock permanently",
-    "unlockConfirm": "Unlock"
+    "unlockConfirm": "Unlock",
+    "prevYear": "Previous year",
+    "nextYear": "Next year"
   },
   "month": {
     "income": "Income",
@@ -96,7 +100,8 @@
     "entry_opening_balance": "Opening balance",
     "target": "Savings goal",
     "targetDate": "Target date",
-    "targetProgress": "{{percent}}% of goal"
+    "targetProgress": "{{percent}}% of goal",
+    "totalSavedLabel": "Total saved ({{count}} pots)"
   },
   "settings": {
     "title": "Settings",
@@ -146,6 +151,7 @@
     "language": "Language",
     "saved": "Saved",
     "search": "Search...",
-    "addNew": "Add new"
+    "addNew": "Add new",
+    "sortBy": "Sort by"
   }
 }
