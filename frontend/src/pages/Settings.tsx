@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal, Menu, ActionIcon } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, useMantineColorScheme } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
-import { IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort, IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft } from '@tabler/icons-react'
+import {
+  IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
+  IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
+  IconSun, IconMoon, IconDeviceDesktop,
+} from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
@@ -80,7 +84,7 @@ function SortMenu<K extends string>({ sort, onSort, options }: {
   )
 }
 
-type SettingsSection = 'categories' | 'sources' | 'pots' | 'years'
+type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'preferences'
 
 export default function Settings() {
   const { t } = useTranslation()
@@ -94,6 +98,7 @@ export default function Settings() {
       { key: 'sources', label: t('settings.incomeSources'), icon: IconCoin, content: <SourcesTab /> },
       { key: 'pots', label: t('settings.pots'), icon: IconPigMoney, content: <PotsTab /> },
       { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab /> },
+      { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
     ]
     const active = menu.find(m => m.key === section)
 
@@ -138,13 +143,48 @@ export default function Settings() {
           <Tabs.Tab value="sources">{t('settings.incomeSources')}</Tabs.Tab>
           <Tabs.Tab value="pots">{t('settings.pots')}</Tabs.Tab>
           <Tabs.Tab value="years">{t('settings.years')}</Tabs.Tab>
+          <Tabs.Tab value="preferences">{t('settings.preferences')}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="categories" pt="md"><CategoriesTab /></Tabs.Panel>
         <Tabs.Panel value="sources" pt="md"><SourcesTab /></Tabs.Panel>
         <Tabs.Panel value="pots" pt="md"><PotsTab /></Tabs.Panel>
         <Tabs.Panel value="years" pt="md"><YearsTab /></Tabs.Panel>
+        <Tabs.Panel value="preferences" pt="md"><PreferencesTab /></Tabs.Panel>
       </Tabs>
     </>
+  )
+}
+
+function PreferencesTab() {
+  const { t, i18n } = useTranslation()
+  const { colorScheme, setColorScheme } = useMantineColorScheme()
+
+  return (
+    <Stack gap="lg" maw={360}>
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>{t('common.theme')}</Text>
+        <SegmentedControl
+          value={colorScheme}
+          onChange={(v) => setColorScheme(v as 'light' | 'dark' | 'auto')}
+          aria-label={t('common.theme')}
+          fullWidth
+          data={[
+            { label: <Group gap={6} justify="center"><IconSun size={16} />{t('common.themeLight')}</Group>, value: 'light' },
+            { label: <Group gap={6} justify="center"><IconMoon size={16} />{t('common.themeDark')}</Group>, value: 'dark' },
+            { label: <Group gap={6} justify="center"><IconDeviceDesktop size={16} />{t('common.themeAuto')}</Group>, value: 'auto' },
+          ]}
+        />
+      </Stack>
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>{t('common.language')}</Text>
+        <Select
+          aria-label={t('common.language')}
+          data={[{ value: 'nl', label: 'Nederlands' }, { value: 'en', label: 'English' }]}
+          value={i18n.language.startsWith('nl') ? 'nl' : 'en'}
+          onChange={(v) => v && i18n.changeLanguage(v)}
+        />
+      </Stack>
+    </Stack>
   )
 }
 
