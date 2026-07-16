@@ -2,7 +2,8 @@
   "nav": {
     "dashboard": "Dashboard",
     "pots": "Spaarpotjes",
-    "settings": "Instellingen"
+    "settings": "Instellingen",
+    "apiDocs": "API-documentatie"
   },
   "auth": {
     "signIn": "Inloggen",

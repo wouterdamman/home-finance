@@ -61,6 +61,7 @@ export default function AppShell() {
         ))}
         <NavLink label={t('nav.pots')} component={RouterNavLink} to="/pots" />
         <NavLink label={t('settings.title')} component={RouterNavLink} to="/settings" />
+        <NavLink label={t('nav.apiDocs')} component="a" href="/api/docs" target="_blank" rel="noopener noreferrer" />
       </MantineAppShell.Navbar>
       <MantineAppShell.Main>
         <Outlet />

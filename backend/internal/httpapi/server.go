@@ -53,6 +53,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.RequireCSRF)
 		r.With(requireAuth).Get("/me", s.handleMe)
+		r.With(requireAuth).Get("/docs", s.handleAPIDocs)
+		r.With(requireAuth).Get("/openapi.yaml", s.handleOpenAPISpec)
 
 		r.With(requireAuth).Group(func(r chi.Router) {
 			// Periods

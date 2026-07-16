@@ -1,0 +1,2046 @@
+openapi: 3.1.0
+info:
+  title: Home Finance API
+  version: "1.3.0"
+  description: >
+    Internal API for a personal/family budgeting app. Plain net/http + chi
+    router, hand-written JSON handlers. All money amounts are integer cents.
+    Dates are YYYY-MM-DD strings; timestamps are RFC3339.
+
+servers:
+  - url: /
+
+tags:
+  - name: Health
+    description: Liveness/readiness probes.
+  - name: Auth
+    description: OIDC login/logout and current-user info.
+  - name: Periods
+    description: Monthly budget periods (open/closed lifecycle).
+  - name: Incomes
+    description: Income entries within a period.
+  - name: BudgetLines
+    description: Budget lines (planned expenses) within a period.
+  - name: Transactions
+    description: Itemized transactions against tracked budget lines.
+  - name: Splits
+    description: Surplus-to-pot percentage splits for a period.
+  - name: Categories
+    description: Expense categories (master data).
+  - name: IncomeSources
+    description: Income sources (master data).
+  - name: Pots
+    description: Savings pots, their ledger, and manual entries.
+  - name: Years
+    description: Calendar years, year summaries, lock/unlock.
+  - name: AuditLog
+    description: Read-only audit trail of mutating actions.
+
+security:
+  - cookieAuth: []
+    csrfHeader: []
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      tags: [Health]
+      summary: Liveness probe. Always returns 200 if the process is up.
+      security: []
+      responses:
+        "200":
+          description: Process is alive.
+
+  /readyz:
+    get:
+      operationId: readyz
+      tags: [Health]
+      summary: Readiness probe. Pings the DB pool.
+      security: []
+      responses:
+        "200":
+          description: DB reachable.
+        "503":
+          description: DB unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/login:
+    get:
+      operationId: authLogin
+      tags: [Auth]
+      summary: Redirects to the OIDC provider (or fakes dev login) and sets session state.
+      security: []
+      parameters:
+        - name: return_to
+          in: query
+          description: Path to redirect back to after auth completes. Sanitized to same-origin relative paths only.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to OIDC provider (prod) or return_to (dev fake auth).
+
+  /auth/callback:
+    get:
+      operationId: authCallback
+      tags: [Auth]
+      summary: OIDC callback. Validates state/nonce, exchanges code, upserts user, establishes session.
+      security: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: code
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to sanitized return_to path on success.
+        "400":
+          description: Invalid state or nonce.
+        "401":
+          description: Code exchange failed.
+        "403":
+          description: Email not in allowed list.
+        "500":
+          description: Claims decode or DB upsert error.
+
+  /auth/logout:
+    post:
+      operationId: authLogout
+      tags: [Auth]
+      summary: Destroys the session and redirects to /login.
+      security: []
+      responses:
+        "302":
+          description: Redirect to /login.
+
+  /api/me:
+    get:
+      operationId: getMe
+      tags: [Auth]
+      summary: Returns the current authenticated user.
+      responses:
+        "200":
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods:
+    get:
+      operationId: listPeriods
+      tags: [Periods]
+      summary: Lists periods for a given year with income/expense/surplus totals.
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Periods for the year.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Period"
+        "400":
+          description: Missing or invalid year.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createPeriod
+      tags: [Periods]
+      summary: Creates a period for year/month, optionally copying budget lines/splits/incomes from a prior period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePeriodRequest"
+      responses:
+        "201":
+          description: Period created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodBasic"
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Year is locked, or period already exists for that month.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/overview:
+    get:
+      operationId: getPeriodOverview
+      tags: [Periods]
+      summary: Full period detail - incomes, budget lines (with effective/transaction totals), pot splits, and totals.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      responses:
+        "200":
+          description: Period overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodOverview"
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/close:
+    post:
+      operationId: closePeriod
+      tags: [Periods]
+      summary: Closes a period, allocating surplus to pots and generating carryover ledger/income entries for next month.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      responses:
+        "204":
+          description: Period closed.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period already closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/reopen:
+    post:
+      operationId: reopenPeriod
+      tags: [Periods]
+      summary: Reopens a closed period, removing generated carryover ledger entries and carryover income entries.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      responses:
+        "204":
+          description: Period reopened.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period already open, year is locked, or next period is closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}:
+    delete:
+      operationId: deletePeriod
+      tags: [Periods]
+      summary: Deletes an open period after password confirmation. Rate-limited per IP.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmRequest"
+      responses:
+        "204":
+          description: Period deleted.
+        "400":
+          description: Invalid id or body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing or incorrect password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period is closed, or year is locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many attempts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [AuditLog]
+      summary: Lists the 200 most recent audit log entries, newest first.
+      responses:
+        "200":
+          description: Audit log entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogEntry"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/incomes:
+    post:
+      operationId: createIncomeEntry
+      tags: [Incomes]
+      summary: Adds a normal income entry to a period. Fails if the period is closed or its year is locked.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncomeEntryRequest"
+      responses:
+        "201":
+          description: Income entry created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomeEntry"
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/incomes/{id}:
+    put:
+      operationId: updateIncomeEntry
+      tags: [Incomes]
+      summary: Updates an income entry's label/amount/notes/sort order.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIncomeEntryRequest"
+      responses:
+        "204":
+          description: Income entry updated.
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Income entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteIncomeEntry
+      tags: [Incomes]
+      summary: Deletes an income entry.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Income entry deleted.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/budget-lines:
+    post:
+      operationId: createBudgetLine
+      tags: [BudgetLines]
+      summary: Adds a budget line to a period. Fails if the period is closed or its year is locked.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBudgetLineRequest"
+      responses:
+        "201":
+          description: Budget line created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetLine"
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/budget-lines/{id}:
+    put:
+      operationId: updateBudgetLine
+      tags: [BudgetLines]
+      summary: Updates a budget line's label/amount/tracking flag/sort order.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBudgetLineRequest"
+      responses:
+        "204":
+          description: Budget line updated.
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Budget line not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteBudgetLine
+      tags: [BudgetLines]
+      summary: Deletes a budget line.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Budget line deleted.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/transactions:
+    get:
+      operationId: listTransactions
+      tags: [Transactions]
+      summary: Lists transactions for a period, optionally filtered by category.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+        - name: categoryId
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Transactions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createTransaction
+      tags: [Transactions]
+      summary: Adds a transaction to a period. Fails if the period is closed or its year is locked.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionRequest"
+      responses:
+        "201":
+          description: Transaction created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/transactions/{id}:
+    put:
+      operationId: updateTransaction
+      tags: [Transactions]
+      summary: Updates a transaction's amount/description/date.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTransactionRequest"
+      responses:
+        "204":
+          description: Transaction updated.
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Transaction not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteTransaction
+      tags: [Transactions]
+      summary: Deletes a transaction.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Transaction deleted.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/periods/{id}/splits:
+    put:
+      operationId: replaceSplits
+      tags: [Splits]
+      summary: Replaces all pot percentage splits for a period. The carryover pot (if any) absorbs the remainder to 100%.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceSplitsRequest"
+      responses:
+        "204":
+          description: Splits replaced.
+        "400":
+          description: Invalid id/body, or percentages exceed/don't total 100%.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/categories:
+    get:
+      operationId: listCategories
+      tags: [Categories]
+      summary: Lists all categories, including archived ones, ordered by sort order.
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createCategory
+      tags: [Categories]
+      summary: Creates a category. includeInTemplate defaults to true if omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCategoryRequest"
+      responses:
+        "201":
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/categories/order:
+    put:
+      operationId: reorderCategories
+      tags: [Categories]
+      summary: Sets sort order for categories according to the order of ids in the array.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                    format: int64
+      responses:
+        "204":
+          description: Order updated.
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/categories/{id}:
+    put:
+      operationId: updateCategory
+      tags: [Categories]
+      summary: Updates a category's name/default amount/itemized flag/template flag. includeInTemplate defaults to true if omitted.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryRequest"
+      responses:
+        "204":
+          description: Category updated.
+        "400":
+          description: Invalid id or body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/categories/{id}/archive:
+    post:
+      operationId: archiveCategory
+      tags: [Categories]
+      summary: Toggles archived state for a category (archives if active, unarchives if archived).
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Archive state toggled.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/income-sources:
+    get:
+      operationId: listIncomeSources
+      tags: [IncomeSources]
+      summary: Lists all income sources, including archived ones, ordered by sort order.
+      responses:
+        "200":
+          description: Income sources.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IncomeSource"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createIncomeSource
+      tags: [IncomeSources]
+      summary: Creates an income source. includeInTemplate defaults to true if omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncomeSourceRequest"
+      responses:
+        "201":
+          description: Income source created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomeSource"
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/income-sources/{id}:
+    put:
+      operationId: updateIncomeSource
+      tags: [IncomeSources]
+      summary: Updates an income source's name/default amount/template flag/sort order. includeInTemplate defaults to true if omitted.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIncomeSourceRequest"
+      responses:
+        "204":
+          description: Income source updated.
+        "400":
+          description: Invalid id or body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/income-sources/{id}/archive:
+    post:
+      operationId: archiveIncomeSource
+      tags: [IncomeSources]
+      summary: Toggles archived state for an income source (archives if active, unarchives if archived).
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Archive state toggled.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pots/balances:
+    get:
+      operationId: getPotBalances
+      tags: [Pots]
+      summary: Lists non-archived pots with their running balance (sum of ledger entries) and target info.
+      responses:
+        "200":
+          description: Pot balances.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PotBalance"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pots:
+    get:
+      operationId: listPots
+      tags: [Pots]
+      summary: Lists all pots, including archived ones, ordered by sort order.
+      responses:
+        "200":
+          description: Pots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pot"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createPot
+      tags: [Pots]
+      summary: Creates a pot. kind defaults to "normal" if omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePotRequest"
+      responses:
+        "201":
+          description: Pot created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pot"
+        "400":
+          description: Invalid body or targetCents out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Conflict creating pot (e.g. duplicate name/constraint).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pots/{id}:
+    put:
+      operationId: updatePot
+      tags: [Pots]
+      summary: Updates a pot's name/kind/sort order/target. kind defaults to "normal" if omitted.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePotRequest"
+      responses:
+        "204":
+          description: Pot updated.
+        "400":
+          description: Invalid id, body, or targetCents out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Conflict updating pot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pots/{id}/archive:
+    post:
+      operationId: archivePot
+      tags: [Pots]
+      summary: Toggles archived state for a pot (archives if active, unarchives if archived).
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Archive state toggled.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pots/{id}/ledger:
+    get:
+      operationId: getPotLedger
+      tags: [Pots]
+      summary: Lists ledger entries for a pot in date order, with a running balance.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Pot ledger entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PotLedgerEntry"
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pots/{id}/entries:
+    post:
+      operationId: createPotEntry
+      tags: [Pots]
+      summary: Adds a manual ledger entry (withdrawal/deposit/adjustment/opening_balance) to a pot. Withdrawal amounts are coerced negative.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePotEntryRequest"
+      responses:
+        "201":
+          description: Pot entry created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PotLedgerEntry"
+        "400":
+          description: Invalid id, entryType, or amount out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/pot-entries/{id}:
+    delete:
+      operationId: deletePotEntry
+      tags: [Pots]
+      summary: Deletes a manual pot ledger entry. Automatically generated entries (allocation/carryover_out) cannot be deleted this way.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Entry deleted.
+        "400":
+          description: Invalid id, or entry is auto-generated and cannot be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/years:
+    get:
+      operationId: listYears
+      tags: [Years]
+      summary: Lists all known years, ascending.
+      responses:
+        "200":
+          description: Years.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createYear
+      tags: [Years]
+      summary: Registers a year (2000-2100), idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                year:
+                  type: integer
+      responses:
+        "201":
+          description: Year registered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  year:
+                    type: integer
+        "400":
+          description: Invalid body or year out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/years/{year}/summary:
+    get:
+      operationId: getYearSummary
+      tags: [Years]
+      summary: Full-year summary - all 12 months (income/expense/surplus), lock state, and pot balances.
+      parameters:
+        - $ref: "#/components/parameters/YearParam"
+      responses:
+        "200":
+          description: Year summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YearSummary"
+        "400":
+          description: Invalid year.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/years/{year}/lock:
+    post:
+      operationId: lockYear
+      tags: [Years]
+      summary: Locks a year after password confirmation, once all its periods are closed. Rate-limited per IP.
+      parameters:
+        - $ref: "#/components/parameters/YearParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmRequest"
+      responses:
+        "204":
+          description: Year locked.
+        "400":
+          description: Invalid year or body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing or incorrect password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Year already locked, or open periods still exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many attempts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/years/{year}/unlock:
+    post:
+      operationId: unlockYear
+      tags: [Years]
+      summary: Unlocks a year after password confirmation. Rate-limited per IP.
+      parameters:
+        - $ref: "#/components/parameters/YearParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmRequest"
+      responses:
+        "204":
+          description: Year unlocked.
+        "400":
+          description: Invalid year or body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing or incorrect password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many attempts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Session cookie set after successful login (OIDC or dev fake auth).
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-Requested-With
+      description: Required (value "XMLHttpRequest") on all mutating /api requests alongside the session cookie.
+
+  parameters:
+    PeriodId:
+      name: id
+      in: path
+      required: true
+      description: Period id.
+      schema:
+        type: integer
+        format: int64
+    EntityId:
+      name: id
+      in: path
+      required: true
+      description: Resource id.
+      schema:
+        type: integer
+        format: int64
+    YearParam:
+      name: year
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required: [code, message]
+      required: [error]
+
+    MeResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        displayName:
+          type: string
+      required: [id, email, displayName]
+
+    PasswordConfirmRequest:
+      type: object
+      properties:
+        password:
+          type: string
+      required: [password]
+
+    Period:
+      type: object
+      description: Row from GET /api/periods.
+      properties:
+        id:
+          type: integer
+          format: int64
+        year:
+          type: integer
+        month:
+          type: integer
+        status:
+          type: string
+          enum: [open, closed]
+        closedAt:
+          type: [string, "null"]
+          format: date-time
+        incomeTotalCents:
+          type: integer
+          format: int64
+        expenseTotalCents:
+          type: integer
+          format: int64
+        surplusCents:
+          type: integer
+          format: int64
+      required: [id, year, month, status, incomeTotalCents, expenseTotalCents, surplusCents]
+
+    PeriodBasic:
+      type: object
+      description: Response from POST /api/periods.
+      properties:
+        id:
+          type: integer
+          format: int64
+        year:
+          type: integer
+        month:
+          type: integer
+        status:
+          type: string
+          enum: [open, closed]
+      required: [id, year, month, status]
+
+    CreatePeriodRequest:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        copyFromPeriodId:
+          type: [integer, "null"]
+          format: int64
+          description: If omitted, the most recent prior period with data is auto-detected and copied from.
+      required: [year, month]
+
+    PeriodOverview:
+      type: object
+      description: Response from GET /api/periods/{id}/overview.
+      properties:
+        period:
+          $ref: "#/components/schemas/PeriodOverviewPeriod"
+        incomes:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncomeEntry"
+        incomeTotalCents:
+          type: integer
+          format: int64
+        budgetLines:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetLineWithTotals"
+        expenseTotalCents:
+          type: integer
+          format: int64
+        surplusCents:
+          type: integer
+          format: int64
+        splits:
+          type: array
+          items:
+            $ref: "#/components/schemas/PotSplit"
+        splitPercentageTotal:
+          type: string
+          description: Decimal string, e.g. "100.00".
+      required:
+        - period
+        - incomes
+        - incomeTotalCents
+        - budgetLines
+        - expenseTotalCents
+        - surplusCents
+        - splits
+        - splitPercentageTotal
+
+    PeriodOverviewPeriod:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        year:
+          type: integer
+        month:
+          type: integer
+        status:
+          type: string
+          enum: [open, closed]
+        closedAt:
+          type: [string, "null"]
+          format: date-time
+      required: [id, year, month, status]
+
+    IncomeEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        periodId:
+          type: integer
+          format: int64
+        sourceId:
+          type: [integer, "null"]
+          format: int64
+        label:
+          type: [string, "null"]
+        amountCents:
+          type: integer
+          format: int64
+        entryType:
+          type: string
+          enum: [normal, carryover]
+        notes:
+          type: string
+        sortOrder:
+          type: integer
+      required: [id, amountCents, entryType, notes, sortOrder]
+
+    CreateIncomeEntryRequest:
+      type: object
+      properties:
+        sourceId:
+          type: [integer, "null"]
+          format: int64
+        label:
+          type: [string, "null"]
+        amountCents:
+          type: integer
+          format: int64
+        notes:
+          type: string
+        sortOrder:
+          type: integer
+      required: [amountCents]
+
+    UpdateIncomeEntryRequest:
+      type: object
+      properties:
+        label:
+          type: [string, "null"]
+        amountCents:
+          type: integer
+          format: int64
+        notes:
+          type: string
+        sortOrder:
+          type: integer
+      required: [amountCents]
+
+    BudgetLine:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        periodId:
+          type: integer
+          format: int64
+        categoryId:
+          type: [integer, "null"]
+          format: int64
+        label:
+          type: [string, "null"]
+        amountCents:
+          type: integer
+          format: int64
+        tracksTransactions:
+          type: boolean
+        sortOrder:
+          type: integer
+      required: [id, periodId, amountCents, tracksTransactions, sortOrder]
+
+    BudgetLineWithTotals:
+      description: Budget line as returned within a period overview, including derived transaction/effective totals.
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+            categoryId:
+              type: [integer, "null"]
+              format: int64
+            label:
+              type: [string, "null"]
+            amountCents:
+              type: integer
+              format: int64
+            tracksTransactions:
+              type: boolean
+            transactionsTotalCents:
+              type: integer
+              format: int64
+            effectiveCents:
+              type: integer
+              format: int64
+              description: transactionsTotalCents if tracksTransactions, otherwise amountCents.
+            sortOrder:
+              type: integer
+          required:
+            - id
+            - amountCents
+            - tracksTransactions
+            - transactionsTotalCents
+            - effectiveCents
+            - sortOrder
+
+    CreateBudgetLineRequest:
+      type: object
+      properties:
+        categoryId:
+          type: [integer, "null"]
+          format: int64
+        label:
+          type: [string, "null"]
+        amountCents:
+          type: integer
+          format: int64
+        tracksTransactions:
+          type: boolean
+        sortOrder:
+          type: integer
+      required: [amountCents, tracksTransactions]
+
+    UpdateBudgetLineRequest:
+      type: object
+      properties:
+        label:
+          type: [string, "null"]
+        amountCents:
+          type: integer
+          format: int64
+        tracksTransactions:
+          type: boolean
+        sortOrder:
+          type: integer
+      required: [amountCents, tracksTransactions]
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        periodId:
+          type: integer
+          format: int64
+        categoryId:
+          type: integer
+          format: int64
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        txDate:
+          type: [string, "null"]
+          format: date
+      required: [id, periodId, categoryId, amountCents, description]
+
+    CreateTransactionRequest:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        txDate:
+          type: [string, "null"]
+          format: date
+      required: [categoryId, amountCents]
+
+    UpdateTransactionRequest:
+      type: object
+      properties:
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        txDate:
+          type: [string, "null"]
+          format: date
+      required: [amountCents]
+
+    PotSplit:
+      type: object
+      description: Pot split as returned within a period overview.
+      properties:
+        potId:
+          type: integer
+          format: int64
+        potName:
+          type: string
+        potKind:
+          type: string
+          enum: [normal, carryover]
+        percentage:
+          type: string
+          description: Decimal string, e.g. "25.00".
+        projectedCents:
+          type: integer
+          format: int64
+      required: [potId, potName, potKind, percentage, projectedCents]
+
+    ReplaceSplitsRequest:
+      type: object
+      properties:
+        splits:
+          type: array
+          items:
+            type: object
+            properties:
+              potId:
+                type: integer
+                format: int64
+              percentage:
+                type: string
+                description: Decimal string. The carryover pot's value (if present) is overwritten server-side to absorb the remainder to 100%.
+            required: [potId, percentage]
+      required: [splits]
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        defaultAmountCents:
+          type: integer
+          format: int64
+        isItemized:
+          type: boolean
+        includeInTemplate:
+          type: boolean
+        sortOrder:
+          type: integer
+        archivedAt:
+          type: [string, "null"]
+          format: date-time
+      required: [id, name, defaultAmountCents, isItemized, includeInTemplate, sortOrder]
+
+    CreateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        defaultAmountCents:
+          type: integer
+          format: int64
+        isItemized:
+          type: boolean
+        includeInTemplate:
+          type: boolean
+          default: true
+        sortOrder:
+          type: integer
+      required: [name]
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        defaultAmountCents:
+          type: integer
+          format: int64
+        isItemized:
+          type: boolean
+        includeInTemplate:
+          type: boolean
+          default: true
+      required: [name]
+
+    IncomeSource:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        defaultAmountCents:
+          type: integer
+          format: int64
+        includeInTemplate:
+          type: boolean
+        sortOrder:
+          type: integer
+        archivedAt:
+          type: [string, "null"]
+          format: date-time
+      required: [id, name, defaultAmountCents, includeInTemplate, sortOrder]
+
+    CreateIncomeSourceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        defaultAmountCents:
+          type: integer
+          format: int64
+        includeInTemplate:
+          type: boolean
+          default: true
+        sortOrder:
+          type: integer
+      required: [name]
+
+    UpdateIncomeSourceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        defaultAmountCents:
+          type: integer
+          format: int64
+        includeInTemplate:
+          type: boolean
+          default: true
+        sortOrder:
+          type: integer
+      required: [name]
+
+    Pot:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [normal, carryover]
+        sortOrder:
+          type: integer
+        targetCents:
+          type: [integer, "null"]
+          format: int64
+        targetDate:
+          type: [string, "null"]
+          format: date
+        archivedAt:
+          type: [string, "null"]
+          format: date-time
+      required: [id, name, kind, sortOrder]
+
+    CreatePotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [normal, carryover]
+          default: normal
+        sortOrder:
+          type: integer
+        targetCents:
+          type: [integer, "null"]
+          format: int64
+        targetDate:
+          type: [string, "null"]
+          format: date
+      required: [name]
+
+    UpdatePotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [normal, carryover]
+          default: normal
+        sortOrder:
+          type: integer
+        targetCents:
+          type: [integer, "null"]
+          format: int64
+        targetDate:
+          type: [string, "null"]
+          format: date
+      required: [name]
+
+    PotBalance:
+      type: object
+      description: Row from GET /api/pots/balances - non-archived pots only.
+      properties:
+        potId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [normal, carryover]
+        balanceCents:
+          type: integer
+          format: int64
+        targetCents:
+          type: [integer, "null"]
+          format: int64
+        targetDate:
+          type: [string, "null"]
+          format: date
+      required: [potId, name, kind, balanceCents]
+
+    PotLedgerEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        periodId:
+          type: [integer, "null"]
+          format: int64
+        sourcePeriodId:
+          type: [integer, "null"]
+          format: int64
+        entryType:
+          type: string
+          enum: [allocation, carryover_out, withdrawal, deposit, adjustment, opening_balance]
+        amountCents:
+          type: integer
+          format: int64
+        runningBalance:
+          type: integer
+          format: int64
+          description: Only present on GET /api/pots/{id}/ledger (cumulative sum ordered by entry date).
+        description:
+          type: string
+        entryDate:
+          type: [string, "null"]
+          format: date
+      required: [id, entryType, amountCents, description]
+
+    CreatePotEntryRequest:
+      type: object
+      properties:
+        entryType:
+          type: string
+          enum: [withdrawal, deposit, adjustment, opening_balance]
+        amountCents:
+          type: integer
+          format: int64
+          description: For entryType=withdrawal, a positive value is coerced to negative server-side.
+        description:
+          type: string
+        entryDate:
+          type: [string, "null"]
+          format: date
+      required: [entryType, amountCents]
+
+    YearSummary:
+      type: object
+      properties:
+        year:
+          type: integer
+        locked:
+          type: boolean
+        months:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/YearSummaryMonth"
+        yearIncomeTotalCents:
+          type: integer
+          format: int64
+        yearExpenseTotalCents:
+          type: integer
+          format: int64
+        yearSurplusCents:
+          type: integer
+          format: int64
+        potBalances:
+          type: array
+          items:
+            type: object
+            properties:
+              potId:
+                type: integer
+                format: int64
+              name:
+                type: string
+              kind:
+                type: string
+                enum: [normal, carryover]
+              balanceCents:
+                type: integer
+                format: int64
+            required: [potId, name, kind, balanceCents]
+      required:
+        - year
+        - locked
+        - months
+        - yearIncomeTotalCents
+        - yearExpenseTotalCents
+        - yearSurplusCents
+        - potBalances
+
+    YearSummaryMonth:
+      type: object
+      properties:
+        month:
+          type: integer
+        periodId:
+          type: [integer, "null"]
+          format: int64
+        status:
+          type: [string, "null"]
+          enum: [open, closed, null]
+        incomeTotalCents:
+          type: integer
+          format: int64
+        expenseTotalCents:
+          type: integer
+          format: int64
+        surplusCents:
+          type: integer
+          format: int64
+      required: [month, incomeTotalCents, expenseTotalCents, surplusCents]
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        userEmail:
+          type: [string, "null"]
+        action:
+          type: string
+        entityType:
+          type: [string, "null"]
+        entityId:
+          type: [integer, "null"]
+          format: int64
+        details:
+          type: [string, "null"]
+          description: Raw JSON encoded as a string.
+      required: [id, createdAt, action]

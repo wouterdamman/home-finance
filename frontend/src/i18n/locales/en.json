@@ -2,7 +2,8 @@
   "nav": {
     "dashboard": "Dashboard",
     "pots": "Savings Pots",
-    "settings": "Settings"
+    "settings": "Settings",
+    "apiDocs": "API docs"
   },
   "auth": {
     "signIn": "Sign In",
