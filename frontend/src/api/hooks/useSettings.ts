@@ -26,6 +26,8 @@ export interface Pot {
   name: string
   kind: string
   sortOrder: number
+  targetCents?: number
+  targetDate?: string
   archivedAt?: string
 }
 
@@ -105,7 +107,7 @@ export function usePots() {
 export function useCreatePot() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; kind: string; sortOrder: number }) =>
+    mutationFn: (body: { name: string; kind: string; sortOrder: number; targetCents?: number | null; targetDate?: string | null }) =>
       api.post('/api/pots', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
   })
@@ -114,9 +116,12 @@ export function useCreatePot() {
 export function useUpdatePot() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; kind: string; sortOrder: number }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; kind: string; sortOrder: number; targetCents?: number | null; targetDate?: string | null }) =>
       api.put(`/api/pots/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pots'] })
+      qc.invalidateQueries({ queryKey: ['pot-balances'] })
+    },
   })
 }
 

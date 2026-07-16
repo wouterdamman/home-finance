@@ -91,7 +91,10 @@
     "entry_withdrawal": "Withdrawal",
     "entry_deposit": "Deposit",
     "entry_adjustment": "Adjustment",
-    "entry_opening_balance": "Opening balance"
+    "entry_opening_balance": "Opening balance",
+    "target": "Savings goal",
+    "targetDate": "Target date",
+    "targetProgress": "{{percent}}% of goal"
   },
   "settings": {
     "title": "Settings",

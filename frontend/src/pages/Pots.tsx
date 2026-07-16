@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
-import { Title, SimpleGrid, Paper, Group, Text, Skeleton, Alert } from '@mantine/core'
+import { Title, SimpleGrid, Paper, Group, Text, Skeleton, Alert, Progress, Stack } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
+import dayjs from 'dayjs'
 import { usePotBalances } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 
@@ -21,14 +22,33 @@ export default function Pots() {
         <Text c="dimmed">{t('pots.noEntries')}</Text>
       )}
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-        {savingsPots.map((p) => (
-          <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="md" withBorder style={{ textDecoration: 'none', color: 'inherit' }}>
-            <Group justify="space-between" wrap="nowrap">
-              <Text fw={600}>{p.name}</Text>
-              <MoneyText cents={p.balanceCents} size="lg" fw={700} />
-            </Group>
-          </Paper>
-        ))}
+        {savingsPots.map((p) => {
+          const hasTarget = p.targetCents != null && p.targetCents > 0
+          const progress = hasTarget ? Math.min(100, Math.max(0, (p.balanceCents / p.targetCents!) * 100)) : null
+          return (
+            <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="md" withBorder style={{ textDecoration: 'none', color: 'inherit' }}>
+              <Stack gap="xs">
+                <Group justify="space-between" wrap="nowrap">
+                  <Text fw={600}>{p.name}</Text>
+                  <MoneyText cents={p.balanceCents} size="lg" fw={700} />
+                </Group>
+                {hasTarget && (
+                  <>
+                    <Progress value={progress!} color={progress! >= 100 ? 'green' : 'blue'} />
+                    <Group justify="space-between" wrap="nowrap">
+                      <Text size="xs" c="dimmed">
+                        {t('pots.targetProgress', { percent: Math.round(progress!) })}
+                        {' · '}
+                        <MoneyText cents={p.targetCents!} size="xs" span />
+                      </Text>
+                      {p.targetDate && <Text size="xs" c="dimmed">{dayjs(p.targetDate).format('DD-MM-YYYY')}</Text>}
+                    </Group>
+                  </>
+                )}
+              </Stack>
+            </Paper>
+          )
+        })}
       </SimpleGrid>
     </>
   )

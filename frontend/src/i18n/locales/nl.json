@@ -91,7 +91,10 @@
     "entry_withdrawal": "Opname",
     "entry_deposit": "Storting",
     "entry_adjustment": "Correctie",
-    "entry_opening_balance": "Beginsaldo"
+    "entry_opening_balance": "Beginsaldo",
+    "target": "Spaardoel",
+    "targetDate": "Streefdatum",
+    "targetProgress": "{{percent}}% van doel"
   },
   "settings": {
     "title": "Instellingen",

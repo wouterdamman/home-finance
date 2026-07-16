@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text } from '@mantine/core'
+import { DateInput } from '@mantine/dates'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
+import dayjs from 'dayjs'
 import {
   useCategories, useCreateCategory, useUpdateCategory, useArchiveCategory,
   useIncomeSources, useCreateIncomeSource, useUpdateIncomeSource, useArchiveIncomeSource,
@@ -9,6 +11,7 @@ import {
 } from '../api/hooks/useSettings'
 import { useYears, useCreateYear } from '../api/hooks/usePeriods'
 import { parseToCents } from '../lib/money'
+import MoneyText from '../components/MoneyText'
 
 function amountToCents(v: number | string): number {
   return parseToCents(String(v)) ?? 0
@@ -213,15 +216,25 @@ function PotsTab() {
   const [editing, setEditing] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editKind, setEditKind] = useState('normal')
+  const [editTarget, setEditTarget] = useState<number | string>('')
+  const [editTargetDate, setEditTargetDate] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newKind, setNewKind] = useState<string>('normal')
+  const [newTarget, setNewTarget] = useState<number | string>('')
+  const [newTargetDate, setNewTargetDate] = useState<string | null>(null)
 
   const kindLabel = (kind: string) =>
     kind === 'carryover' ? t('settings.kind_carryover') : t('settings.kind_normal')
 
   const handleCreate = () => {
-    create.mutate({ name: newName, kind: newKind, sortOrder: (data?.length ?? 0) }, {
-      onSuccess: () => { setNewName(''); setNewKind('normal') },
+    create.mutate({
+      name: newName,
+      kind: newKind,
+      sortOrder: (data?.length ?? 0),
+      targetCents: newKind === 'normal' && newTarget !== '' ? amountToCents(newTarget) : null,
+      targetDate: newKind === 'normal' ? newTargetDate : null,
+    }, {
+      onSuccess: () => { setNewName(''); setNewKind('normal'); setNewTarget(''); setNewTargetDate(null) },
       onError: (err: unknown) => {
         const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
         notifications.show({
@@ -242,6 +255,7 @@ function PotsTab() {
           <Table.Tr>
             <Table.Th>{t('settings.name')}</Table.Th>
             <Table.Th>{t('settings.type')}</Table.Th>
+            <Table.Th>{t('pots.target')}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -264,8 +278,40 @@ function PotsTab() {
                       />
                     </Table.Td>
                     <Table.Td>
+                      {editKind === 'normal' && (
+                        <Group gap="xs" wrap="nowrap">
+                          <NumberInput
+                            size="xs"
+                            w={110}
+                            value={editTarget}
+                            onChange={setEditTarget}
+                            decimalSeparator=","
+                            decimalScale={2}
+                            prefix="€ "
+                            hideControls
+                            placeholder="0,00"
+                          />
+                          <DateInput
+                            size="xs"
+                            w={130}
+                            value={editTargetDate}
+                            onChange={setEditTargetDate}
+                            valueFormat="DD-MM-YYYY"
+                            clearable
+                          />
+                        </Group>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" onClick={() => update.mutate({ id: pot.id, name: editName, kind: editKind, sortOrder: pot.sortOrder }, {
+                        <Button size="xs" onClick={() => update.mutate({
+                          id: pot.id,
+                          name: editName,
+                          kind: editKind,
+                          sortOrder: pot.sortOrder,
+                          targetCents: editKind === 'normal' && editTarget !== '' ? amountToCents(editTarget) : null,
+                          targetDate: editKind === 'normal' ? editTargetDate : null,
+                        }, {
                           onSuccess: () => setEditing(null),
                           onError: (err: unknown) => {
                             const msg = (err as { body?: { error?: { message?: string } } })?.body?.error?.message ?? String(err)
@@ -280,8 +326,20 @@ function PotsTab() {
                     <Table.Td>{pot.name} {pot.archivedAt && <Badge size="xs" color="gray">{t('settings.archived')}</Badge>}</Table.Td>
                     <Table.Td><Badge size="xs" color={pot.kind === 'carryover' ? 'blue' : 'gray'}>{kindLabel(pot.kind)}</Badge></Table.Td>
                     <Table.Td>
+                      {pot.targetCents != null && (
+                        <MoneyText cents={pot.targetCents} size="sm" />
+                      )}
+                      {pot.targetDate && <Text size="xs" c="dimmed">{dayjs(pot.targetDate).format('DD-MM-YYYY')}</Text>}
+                    </Table.Td>
+                    <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" variant="subtle" onClick={() => { setEditing(pot.id); setEditName(pot.name); setEditKind(pot.kind) }}>{t('common.edit')}</Button>
+                        <Button size="xs" variant="subtle" onClick={() => {
+                          setEditing(pot.id)
+                          setEditName(pot.name)
+                          setEditKind(pot.kind)
+                          setEditTarget(pot.targetCents != null ? pot.targetCents / 100 : '')
+                          setEditTargetDate(pot.targetDate ?? null)
+                        }}>{t('common.edit')}</Button>
                         <Button size="xs" variant="subtle" color={pot.archivedAt ? 'green' : 'red'} onClick={() => archive.mutate(pot.id)}>
                           {pot.archivedAt ? t('settings.restore') : t('common.archive')}
                         </Button>
@@ -305,6 +363,30 @@ function PotsTab() {
             { value: 'carryover', label: t('settings.kind_carryover') },
           ]}
         />
+        {newKind === 'normal' && (
+          <>
+            <NumberInput
+              placeholder={t('pots.target')}
+              size="sm"
+              w={130}
+              value={newTarget}
+              onChange={setNewTarget}
+              decimalSeparator=","
+              decimalScale={2}
+              prefix="€ "
+              hideControls
+            />
+            <DateInput
+              placeholder={t('pots.targetDate')}
+              size="sm"
+              w={150}
+              value={newTargetDate}
+              onChange={setNewTargetDate}
+              valueFormat="DD-MM-YYYY"
+              clearable
+            />
+          </>
+        )}
         <Button size="sm" disabled={!newName} loading={create.isPending} onClick={handleCreate}>
           {t('common.add')}
         </Button>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   Title, Text, Group, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput, Select,
+  NumberInput, ActionIcon, Stack, Paper, TextInput, Select, Progress,
 } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import { AreaChart } from '@mantine/charts'
@@ -91,6 +91,22 @@ export default function PotDetail() {
         </Group>
         <MoneyText cents={currentBalance} size="xl" fw={800} />
       </Group>
+
+      {pot.targetCents != null && pot.targetCents > 0 && (
+        <Paper shadow="xs" p="md" withBorder>
+          <Group justify="space-between" mb="xs">
+            <Text size="sm" fw={600}>{t('pots.target')}</Text>
+            <Group gap="xs">
+              <MoneyText cents={pot.targetCents} size="sm" span />
+              {pot.targetDate && <Text size="sm" c="dimmed">· {dayjs(pot.targetDate).format('DD-MM-YYYY')}</Text>}
+            </Group>
+          </Group>
+          <Progress
+            value={Math.min(100, Math.max(0, (currentBalance / pot.targetCents) * 100))}
+            color={currentBalance >= pot.targetCents ? 'green' : 'blue'}
+          />
+        </Paper>
+      )}
 
       {chartData.length > 1 && (
         <Paper shadow="xs" p="md" withBorder>

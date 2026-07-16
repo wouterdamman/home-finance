@@ -198,13 +198,15 @@ func (s *Server) handleArchiveIncomeSource(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleListPots(w http.ResponseWriter, r *http.Request) {
 	type row struct {
-		ID         int64   `json:"id"`
-		Name       string  `json:"name"`
-		Kind       string  `json:"kind"`
-		SortOrder  int     `json:"sortOrder"`
-		ArchivedAt *string `json:"archivedAt,omitempty"`
+		ID          int64   `json:"id"`
+		Name        string  `json:"name"`
+		Kind        string  `json:"kind"`
+		SortOrder   int     `json:"sortOrder"`
+		TargetCents *int64  `json:"targetCents,omitempty"`
+		TargetDate  *string `json:"targetDate,omitempty"`
+		ArchivedAt  *string `json:"archivedAt,omitempty"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id,name,kind,sort_order,archived_at FROM pots ORDER BY sort_order,id`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id,name,kind,sort_order,target_cents,target_date,archived_at FROM pots ORDER BY sort_order,id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -213,11 +215,15 @@ func (s *Server) handleListPots(w http.ResponseWriter, r *http.Request) {
 	out := make([]row, 0)
 	for rows.Next() {
 		var ro row
-		var aa *time.Time
-		rows.Scan(&ro.ID, &ro.Name, &ro.Kind, &ro.SortOrder, &aa)
+		var aa, td *time.Time
+		rows.Scan(&ro.ID, &ro.Name, &ro.Kind, &ro.SortOrder, &ro.TargetCents, &td, &aa)
 		if aa != nil {
 			ts := aa.Format(time.RFC3339)
 			ro.ArchivedAt = &ts
+		}
+		if td != nil {
+			ds := td.Format("2006-01-02")
+			ro.TargetDate = &ds
 		}
 		out = append(out, ro)
 	}
@@ -226,16 +232,18 @@ func (s *Server) handleListPots(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetPotBalances(w http.ResponseWriter, r *http.Request) {
 	type row struct {
-		PotID        int64  `json:"potId"`
-		Name         string `json:"name"`
-		Kind         string `json:"kind"`
-		BalanceCents int64  `json:"balanceCents"`
+		PotID        int64   `json:"potId"`
+		Name         string  `json:"name"`
+		Kind         string  `json:"kind"`
+		BalanceCents int64   `json:"balanceCents"`
+		TargetCents  *int64  `json:"targetCents,omitempty"`
+		TargetDate   *string `json:"targetDate,omitempty"`
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT p.id, p.name, p.kind, COALESCE(SUM(pl.amount_cents),0)
+		SELECT p.id, p.name, p.kind, COALESCE(SUM(pl.amount_cents),0), p.target_cents, p.target_date
 		FROM pots p LEFT JOIN pot_ledger pl ON pl.pot_id=p.id
 		WHERE p.archived_at IS NULL
-		GROUP BY p.id,p.name,p.kind,p.sort_order
+		GROUP BY p.id,p.name,p.kind,p.sort_order,p.target_cents,p.target_date
 		ORDER BY p.sort_order,p.id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -245,7 +253,12 @@ func (s *Server) handleGetPotBalances(w http.ResponseWriter, r *http.Request) {
 	out := make([]row, 0)
 	for rows.Next() {
 		var ro row
-		rows.Scan(&ro.PotID, &ro.Name, &ro.Kind, &ro.BalanceCents)
+		var td *time.Time
+		rows.Scan(&ro.PotID, &ro.Name, &ro.Kind, &ro.BalanceCents, &ro.TargetCents, &td)
+		if td != nil {
+			ds := td.Format("2006-01-02")
+			ro.TargetDate = &ds
+		}
 		out = append(out, ro)
 	}
 	JSON(w, http.StatusOK, out)
@@ -253,9 +266,11 @@ func (s *Server) handleGetPotBalances(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreatePot(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name      string `json:"name"`
-		Kind      string `json:"kind"`
-		SortOrder int    `json:"sortOrder"`
+		Name        string  `json:"name"`
+		Kind        string  `json:"kind"`
+		SortOrder   int     `json:"sortOrder"`
+		TargetCents *int64  `json:"targetCents"`
+		TargetDate  *string `json:"targetDate"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -264,15 +279,21 @@ func (s *Server) handleCreatePot(w http.ResponseWriter, r *http.Request) {
 	if body.Kind == "" {
 		body.Kind = "normal"
 	}
+	if body.TargetCents != nil {
+		if err := validateAmountCents(*body.TargetCents); err != nil {
+			Error(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
 	var id int64
 	err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO pots (name,kind,sort_order) VALUES ($1,$2,$3) RETURNING id`,
-		body.Name, body.Kind, body.SortOrder).Scan(&id)
+		`INSERT INTO pots (name,kind,sort_order,target_cents,target_date) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+		body.Name, body.Kind, body.SortOrder, body.TargetCents, body.TargetDate).Scan(&id)
 	if err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "kind": body.Kind, "sortOrder": body.SortOrder})
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "kind": body.Kind, "sortOrder": body.SortOrder, "targetCents": body.TargetCents, "targetDate": body.TargetDate})
 }
 
 func (s *Server) handleUpdatePot(w http.ResponseWriter, r *http.Request) {
@@ -282,9 +303,11 @@ func (s *Server) handleUpdatePot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name      string `json:"name"`
-		Kind      string `json:"kind"`
-		SortOrder int    `json:"sortOrder"`
+		Name        string  `json:"name"`
+		Kind        string  `json:"kind"`
+		SortOrder   int     `json:"sortOrder"`
+		TargetCents *int64  `json:"targetCents"`
+		TargetDate  *string `json:"targetDate"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -293,7 +316,13 @@ func (s *Server) handleUpdatePot(w http.ResponseWriter, r *http.Request) {
 	if body.Kind == "" {
 		body.Kind = "normal"
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE pots SET name=$2,kind=$3,sort_order=$4 WHERE id=$1`, id, body.Name, body.Kind, body.SortOrder); err != nil {
+	if body.TargetCents != nil {
+		if err := validateAmountCents(*body.TargetCents); err != nil {
+			Error(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+	if _, err := s.pool.Exec(r.Context(), `UPDATE pots SET name=$2,kind=$3,sort_order=$4,target_cents=$5,target_date=$6 WHERE id=$1`, id, body.Name, body.Kind, body.SortOrder, body.TargetCents, body.TargetDate); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}

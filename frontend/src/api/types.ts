@@ -75,6 +75,8 @@ export interface PotBalance {
   name: string
   kind: 'normal' | 'carryover'
   balanceCents: number
+  targetCents?: number
+  targetDate?: string
 }
 
 export interface PotLedgerEntry {
