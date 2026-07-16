@@ -29,6 +29,7 @@ See `README.md` for full stack details.
 - All user-visible strings must go through `react-i18next` — add keys to both `en.json` and `nl.json`
 - Amounts: always pass/receive cents as integers; format with `MoneyText` component or `lib/money.ts`
 - No comments in code unless the WHY is non-obvious
+- Theme (light/dark/system) and language controls live in Settings > Preferences, not the header — don't re-add them to `AppShell.tsx`
 
 ### Mobile (below Mantine's `sm` breakpoint, 768px)
 - Not a responsive shrink of desktop — a separate mobile IA (bottom tab bar, list rows, bottom
@@ -66,6 +67,7 @@ See `README.md` for full stack details.
 - `@mantine/modals` has no `styles.css` of its own (it reuses core `Modal` styling) — never add a `'@mantine/modals/styles.css'` import, it breaks the Vite build. `@mantine/core`, `@mantine/notifications`, `@mantine/charts`, and `@mantine/dates` each do ship one.
 - Local dev Postgres volume must mount at `/var/lib/postgresql` (not `.../data`) — required by the postgres:18+ image layout.
 - `cd frontend` explicitly before `npx tsc --noEmit` / `npx vitest run` if unsure of shell cwd — running from the repo root or `backend/` can silently resolve the wrong `tsc` binary and report a false-clean result.
+- Mantine `Text` renders a `<p>` by default. Never pass a block-level component (`Progress`, another `Box`/`div`-based component) as its `children` without `component="div"` — a `<p>` containing a `<div>` is invalid HTML and throws a React hydration warning in the console, not a build error, so it's easy to ship unnoticed. This bit `MobileListRow`'s `subtitle` slot (fixed by forcing `component="div"` there).
 - `react-swipeable-list` gestures cannot be verified with synthetic `dispatchEvent(MouseEvent(...))` calls in a scripted browser session — the library needs real, continuous pointer movement. A single tool-driven `left_click_drag` works; a JS loop of manual `mousedown`/`mousemove`/`mouseup` does not. Don't conclude swipe is broken from a failed synthetic-event test — retest with an actual drag gesture.
 - PWA icon source SVGs live in `frontend/design-assets/`, not `frontend/public/` — anything in `public/` ships verbatim in the Vite build output, so raw source files there would be served as dead weight. Only the rendered PNG/SVG outputs (`pwa-*.png`, `favicon.svg`, etc.) belong in `public/`.
 - Mantine layout region config (`AppShell` `header`/`navbar`/`footer` props) accepts a responsive `{ base, sm, ... }` object for `height`, letting a region collapse to 0 on desktop without a separate conditional — used for the mobile-only bottom tab bar footer.
