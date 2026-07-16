@@ -49,7 +49,7 @@ export function MobileListRow({
         {leftSection}
         <Stack gap={0} style={{ minWidth: 0 }}>
           <Text fw={600} c={danger ? 'red' : undefined} truncate>{title}</Text>
-          {subtitle && <Text size="xs" c="dimmed" truncate>{subtitle}</Text>}
+          {subtitle && <Text component="div" size="xs" c="dimmed" truncate>{subtitle}</Text>}
         </Stack>
       </Group>
       <Group wrap="nowrap" gap={4}>
