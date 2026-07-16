@@ -144,6 +144,8 @@
     "themeDark": "Dark",
     "themeAuto": "System",
     "language": "Language",
-    "saved": "Saved"
+    "saved": "Saved",
+    "search": "Search...",
+    "addNew": "Add new"
   }
 }

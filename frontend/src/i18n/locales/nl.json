@@ -144,6 +144,8 @@
     "themeDark": "Donker",
     "themeAuto": "Systeem",
     "language": "Taal",
-    "saved": "Opgeslagen"
+    "saved": "Opgeslagen",
+    "search": "Zoeken...",
+    "addNew": "Nieuw toevoegen"
   }
 }
