@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.4.0](https://github.com/wouterdamman/home-finance/compare/v1.3.0...v1.4.0) (2026-07-16)
+
+
+### Features
+
+* **api:** add OpenAPI spec with Scalar API reference UI ([4c78628](https://github.com/wouterdamman/home-finance/commit/4c7862859108735d9376ea0ed19292556076e5a5))
+* **mobile:** redesign UI for mobile as Apple-style app, not a shrunk desktop ([989e18c](https://github.com/wouterdamman/home-finance/commit/989e18c501c3f38dc373ec03a2429db250b9f83a))
+* **pots:** add savings goals with target amount and target date ([d1842b9](https://github.com/wouterdamman/home-finance/commit/d1842b9fcd643df81bee89e563a72e20234bc580))
+* **pwa:** make app installable as a PWA ([c787875](https://github.com/wouterdamman/home-finance/commit/c787875b1292b44137ba855191dec444778b3232))
+* **settings:** move add-item forms into a modal, add search and column sort ([37e4336](https://github.com/wouterdamman/home-finance/commit/37e43362120060593023ea508c216152a0c202e6))
+* **settings:** move theme and language controls into Settings ([7856713](https://github.com/wouterdamman/home-finance/commit/78567131a81064e8b700a1c86ac333bafb37036e))
+* **ui:** custom theme, tabler icons, empty states, save notifications ([b34c682](https://github.com/wouterdamman/home-finance/commit/b34c68290120efb5b4f82aed93929da4977f9cae))
+
+
+### Bug Fixes
+
+* **mobile:** make Settings a real drill-down menu, not one long page ([9bd6541](https://github.com/wouterdamman/home-finance/commit/9bd65411129162b6cc54136d628764d7667590a8))
+* **mobile:** stop nesting a Progress bar inside a Text paragraph ([7246404](https://github.com/wouterdamman/home-finance/commit/7246404523c5a3c18a24ff810b1da6492374324f))
+* **month:** deep-link budget-line clicks and guard the itemized toggle ([814f1dd](https://github.com/wouterdamman/home-finance/commit/814f1dd625ee6b8623d9a779458f7618f26e9918))
+* **settings:** align edit-mode inputs with their column headers ([727c465](https://github.com/wouterdamman/home-finance/commit/727c46522a858f1757b5772486a4e1e70e9d2252))
+
 ## [1.3.0](https://github.com/wouterdamman/home-finance/compare/v1.2.0...v1.3.0) (2026-07-16)
 
 
