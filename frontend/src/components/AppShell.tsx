@@ -1,5 +1,6 @@
 import { Outlet, NavLink as RouterNavLink, useNavigate } from 'react-router-dom'
 import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Select, SegmentedControl, useMantineColorScheme } from '@mantine/core'
+import { IconWallet, IconSun, IconMoon, IconDeviceDesktop, IconLogout, IconPigMoney, IconSettings, IconApi, IconCalendar } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
 import { useYears } from '../api/hooks/usePeriods'
@@ -21,7 +22,10 @@ export default function AppShell() {
     <MantineAppShell header={{ height: 56 }} navbar={{ width: 220, breakpoint: 'sm' }} padding="md">
       <MantineAppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Text fw={700} size="lg">💰 Home Finance</Text>
+          <Group gap="xs">
+            <IconWallet size={22} />
+            <Text fw={700} size="lg">Home Finance</Text>
+          </Group>
           <Group>
             <SegmentedControl
               size="xs"
@@ -29,9 +33,9 @@ export default function AppShell() {
               onChange={(v) => setColorScheme(v as 'light' | 'dark' | 'auto')}
               aria-label={t('common.theme')}
               data={[
-                { label: <span title={t('common.themeLight')} aria-label={t('common.themeLight')}>☀️</span>, value: 'light' },
-                { label: <span title={t('common.themeDark')} aria-label={t('common.themeDark')}>🌙</span>, value: 'dark' },
-                { label: <span title={t('common.themeAuto')} aria-label={t('common.themeAuto')}>⚙️</span>, value: 'auto' },
+                { label: <IconSun size={16} title={t('common.themeLight')} aria-label={t('common.themeLight')} />, value: 'light' },
+                { label: <IconMoon size={16} title={t('common.themeDark')} aria-label={t('common.themeDark')} />, value: 'dark' },
+                { label: <IconDeviceDesktop size={16} title={t('common.themeAuto')} aria-label={t('common.themeAuto')} />, value: 'auto' },
               ]}
             />
             <Select
@@ -43,9 +47,12 @@ export default function AppShell() {
               w={70}
             />
             {user && (
-              <ActionIcon variant="subtle" aria-label={t('auth.signOut')} title={t('auth.signOut')} onClick={handleLogout}>
-                <Text size="xs">{user.displayName || user.email}</Text>
-              </ActionIcon>
+              <Group gap={6}>
+                <Text size="xs" c="dimmed">{user.displayName || user.email}</Text>
+                <ActionIcon variant="subtle" aria-label={t('auth.signOut')} title={t('auth.signOut')} onClick={handleLogout}>
+                  <IconLogout size={18} />
+                </ActionIcon>
+              </Group>
             )}
           </Group>
         </Group>
@@ -55,13 +62,14 @@ export default function AppShell() {
           <NavLink
             key={y}
             label={String(y)}
+            leftSection={<IconCalendar size={16} />}
             component={RouterNavLink}
             to={`/years/${y}`}
           />
         ))}
-        <NavLink label={t('nav.pots')} component={RouterNavLink} to="/pots" />
-        <NavLink label={t('settings.title')} component={RouterNavLink} to="/settings" />
-        <NavLink label={t('nav.apiDocs')} component="a" href="/api/docs" target="_blank" rel="noopener noreferrer" />
+        <NavLink label={t('nav.pots')} leftSection={<IconPigMoney size={16} />} component={RouterNavLink} to="/pots" />
+        <NavLink label={t('settings.title')} leftSection={<IconSettings size={16} />} component={RouterNavLink} to="/settings" />
+        <NavLink label={t('nav.apiDocs')} leftSection={<IconApi size={16} />} component="a" href="/api/docs" target="_blank" rel="noopener noreferrer" />
       </MantineAppShell.Navbar>
       <MantineAppShell.Main>
         <Outlet />

@@ -1,4 +1,5 @@
-import { Center, Card, Title, Button, Text } from '@mantine/core'
+import { Center, Card, Title, Button, Text, Group } from '@mantine/core'
+import { IconWallet } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 
 export default function Login() {
@@ -7,7 +8,10 @@ export default function Login() {
   return (
     <Center h="100vh">
       <Card shadow="md" p="xl" w={360}>
-        <Title order={2} mb="md">💰 Home Finance</Title>
+        <Group gap="xs" mb="md">
+          <IconWallet size={24} />
+          <Title order={2}>Home Finance</Title>
+        </Group>
         <Text mb="lg" c="dimmed">{t('auth.signInPrompt')}</Text>
         <Button fullWidth component="a" href={`/auth/login?return_to=${encodeURIComponent(returnTo)}`}>
           {t('auth.signIn')}

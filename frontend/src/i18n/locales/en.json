@@ -65,7 +65,8 @@
     "deleteTitle": "Delete month",
     "deleteWarning": "This permanently deletes {{month}} {{year}} and all associated income, expenses and transactions.",
     "deleteConfirm": "Delete permanently",
-    "unknownSource": "Source #{{id}}"
+    "unknownSource": "Source #{{id}}",
+    "noTransactions": "No transactions booked yet"
   },
   "pots": {
     "title": "Savings Pots",
@@ -114,7 +115,11 @@
     "archived": "archived",
     "template": "In template",
     "templateHint": "Included when creating a new month",
-    "carryoverExists": "There is already an active carryover pot. Archive the existing one first."
+    "carryoverExists": "There is already an active carryover pot. Archive the existing one first.",
+    "noCategories": "No categories yet",
+    "noSources": "No income sources yet",
+    "noPots": "No pots yet",
+    "noYears": "No years yet"
   },
   "common": {
     "save": "Save",
@@ -138,6 +143,7 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeAuto": "System",
-    "language": "Language"
+    "language": "Language",
+    "saved": "Saved"
   }
 }

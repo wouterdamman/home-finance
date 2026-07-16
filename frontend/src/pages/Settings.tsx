@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
+import { IconX } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
@@ -12,6 +13,7 @@ import {
 import { useYears, useCreateYear } from '../api/hooks/usePeriods'
 import { parseToCents } from '../lib/money'
 import MoneyText from '../components/MoneyText'
+import EmptyState from '../components/EmptyState'
 
 function amountToCents(v: number | string): number {
   return parseToCents(String(v)) ?? 0
@@ -84,6 +86,9 @@ function CategoriesTab() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
+          {(data ?? []).length === 0 && (
+            <Table.Tr><Table.Td colSpan={5}><EmptyState message={t('settings.noCategories')} /></Table.Td></Table.Tr>
+          )}
           {(data ?? []).map(cat => (
             <Table.Tr key={cat.id} opacity={cat.archivedAt ? 0.5 : 1}>
               {editing === cat.id
@@ -95,7 +100,7 @@ function CategoriesTab() {
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" onClick={saveEdit}>OK</Button>
-                        <Button size="xs" variant="subtle" onClick={() => setEditing(null)}>✕</Button>
+                        <Button size="xs" variant="subtle" onClick={() => setEditing(null)}><IconX size={14} /></Button>
                       </Group>
                     </Table.Td>
                   </>
@@ -161,6 +166,9 @@ function SourcesTab() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
+          {(data ?? []).length === 0 && (
+            <Table.Tr><Table.Td colSpan={4}><EmptyState message={t('settings.noSources')} /></Table.Td></Table.Tr>
+          )}
           {(data ?? []).map(src => (
             <Table.Tr key={src.id} opacity={src.archivedAt ? 0.5 : 1}>
               {editing === src.id
@@ -171,7 +179,7 @@ function SourcesTab() {
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: amountToCents(editAmount), includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
-                        <Button size="xs" variant="subtle" onClick={() => setEditing(null)}>✕</Button>
+                        <Button size="xs" variant="subtle" onClick={() => setEditing(null)}><IconX size={14} /></Button>
                       </Group>
                     </Table.Td>
                   </>
@@ -260,6 +268,9 @@ function PotsTab() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
+          {(data ?? []).length === 0 && (
+            <Table.Tr><Table.Td colSpan={4}><EmptyState message={t('settings.noPots')} /></Table.Td></Table.Tr>
+          )}
           {(data ?? []).map(pot => (
             <Table.Tr key={pot.id} opacity={pot.archivedAt ? 0.5 : 1}>
               {editing === pot.id
@@ -318,7 +329,7 @@ function PotsTab() {
                             notifications.show({ color: 'red', title: t('common.error'), message: editKind === 'carryover' ? t('settings.carryoverExists') : msg })
                           },
                         })}>OK</Button>
-                        <Button size="xs" variant="subtle" onClick={() => setEditing(null)}>✕</Button>
+                        <Button size="xs" variant="subtle" onClick={() => setEditing(null)}><IconX size={14} /></Button>
                       </Group>
                     </Table.Td>
                   </>
@@ -410,6 +421,9 @@ function YearsTab() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
+          {(data ?? []).length === 0 && (
+            <Table.Tr><Table.Td><EmptyState message={t('settings.noYears')} /></Table.Td></Table.Tr>
+          )}
           {(data ?? []).map(y => (
             <Table.Tr key={y}>
               <Table.Td>{y}</Table.Td>

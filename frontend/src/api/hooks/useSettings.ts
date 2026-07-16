@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { notifications } from '@mantine/notifications'
 import { api } from '../client'
+import i18n from '../../i18n/index'
 import type { PotBalance, PotLedgerEntry } from '../types'
+
+function showSaved() {
+  notifications.show({ color: 'green', message: i18n.t('common.saved') })
+}
 
 export interface Category {
   id: number
@@ -43,7 +49,7 @@ export function useCreateCategory() {
   return useMutation({
     mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
       api.post('/api/categories', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
   })
 }
 
@@ -52,7 +58,7 @@ export function useUpdateCategory() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) =>
       api.put(`/api/categories/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
   })
 }
 
@@ -60,7 +66,7 @@ export function useArchiveCategory() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/categories/${id}/archive`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
   })
 }
 
@@ -76,7 +82,7 @@ export function useCreateIncomeSource() {
   return useMutation({
     mutationFn: (body: { name: string; defaultAmountCents: number; includeInTemplate: boolean; sortOrder: number }) =>
       api.post('/api/income-sources', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['income-sources'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })
 }
 
@@ -85,7 +91,7 @@ export function useUpdateIncomeSource() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; includeInTemplate: boolean; sortOrder: number }) =>
       api.put(`/api/income-sources/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['income-sources'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })
 }
 
@@ -93,7 +99,7 @@ export function useArchiveIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/income-sources/${id}/archive`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['income-sources'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })
 }
 
@@ -109,7 +115,7 @@ export function useCreatePot() {
   return useMutation({
     mutationFn: (body: { name: string; kind: string; sortOrder: number; targetCents?: number | null; targetDate?: string | null }) =>
       api.post('/api/pots', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pots'] }); showSaved() },
   })
 }
 
@@ -121,6 +127,7 @@ export function useUpdatePot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pots'] })
       qc.invalidateQueries({ queryKey: ['pot-balances'] })
+      showSaved()
     },
   })
 }
@@ -129,7 +136,7 @@ export function useArchivePot() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/pots/${id}/archive`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pots'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pots'] }); showSaved() },
   })
 }
 

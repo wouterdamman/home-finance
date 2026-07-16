@@ -7,10 +7,12 @@ import {
 import { DateInput } from '@mantine/dates'
 import { AreaChart } from '@mantine/charts'
 import { modals } from '@mantine/modals'
+import { IconTrash } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import { usePots, usePotLedger, useCreatePotEntry, useDeletePotEntry } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
+import EmptyState from '../components/EmptyState'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
 import { notifications } from '@mantine/notifications'
@@ -160,7 +162,7 @@ export default function PotDetail() {
         </Group>
 
         {entries.length === 0 ? (
-          <Text c="dimmed">{t('pots.noEntries')}</Text>
+          <EmptyState message={t('pots.noEntries')} />
         ) : (
           <Table>
             <Table.Thead>
@@ -189,7 +191,7 @@ export default function PotDetail() {
                   <Table.Td ta="right"><MoneyText cents={e.runningBalance} /></Table.Td>
                   <Table.Td>
                     {MANUAL_ENTRY_TYPES.includes(e.entryType) && (
-                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleDelete(e.id)}>✕</ActionIcon>
+                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleDelete(e.id)}><IconTrash size={14} /></ActionIcon>
                     )}
                   </Table.Td>
                 </Table.Tr>

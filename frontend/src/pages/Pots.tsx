@@ -2,8 +2,10 @@ import { Link } from 'react-router-dom'
 import { Title, SimpleGrid, Paper, Group, Text, Skeleton, Alert, Progress, Stack } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
+import { IconPigMoney } from '@tabler/icons-react'
 import { usePotBalances } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
+import EmptyState from '../components/EmptyState'
 
 export default function Pots() {
   const { t } = useTranslation()
@@ -19,7 +21,7 @@ export default function Pots() {
     <>
       <Title order={2} mb="md">{t('pots.title')}</Title>
       {savingsPots.length === 0 && (
-        <Text c="dimmed">{t('pots.noEntries')}</Text>
+        <EmptyState message={t('pots.noEntries')} icon={<IconPigMoney size={22} />} />
       )}
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
         {savingsPots.map((p) => {

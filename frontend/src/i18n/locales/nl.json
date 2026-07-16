@@ -65,7 +65,8 @@
     "deleteTitle": "Maand verwijderen",
     "deleteWarning": "Dit verwijdert {{month}} {{year}} en alle bijbehorende inkomsten, uitgaven en transacties permanent.",
     "deleteConfirm": "Definitief verwijderen",
-    "unknownSource": "Bron #{{id}}"
+    "unknownSource": "Bron #{{id}}",
+    "noTransactions": "Nog geen transacties geboekt"
   },
   "pots": {
     "title": "Spaarpotjes",
@@ -114,7 +115,11 @@
     "archived": "gearchiveerd",
     "template": "In template",
     "templateHint": "Wordt meegenomen bij aanmaken nieuwe maand",
-    "carryoverExists": "Er is al een actief doorlopen-potje. Archiveer het bestaande eerst."
+    "carryoverExists": "Er is al een actief doorlopen-potje. Archiveer het bestaande eerst.",
+    "noCategories": "Nog geen categorieën",
+    "noSources": "Nog geen inkomstenbronnen",
+    "noPots": "Nog geen potjes",
+    "noYears": "Nog geen jaren"
   },
   "common": {
     "save": "Opslaan",
@@ -138,6 +143,7 @@
     "themeLight": "Licht",
     "themeDark": "Donker",
     "themeAuto": "Systeem",
-    "language": "Taal"
+    "language": "Taal",
+    "saved": "Opgeslagen"
   }
 }

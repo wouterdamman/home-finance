@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { notifications } from '@mantine/notifications'
 import { api } from '../client'
+import i18n from '../../i18n/index'
 import type { Period, MonthOverview, YearSummary } from '../types'
 
 export function usePeriods(year: number) {
@@ -27,7 +29,10 @@ export function useCreateYear() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (year: number) => api.post('/api/years', { year }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['years'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['years'] })
+      notifications.show({ color: 'green', message: i18n.t('common.saved') })
+    },
   })
 }
 

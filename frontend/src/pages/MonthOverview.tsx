@@ -5,6 +5,7 @@ import {
   NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
+import { IconTrash, IconX } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
@@ -199,7 +200,7 @@ export default function MonthOverview() {
                 </Table.Td>
                 {!isClosed && inc.entryType !== 'carryover' && (
                   <Table.Td w={40}>
-                    <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteIncome.mutate(inc.id)}>✕</ActionIcon>
+                    <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteIncome.mutate(inc.id)}><IconTrash size={14} /></ActionIcon>
                   </Table.Td>
                 )}
               </Table.Tr>
@@ -402,7 +403,7 @@ export default function MonthOverview() {
                 {splitEdits && (
                   <Table.Td>
                     {!isCarryoverRow && (
-                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleRemoveSplitPot(potId)}>✕</ActionIcon>
+                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleRemoveSplitPot(potId)}><IconX size={14} /></ActionIcon>
                     )}
                   </Table.Td>
                 )}

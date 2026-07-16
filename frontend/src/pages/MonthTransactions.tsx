@@ -5,7 +5,9 @@ import {
   NumberInput, ActionIcon, Stack, TextInput, Button,
 } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
+import { IconTrash } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
+import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
@@ -147,6 +149,13 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
+          {sortedTxs.length === 0 && (
+            <Table.Tr>
+              <Table.Td colSpan={isClosed ? 3 : 4}>
+                <EmptyState message={t('month.noTransactions')} />
+              </Table.Td>
+            </Table.Tr>
+          )}
           {sortedTxs.map(tx => (
             <Table.Tr key={tx.id}>
               <Table.Td>
@@ -158,7 +167,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
               <Table.Td ta="right"><MoneyText cents={tx.amountCents} /></Table.Td>
               {!isClosed && (
                 <Table.Td>
-                  <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}>✕</ActionIcon>
+                  <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}><IconTrash size={14} /></ActionIcon>
                 </Table.Td>
               )}
             </Table.Tr>

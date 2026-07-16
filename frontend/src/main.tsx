@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { MantineProvider } from '@mantine/core'
+import { MantineProvider, createTheme } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
 import { ModalsProvider } from '@mantine/modals'
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query'
@@ -25,13 +25,22 @@ const queryClient = new QueryClient({
   }),
 })
 
+const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
+
+const theme = createTheme({
+  primaryColor: 'teal',
+  defaultRadius: 'md',
+  fontFamily,
+  headings: { fontFamily, fontWeight: '700' },
+})
+
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('root element not found')
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <MantineProvider defaultColorScheme="auto">
+      <MantineProvider theme={theme} defaultColorScheme="auto">
         <ModalsProvider>
           <Notifications />
           <App />
