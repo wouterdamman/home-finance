@@ -8,6 +8,7 @@ Family budget tracker — Go API + React SPA + PostgreSQL. Replaces an Excel-bas
 - Budget-vs-actual progress bars per tracked category
 - Year dashboard: income/expense/surplus chart, savings pot balances
 - Savings pots overview with full ledger (deposits, withdrawals, adjustments, opening balance) and balance-trend chart
+- Savings goals: optional target amount + target date per pot, with progress bars
 - Pot % allocation on month close; carryover pot always absorbs whatever isn't allocated to another pot (percentage is computed, not entered) and flows to next month as income
 - Explicit year registry (Settings > Years) — no hardcoded year range
 - Template system: income sources and categories marked for auto-copy to new months
@@ -15,13 +16,15 @@ Family budget tracker — Go API + React SPA + PostgreSQL. Replaces an Excel-bas
 - Dark/light/system theme toggle
 - Dutch + English UI
 - OIDC auth (Authentik in prod, Dex in dev)
+- Installable PWA (offline-capable static assets, network-first API)
+- Mobile-native UI below tablet width: bottom tab bar, swipeable lists, bottom-sheet editing — not a shrunk desktop layout
 
 ## Stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Go, chi, pgx/v5, goose migrations |
-| Frontend | React 18, Vite, Mantine v7, TanStack Query v5 |
+| Frontend | React 19, Vite, Mantine v9, TanStack Query v5 |
 | Database | PostgreSQL (CloudNativePG in prod) |
 | Auth | OIDC/BFF — HttpOnly session cookie |
 | Deploy | Kubernetes + Helm, GHCR image |

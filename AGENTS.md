@@ -24,11 +24,25 @@ See `README.md` for full stack details.
 - Audit log: call `s.auditLog()` after any destructive or state-changing action (close, reopen, delete, pot entries)
 
 ### Frontend
-- Mantine v7 components — do not mix with other UI libraries
+- Mantine v9 components — do not mix with other UI libraries
 - TanStack Query v5 for all server state — no local state for fetched data
 - All user-visible strings must go through `react-i18next` — add keys to both `en.json` and `nl.json`
 - Amounts: always pass/receive cents as integers; format with `MoneyText` component or `lib/money.ts`
 - No comments in code unless the WHY is non-obvious
+
+### Mobile (below Mantine's `sm` breakpoint, 768px)
+- Not a responsive shrink of desktop — a separate mobile IA (bottom tab bar, list rows, bottom
+  sheets). Desktop JSX must stay untouched; see `immutable-jingling-treehouse.md` plan for the
+  full rationale and rejected "shrink the table" approach.
+- Each page forks its render tree with `useMediaQuery('(max-width: 47.99em)')` — a structural
+  fork, not `hiddenFrom`/`visibleFrom` (those mount both trees, just hide one with CSS).
+- Reuse `frontend/src/components/mobile/{MobileList,BottomSheet,HeroStat}.tsx` instead of
+  building new mobile-only table/modal patterns per page.
+- `MobileList` rows can take a `swipeAction` (via `react-swipeable-list`) for
+  delete/archive — mirrors the desktop trash-icon action, don't add a second delete affordance.
+- `BottomSheet` is a thin wrapper around Mantine `Drawer` (`position="bottom"`) — always override
+  `styles.content` with `height: 'auto'` + a `maxHeight`; the `size` prop does not accept `'auto'`
+  for Drawer and silently renders full-height instead of content-height.
 
 ### Git
 - Conventional commits: `feat:`, `fix:`, `ci:`, `chore:`, `docs:`, `perf:`
@@ -52,6 +66,9 @@ See `README.md` for full stack details.
 - `@mantine/modals` has no `styles.css` of its own (it reuses core `Modal` styling) — never add a `'@mantine/modals/styles.css'` import, it breaks the Vite build. `@mantine/core`, `@mantine/notifications`, `@mantine/charts`, and `@mantine/dates` each do ship one.
 - Local dev Postgres volume must mount at `/var/lib/postgresql` (not `.../data`) — required by the postgres:18+ image layout.
 - `cd frontend` explicitly before `npx tsc --noEmit` / `npx vitest run` if unsure of shell cwd — running from the repo root or `backend/` can silently resolve the wrong `tsc` binary and report a false-clean result.
+- `react-swipeable-list` gestures cannot be verified with synthetic `dispatchEvent(MouseEvent(...))` calls in a scripted browser session — the library needs real, continuous pointer movement. A single tool-driven `left_click_drag` works; a JS loop of manual `mousedown`/`mousemove`/`mouseup` does not. Don't conclude swipe is broken from a failed synthetic-event test — retest with an actual drag gesture.
+- PWA icon source SVGs live in `frontend/design-assets/`, not `frontend/public/` — anything in `public/` ships verbatim in the Vite build output, so raw source files there would be served as dead weight. Only the rendered PNG/SVG outputs (`pwa-*.png`, `favicon.svg`, etc.) belong in `public/`.
+- Mantine layout region config (`AppShell` `header`/`navbar`/`footer` props) accepts a responsive `{ base, sm, ... }` object for `height`, letting a region collapse to 0 on desktop without a separate conditional — used for the mobile-only bottom tab bar footer.
 
 ## Dev setup
 

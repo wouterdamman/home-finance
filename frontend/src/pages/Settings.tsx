@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal, Menu, ActionIcon, Anchor } from '@mantine/core'
+import { useSearchParams } from 'react-router-dom'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal, Menu, ActionIcon } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
-import { IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort } from '@tabler/icons-react'
+import { IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort, IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
@@ -79,31 +80,51 @@ function SortMenu<K extends string>({ sort, onSort, options }: {
   )
 }
 
+type SettingsSection = 'categories' | 'sources' | 'pots' | 'years'
+
 export default function Settings() {
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const section = searchParams.get('section') as SettingsSection | null
 
   if (isMobile) {
-    const sections = [
-      { id: 'section-categories', label: t('settings.categories'), content: <CategoriesTab /> },
-      { id: 'section-sources', label: t('settings.incomeSources'), content: <SourcesTab /> },
-      { id: 'section-pots', label: t('settings.pots'), content: <PotsTab /> },
-      { id: 'section-years', label: t('settings.years'), content: <YearsTab /> },
+    const menu: { key: SettingsSection; label: string; icon: typeof IconTags; content: React.ReactNode }[] = [
+      { key: 'categories', label: t('settings.categories'), icon: IconTags, content: <CategoriesTab /> },
+      { key: 'sources', label: t('settings.incomeSources'), icon: IconCoin, content: <SourcesTab /> },
+      { key: 'pots', label: t('settings.pots'), icon: IconPigMoney, content: <PotsTab /> },
+      { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab /> },
     ]
+    const active = menu.find(m => m.key === section)
+
+    if (active) {
+      return (
+        <Stack gap="md">
+          <Group gap="xs" wrap="nowrap">
+            <ActionIcon variant="subtle" aria-label={t('common.back')} onClick={() => setSearchParams({})}>
+              <IconChevronLeft size={18} />
+            </ActionIcon>
+            <Title order={3}>{active.label}</Title>
+          </Group>
+          {active.content}
+        </Stack>
+      )
+    }
+
     return (
-      <Stack gap="lg">
+      <Stack gap="md">
         <Title order={2}>{t('settings.title')}</Title>
-        <Group gap="xs" wrap="nowrap" style={{ overflowX: 'auto' }}>
-          {sections.map(s => (
-            <Anchor key={s.id} href={`#${s.id}`} size="sm" style={{ whiteSpace: 'nowrap' }}>{s.label}</Anchor>
+        <MobileList>
+          {menu.map(m => (
+            <MobileListRow
+              key={m.key}
+              leftSection={<m.icon size={18} />}
+              title={m.label}
+              chevron
+              onClick={() => setSearchParams({ section: m.key })}
+            />
           ))}
-        </Group>
-        {sections.map(s => (
-          <Stack key={s.id} gap="sm" id={s.id} style={{ scrollMarginTop: 70 }}>
-            <Title order={4}>{s.label}</Title>
-            {s.content}
-          </Stack>
-        ))}
+        </MobileList>
       </Stack>
     )
   }
