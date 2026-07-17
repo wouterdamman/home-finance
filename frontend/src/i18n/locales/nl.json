@@ -128,7 +128,7 @@
     "noSources": "Nog geen inkomstenbronnen",
     "noPots": "Nog geen potjes",
     "noYears": "Nog geen jaren",
-    "exportImport": "Exporteren"
+    "exportImport": "Exporteren/Importeren"
   },
   "export": {
     "description": "Download inkomsten, uitgaven en transacties van een heel jaar of geselecteerde maanden als Excel-bestand.",
@@ -137,7 +137,26 @@
     "scopeMonths": "Selecteer maanden",
     "months": "Maanden",
     "download": "Downloaden",
-    "downloadStarted": "Export gestart"
+    "downloadStarted": "Export gestart",
+    "importTitle": "Importeren",
+    "importDescription": "Alleen voor het migreren van het oude Fam_Finance-Excel-bestand (met tabbladen als \"7-26-Overview\"/\"7-26-Details\") — geen generiek Excel-bestand.",
+    "file": "Excel-bestand",
+    "filePlaceholder": "Kies een .xlsx-bestand",
+    "closeThrough": "Sluit maanden af t/m",
+    "closeThroughHint": "0 = geen maanden afsluiten, alleen inlezen",
+    "wipe": "Bestaande data van dit jaar wissen",
+    "wipeHint": "Verwijdert alle boekingen/maanden van het gekozen jaar vóór het importeren",
+    "resetMaster": "Alle data resetten (alle jaren)",
+    "resetMasterHint": "Verwijdert ALLE categorieën, bronnen, potjes en maanden van ALLE jaren — onomkeerbaar",
+    "importButton": "Importeren",
+    "importSuccess": "Import voltooid",
+    "confirmDestructive": "Bevestig import",
+    "wipeWarning": "Dit verwijdert alle bestaande data van dit jaar voordat het bestand wordt ingelezen. Dit kan niet ongedaan worden gemaakt.",
+    "resetMasterWarning": "Dit verwijdert ALLE categorieën, bronnen, potjes en maanden van ALLE jaren voordat het bestand wordt ingelezen. Dit kan niet ongedaan worden gemaakt.",
+    "month": "Maand",
+    "income": "Inkomsten",
+    "expense": "Uitgaven",
+    "surplus": "Surplus"
   },
   "common": {
     "save": "Opslaan",

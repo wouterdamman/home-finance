@@ -128,7 +128,7 @@
     "noSources": "No income sources yet",
     "noPots": "No pots yet",
     "noYears": "No years yet",
-    "exportImport": "Export"
+    "exportImport": "Export/Import"
   },
   "export": {
     "description": "Download income, expenses and transactions for a whole year or selected months as an Excel file.",
@@ -137,7 +137,26 @@
     "scopeMonths": "Select months",
     "months": "Months",
     "download": "Download",
-    "downloadStarted": "Export started"
+    "downloadStarted": "Export started",
+    "importTitle": "Import",
+    "importDescription": "Only for migrating the old Fam_Finance Excel file (with tabs like \"7-26-Overview\"/\"7-26-Details\") — not a generic Excel file.",
+    "file": "Excel file",
+    "filePlaceholder": "Choose a .xlsx file",
+    "closeThrough": "Close months through",
+    "closeThroughHint": "0 = don't close any months, just import",
+    "wipe": "Wipe existing data for this year",
+    "wipeHint": "Deletes all entries/months for the chosen year before importing",
+    "resetMaster": "Reset all data (all years)",
+    "resetMasterHint": "Deletes ALL categories, sources, pots and months for ALL years — irreversible",
+    "importButton": "Import",
+    "importSuccess": "Import complete",
+    "confirmDestructive": "Confirm import",
+    "wipeWarning": "This deletes all existing data for this year before the file is imported. This cannot be undone.",
+    "resetMasterWarning": "This deletes ALL categories, sources, pots and months for ALL years before the file is imported. This cannot be undone.",
+    "month": "Month",
+    "income": "Income",
+    "expense": "Expenses",
+    "surplus": "Surplus"
   },
   "common": {
     "save": "Save",

@@ -20,15 +20,15 @@ type ImportOptions struct {
 }
 
 type Report struct {
-	Months []MonthReport
+	Months []MonthReport `json:"months"`
 }
 
 type MonthReport struct {
-	Month             int
-	IncomeTotalCents  int64
-	ExpenseTotalCents int64
-	SurplusCents      int64
-	Closed            bool
+	Month             int   `json:"month"`
+	IncomeTotalCents  int64 `json:"incomeTotalCents"`
+	ExpenseTotalCents int64 `json:"expenseTotalCents"`
+	SurplusCents      int64 `json:"surplusCents"`
+	Closed            bool  `json:"closed"`
 }
 
 func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts ImportOptions) (*Report, error) {

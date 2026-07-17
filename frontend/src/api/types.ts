@@ -130,3 +130,15 @@ export interface IncomeSource {
 export interface ApiError {
   error: { code: string; message: string }
 }
+
+export interface ImportReportMonth {
+  month: number
+  incomeTotalCents: number
+  expenseTotalCents: number
+  surplusCents: number
+  closed: boolean
+}
+
+export interface ImportReport {
+  months: ImportReportMonth[]
+}

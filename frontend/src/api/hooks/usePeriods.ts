@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { api } from '../client'
 import i18n from '../../i18n/index'
-import type { Period, MonthOverview, YearSummary } from '../types'
+import type { Period, MonthOverview, YearSummary, ImportReport } from '../types'
 
 export function usePeriods(year: number) {
   return useQuery<Period[]>({
@@ -138,6 +138,39 @@ export function useReopenPeriod(periodId: number, year: number, month: number) {
       for (const y of yearsTouchedByPeriodMutation(year, month)) {
         qc.invalidateQueries({ queryKey: ['year-summary', y] })
       }
+      qc.invalidateQueries({ queryKey: ['pots'] })
+    },
+  })
+}
+
+export interface ImportXLSXInput {
+  file: File
+  year: number
+  wipe: boolean
+  resetMaster: boolean
+  closeThrough: number
+  password?: string
+}
+
+export function useImportXLSX() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: ImportXLSXInput) => {
+      const form = new FormData()
+      form.append('file', input.file)
+      form.append('year', String(input.year))
+      form.append('wipe', String(input.wipe))
+      form.append('resetMaster', String(input.resetMaster))
+      form.append('closeThrough', String(input.closeThrough))
+      if (input.password) form.append('password', input.password)
+      return api.postForm<ImportReport>('/api/import/xlsx', form)
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['years'] })
+      qc.invalidateQueries({ queryKey: ['periods', vars.year] })
+      qc.invalidateQueries({ queryKey: ['year-summary', vars.year] })
+      qc.invalidateQueries({ queryKey: ['categories'] })
+      qc.invalidateQueries({ queryKey: ['income-sources'] })
       qc.invalidateQueries({ queryKey: ['pots'] })
     },
   })

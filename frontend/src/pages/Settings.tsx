@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, useMantineColorScheme } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, useMantineColorScheme } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
-  IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload,
+  IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload, IconUpload,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
@@ -16,11 +16,14 @@ import {
   useIncomeSources, useCreateIncomeSource, useUpdateIncomeSource, useArchiveIncomeSource,
   usePots, useCreatePot, useUpdatePot, useArchivePot,
 } from '../api/hooks/useSettings'
-import { useYears, useCreateYear } from '../api/hooks/usePeriods'
+import { useYears, useCreateYear, useImportXLSX } from '../api/hooks/usePeriods'
 import { useCurrentYear } from '../api/hooks/useCurrentYear'
 import { parseToCents } from '../lib/money'
+import { getErrorMessage } from '../api/client'
+import type { ImportReport } from '../api/types'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
+import PasswordModal from '../components/PasswordModal'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
 import BottomSheet from '../components/mobile/BottomSheet'
 
@@ -1113,6 +1116,141 @@ function ExportImportTab() {
       >
         {t('export.download')}
       </Button>
+
+      <Divider my="sm" />
+
+      <ImportSection />
+    </Stack>
+  )
+}
+
+function ImportSection() {
+  const { t } = useTranslation()
+  const currentYear = useCurrentYear()
+  const importMutation = useImportXLSX()
+  const [file, setFile] = useState<File | null>(null)
+  const [importYear, setImportYear] = useState<number | string>(currentYear)
+  const [wipe, setWipe] = useState(false)
+  const [resetMaster, setResetMaster] = useState(false)
+  const [closeThrough, setCloseThrough] = useState<number | string>(0)
+  const [pwOpened, { open: openPw, close: closePw }] = useDisclosure(false)
+  const [report, setReport] = useState<ImportReport | null>(null)
+
+  const runImport = (password?: string) => {
+    if (!file || !importYear) return
+    importMutation.mutate({
+      file,
+      year: Number(importYear),
+      wipe,
+      resetMaster,
+      closeThrough: Number(closeThrough) || 0,
+      password,
+    }, {
+      onSuccess: (data) => {
+        setReport(data)
+        closePw()
+        notifications.show({ color: 'green', message: t('export.importSuccess') })
+      },
+      onError: (err: unknown) => {
+        notifications.show({ color: 'red', title: t('common.error'), message: getErrorMessage(err, t('common.error')) })
+      },
+    })
+  }
+
+  const handleImportClick = () => {
+    if (wipe || resetMaster) {
+      openPw()
+      return
+    }
+    runImport()
+  }
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" fw={600}>{t('export.importTitle')}</Text>
+      <Text size="sm" c="dimmed">{t('export.importDescription')}</Text>
+      <FileInput
+        label={t('export.file')}
+        placeholder={t('export.filePlaceholder')}
+        leftSection={<IconUpload size={16} />}
+        accept=".xlsx"
+        value={file}
+        onChange={setFile}
+        clearable
+      />
+      <NumberInput
+        label={t('settings.year')}
+        value={importYear}
+        onChange={setImportYear}
+        hideControls
+        decimalScale={0}
+      />
+      <NumberInput
+        label={t('export.closeThrough')}
+        description={t('export.closeThroughHint')}
+        value={closeThrough}
+        onChange={setCloseThrough}
+        min={0}
+        max={12}
+        hideControls
+      />
+      <Switch
+        label={t('export.wipe')}
+        description={t('export.wipeHint')}
+        checked={wipe}
+        onChange={e => setWipe(e.target.checked)}
+      />
+      <Switch
+        color="red"
+        label={t('export.resetMaster')}
+        description={t('export.resetMasterHint')}
+        checked={resetMaster}
+        onChange={e => setResetMaster(e.target.checked)}
+      />
+      <Button
+        leftSection={<IconUpload size={16} />}
+        color={wipe || resetMaster ? 'red' : undefined}
+        disabled={!file || !importYear}
+        loading={importMutation.isPending}
+        onClick={handleImportClick}
+      >
+        {t('export.importButton')}
+      </Button>
+
+      {report && (
+        <Table mt="sm">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>{t('export.month')}</Table.Th>
+              <Table.Th ta="right">{t('export.income')}</Table.Th>
+              <Table.Th ta="right">{t('export.expense')}</Table.Th>
+              <Table.Th ta="right">{t('export.surplus')}</Table.Th>
+              <Table.Th>{t('common.closed')}</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {report.months.map(m => (
+              <Table.Tr key={m.month}>
+                <Table.Td>{m.month}</Table.Td>
+                <Table.Td ta="right"><MoneyText cents={m.incomeTotalCents} size="sm" /></Table.Td>
+                <Table.Td ta="right"><MoneyText cents={m.expenseTotalCents} size="sm" /></Table.Td>
+                <Table.Td ta="right"><MoneyText cents={m.surplusCents} size="sm" /></Table.Td>
+                <Table.Td>{m.closed ? '✓' : ''}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+
+      <PasswordModal
+        opened={pwOpened}
+        onClose={closePw}
+        title={t('export.confirmDestructive')}
+        warningText={resetMaster ? t('export.resetMasterWarning') : t('export.wipeWarning')}
+        confirmLabel={t('export.importButton')}
+        loading={importMutation.isPending}
+        onConfirm={(password) => runImport(password)}
+      />
     </Stack>
   )
 }
