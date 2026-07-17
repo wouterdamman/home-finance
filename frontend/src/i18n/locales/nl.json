@@ -139,7 +139,7 @@
     "download": "Downloaden",
     "downloadStarted": "Export gestart",
     "importTitle": "Importeren",
-    "importDescription": "Alleen voor het migreren van het oude Fam_Finance-Excel-bestand (met tabbladen als \"7-26-Overview\"/\"7-26-Details\") — geen generiek Excel-bestand.",
+    "importDescription": "Herkent zowel het oude Fam_Finance-Excel-bestand als een bestand dat je hierboven zelf hebt geëxporteerd — geen ander/generiek Excel-bestand. Bij een eigen export gaan potjes-verdelingen niet mee.",
     "file": "Excel-bestand",
     "filePlaceholder": "Kies een .xlsx-bestand",
     "closeThrough": "Sluit maanden af t/m",

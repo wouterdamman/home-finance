@@ -42,7 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	sheets, err := importer.ParseXLSX(*xlsx)
+	sheets, err := importer.DetectAndParse(*xlsx)
 	if err != nil {
 		slog.Error("parse", "err", err)
 		os.Exit(1)

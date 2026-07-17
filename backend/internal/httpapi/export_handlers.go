@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xuri/excelize/v2"
@@ -214,13 +215,13 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		for txRows.Next() {
 			var catLabel, desc string
 			var cents int64
-			var txDate *string
+			var txDate *time.Time
 			if txRows.Scan(&catLabel, &desc, &cents, &txDate) != nil {
 				continue
 			}
 			date := ""
 			if txDate != nil {
-				date = *txDate
+				date = txDate.Format("2006-01-02")
 			}
 			f.SetCellValue(sheetName, cellRef("A", row), date)
 			f.SetCellValue(sheetName, cellRef("B", row), catLabel)

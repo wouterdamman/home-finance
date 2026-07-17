@@ -41,6 +41,11 @@ type TxRow struct {
 	CategoryLabel string
 	AmountCents   int64
 	Description   string
+	// Date is the transaction date in YYYY-MM-DD form. Only the export-format
+	// parser populates it — the legacy Fam_Finance layout never carried a
+	// per-transaction date, so mapper.Run() falls back to day 1 of the month
+	// when it's empty.
+	Date string
 }
 
 func ParseXLSX(path string) ([]SheetData, error) {

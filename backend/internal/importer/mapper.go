@@ -197,7 +197,10 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 		// Transactions from Details
 		for _, tx := range details[monthNum] {
 			catID := catIDs[tx.CategoryLabel]
-			txDate := time.Date(opts.Year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+			txDate := tx.Date
+			if txDate == "" {
+				txDate = time.Date(opts.Year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+			}
 			pool.Exec(ctx,
 				`INSERT INTO transactions (period_id, category_id, amount_cents, description, tx_date)
 				 VALUES ($1, $2, $3, $4, $5)`,
@@ -337,15 +340,13 @@ func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs
 	return tx.Commit(ctx)
 }
 
+// wipe deletes every period for the year — pot_ledger, pot_splits,
+// transactions, budget_lines and income_entries all reference periods(id)
+// ON DELETE CASCADE (migration 0001), so one statement is enough. pgx v5's
+// extended protocol rejects multiple commands in a single Exec, which is
+// why this used to be one semicolon-separated string of DELETEs.
 func wipe(ctx context.Context, pool *pgxpool.Pool, year int) error {
-	_, err := pool.Exec(ctx, `
-		DELETE FROM pot_ledger WHERE period_id IN (SELECT id FROM periods WHERE year=$1);
-		DELETE FROM pot_splits WHERE period_id IN (SELECT id FROM periods WHERE year=$1);
-		DELETE FROM transactions WHERE period_id IN (SELECT id FROM periods WHERE year=$1);
-		DELETE FROM budget_lines WHERE period_id IN (SELECT id FROM periods WHERE year=$1);
-		DELETE FROM income_entries WHERE period_id IN (SELECT id FROM periods WHERE year=$1);
-		DELETE FROM periods WHERE year=$1;
-	`, year)
+	_, err := pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
 	return err
 }
 

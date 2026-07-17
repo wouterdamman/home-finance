@@ -139,7 +139,7 @@
     "download": "Download",
     "downloadStarted": "Export started",
     "importTitle": "Import",
-    "importDescription": "Only for migrating the old Fam_Finance Excel file (with tabs like \"7-26-Overview\"/\"7-26-Details\") — not a generic Excel file.",
+    "importDescription": "Recognizes both the old Fam_Finance Excel file and a file you exported above yourself — not any other/generic Excel file. Pot split percentages aren't carried over from your own export.",
     "file": "Excel file",
     "filePlaceholder": "Choose a .xlsx file",
     "closeThrough": "Close months through",
