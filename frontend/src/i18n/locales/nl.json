@@ -5,7 +5,11 @@
     "log": "Loggen",
     "pots": "Spaarpotjes",
     "settings": "Instellingen",
-    "apiDocs": "API-documentatie"
+    "apiDocs": "API-documentatie",
+    "collapse": "Menu inklappen",
+    "expand": "Menu uitklappen",
+    "pin": "Menu vastzetten",
+    "unpin": "Menu losmaken"
   },
   "auth": {
     "signIn": "Inloggen",

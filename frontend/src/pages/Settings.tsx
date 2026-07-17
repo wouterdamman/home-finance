@@ -111,6 +111,9 @@ export default function Settings() {
   const { data: me } = useMe()
   const isAdmin = me?.role === 'admin'
 
+  // Family-finance admin sections, then sections everyone gets, then the
+  // API docs developer resource last — visually separated (Divider/gap)
+  // since it's not a family-finance admin task, just a technical reference.
   const allMenuItems: SettingsMenuItem[] = [
     { key: 'categories', label: t('settings.categories'), icon: IconTags, content: <CategoriesTab />, adminOnly: true },
     { key: 'sources', label: t('settings.incomeSources'), icon: IconCoin, content: <SourcesTab />, adminOnly: true },
@@ -118,9 +121,9 @@ export default function Settings() {
     { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab />, adminOnly: true },
     { key: 'exportImport', label: t('settings.exportImport'), icon: IconFileSpreadsheet, content: <ExportImportTab />, adminOnly: true },
     { key: 'users', label: t('settings.users'), icon: IconUsers, content: <UsersTab />, adminOnly: true },
-    { key: 'apiDocs', label: t('nav.apiDocs'), icon: IconApi, content: null, adminOnly: true, external: '/api/docs' },
     { key: 'profile', label: t('settings.profile'), icon: IconUserCircle, content: <ProfileTab /> },
     { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
+    { key: 'apiDocs', label: t('nav.apiDocs'), icon: IconApi, content: null, adminOnly: true, external: '/api/docs' },
   ]
   const menu = allMenuItems.filter(m => isAdmin || !m.adminOnly)
 
@@ -145,35 +148,55 @@ export default function Settings() {
       <Stack gap="md">
         <Title order={2}>{t('settings.title')}</Title>
         <MobileList>
-          {menu.map(m => (
+          {menu.filter(m => !m.external).map(m => (
             <MobileListRow
               key={m.key}
               leftSection={<m.icon size={18} />}
               title={m.label}
-              chevron={!m.external}
-              onClick={() => m.external ? window.open(m.external, '_blank', 'noopener,noreferrer') : setSearchParams({ section: m.key })}
+              chevron
+              onClick={() => setSearchParams({ section: m.key })}
             />
           ))}
         </MobileList>
+        {menu.filter(m => m.external).map(m => (
+          <Stack key={m.key} gap="md">
+            <Divider />
+            <MobileList>
+              <MobileListRow
+                leftSection={<m.icon size={18} />}
+                title={m.label}
+                onClick={() => window.open(m.external, '_blank', 'noopener,noreferrer')}
+              />
+            </MobileList>
+          </Stack>
+        ))}
       </Stack>
     )
   }
 
   const defaultTab = isAdmin ? 'categories' : 'profile'
+  const apiDocsItem = menu.find(m => m.external)
 
   return (
     <>
-      <Title order={2} mb="md">{t('settings.title')}</Title>
+      <Group justify="space-between" mb="md" wrap="wrap">
+        <Title order={2}>{t('settings.title')}</Title>
+        {apiDocsItem && (
+          <Button
+            variant="subtle"
+            size="xs"
+            color="gray"
+            leftSection={<apiDocsItem.icon size={14} />}
+            onClick={() => window.open(apiDocsItem.external, '_blank', 'noopener,noreferrer')}
+          >
+            {apiDocsItem.label}
+          </Button>
+        )}
+      </Group>
       <Tabs defaultValue={defaultTab}>
         <Tabs.List>
-          {menu.map(m => (
-            <Tabs.Tab
-              key={m.key}
-              value={m.key}
-              onClick={m.external ? (e) => { e.preventDefault(); window.open(m.external, '_blank', 'noopener,noreferrer') } : undefined}
-            >
-              {m.label}
-            </Tabs.Tab>
+          {menu.filter(m => !m.external).map(m => (
+            <Tabs.Tab key={m.key} value={m.key}>{m.label}</Tabs.Tab>
           ))}
         </Tabs.List>
         {menu.filter(m => !m.external).map(m => (
