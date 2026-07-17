@@ -26,6 +26,13 @@ type Server struct {
 
 func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, oidcProvider *auth.Provider) http.Handler {
 	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, s3: s3client.New(cfg)}
+	if cfg.DevFakeAuth {
+		// Callers that hit the API directly (integration tests, curl) never
+		// go through /auth/login, so the dev admin row must exist up front —
+		// otherwise requireAdmin's DB lookup for user id=1 finds nothing and
+		// every admin-gated route 403s.
+		s.ensureDevUser(context.Background())
+	}
 	passwordLimiter := newPasswordRateLimiter()
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
