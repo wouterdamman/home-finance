@@ -29,9 +29,10 @@ This is a self-hosted personal finance application. Key security considerations:
 
 - **Authentication**: OIDC/BFF — session tokens never reach the browser; HttpOnly cookies only
 - **CSRF**: SameSite=Lax + required `X-Requested-With` header on all mutations
-- **Authorization**: `ALLOWED_EMAILS` env var restricts access; Authentik handles IdP-level gating in prod
-- **Destructive actions**: period deletion requires a separate `DELETE_PASSWORD` PIN
-- **Audit log**: close, reopen, delete, and pot entry actions are logged with user and timestamp
+- **Authorization**: `ALLOWED_EMAILS` env var restricts who can sign in at all; Authentik handles IdP-level gating in prod. Within the app, role-based access (`admin`/`user`, bootstrapped via `INITIAL_ADMIN_EMAILS`) gates structural/destructive actions — a `user` account can enter transactions but can't manage categories/pots/years/users, lock a year, or close/reopen/delete a month
+- **Destructive actions**: period deletion, year lock/unlock, and destructive Excel import (wipe/reset) require a separate `DELETE_PASSWORD` PIN on top of role checks
+- **Audit log**: close, reopen, delete, pot entry, import, and role-change actions are logged with user and timestamp; viewable in Settings (admin-only) and optionally exported periodically to S3-compatible storage
+- **Object storage**: avatar images are never served from a public bucket URL — a session-auth-gated proxy endpoint streams them; S3 credentials are only ever read from the server's own environment, never exposed to the frontend
 - **Data**: all amounts stored as integer cents — no floating point
 
 ## Out of Scope
