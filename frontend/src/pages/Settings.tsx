@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, useMantineColorScheme } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, useMantineColorScheme } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
-  IconSun, IconMoon, IconDeviceDesktop,
+  IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
@@ -17,6 +17,7 @@ import {
   usePots, useCreatePot, useUpdatePot, useArchivePot,
 } from '../api/hooks/useSettings'
 import { useYears, useCreateYear } from '../api/hooks/usePeriods'
+import { useCurrentYear } from '../api/hooks/useCurrentYear'
 import { parseToCents } from '../lib/money'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
@@ -84,7 +85,7 @@ function SortMenu<K extends string>({ sort, onSort, options }: {
   )
 }
 
-type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'preferences'
+type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'preferences'
 
 export default function Settings() {
   const { t } = useTranslation()
@@ -98,6 +99,7 @@ export default function Settings() {
       { key: 'sources', label: t('settings.incomeSources'), icon: IconCoin, content: <SourcesTab /> },
       { key: 'pots', label: t('settings.pots'), icon: IconPigMoney, content: <PotsTab /> },
       { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab /> },
+      { key: 'exportImport', label: t('settings.exportImport'), icon: IconFileSpreadsheet, content: <ExportImportTab /> },
       { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
     ]
     const active = menu.find(m => m.key === section)
@@ -143,12 +145,14 @@ export default function Settings() {
           <Tabs.Tab value="sources">{t('settings.incomeSources')}</Tabs.Tab>
           <Tabs.Tab value="pots">{t('settings.pots')}</Tabs.Tab>
           <Tabs.Tab value="years">{t('settings.years')}</Tabs.Tab>
+          <Tabs.Tab value="exportImport">{t('settings.exportImport')}</Tabs.Tab>
           <Tabs.Tab value="preferences">{t('settings.preferences')}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="categories" pt="md"><CategoriesTab /></Tabs.Panel>
         <Tabs.Panel value="sources" pt="md"><SourcesTab /></Tabs.Panel>
         <Tabs.Panel value="pots" pt="md"><PotsTab /></Tabs.Panel>
         <Tabs.Panel value="years" pt="md"><YearsTab /></Tabs.Panel>
+        <Tabs.Panel value="exportImport" pt="md"><ExportImportTab /></Tabs.Panel>
         <Tabs.Panel value="preferences" pt="md"><PreferencesTab /></Tabs.Panel>
       </Tabs>
     </>
@@ -1044,6 +1048,71 @@ function YearsTab() {
           }}>{t('common.add')}</Button>
         </Stack>
       </Modal>
+    </Stack>
+  )
+}
+
+const EXPORT_MONTH_NL = ['', 'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni', 'Juli', 'Augustus', 'September', 'Oktober', 'November', 'December']
+const EXPORT_MONTH_EN = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function ExportImportTab() {
+  const { t, i18n } = useTranslation()
+  const { data: years } = useYears()
+  const currentYear = useCurrentYear()
+  const [year, setYear] = useState<number>(currentYear)
+  const [scope, setScope] = useState<'year' | 'months'>('year')
+  const [months, setMonths] = useState<string[]>([])
+
+  const monthNames = i18n.language.startsWith('nl') ? EXPORT_MONTH_NL : EXPORT_MONTH_EN
+  const monthOptions = monthNames.slice(1).map((label, i) => ({ value: String(i + 1), label }))
+
+  const handleDownload = () => {
+    const query = scope === 'months' && months.length > 0 ? `?months=${months.join(',')}` : ''
+    const a = document.createElement('a')
+    a.href = `/api/export/years/${year}${query}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    notifications.show({ color: 'green', message: t('export.downloadStarted') })
+  }
+
+  return (
+    <Stack gap="md" maw={420}>
+      <Text size="sm" c="dimmed">{t('export.description')}</Text>
+      <Select
+        label={t('settings.year')}
+        data={(years ?? []).map(String)}
+        value={String(year)}
+        onChange={v => v && setYear(Number(v))}
+      />
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>{t('export.scope')}</Text>
+        <SegmentedControl
+          value={scope}
+          onChange={v => setScope(v as 'year' | 'months')}
+          fullWidth
+          data={[
+            { label: t('export.scopeWholeYear'), value: 'year' },
+            { label: t('export.scopeMonths'), value: 'months' },
+          ]}
+        />
+      </Stack>
+      {scope === 'months' && (
+        <MultiSelect
+          label={t('export.months')}
+          placeholder={t('export.scopeMonths')}
+          data={monthOptions}
+          value={months}
+          onChange={setMonths}
+        />
+      )}
+      <Button
+        leftSection={<IconDownload size={16} />}
+        disabled={scope === 'months' && months.length === 0}
+        onClick={handleDownload}
+      >
+        {t('export.download')}
+      </Button>
     </Stack>
   )
 }

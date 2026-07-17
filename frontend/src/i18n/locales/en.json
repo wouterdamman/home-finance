@@ -127,7 +127,17 @@
     "noCategories": "No categories yet",
     "noSources": "No income sources yet",
     "noPots": "No pots yet",
-    "noYears": "No years yet"
+    "noYears": "No years yet",
+    "exportImport": "Export"
+  },
+  "export": {
+    "description": "Download income, expenses and transactions for a whole year or selected months as an Excel file.",
+    "scope": "Scope",
+    "scopeWholeYear": "Whole year",
+    "scopeMonths": "Select months",
+    "months": "Months",
+    "download": "Download",
+    "downloadStarted": "Export started"
   },
   "common": {
     "save": "Save",

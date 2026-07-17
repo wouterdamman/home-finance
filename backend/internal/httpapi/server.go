@@ -116,6 +116,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/years/{year}/summary", s.handleYearSummary)
 			r.With(passwordLimiter.middleware).Post("/years/{year}/lock", s.handleLockYear)
 			r.With(passwordLimiter.middleware).Post("/years/{year}/unlock", s.handleUnlockYear)
+
+			// Export
+			r.Get("/export/years/{year}", s.handleExportYear)
 		})
 	})
 

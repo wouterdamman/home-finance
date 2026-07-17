@@ -127,7 +127,17 @@
     "noCategories": "Nog geen categorieën",
     "noSources": "Nog geen inkomstenbronnen",
     "noPots": "Nog geen potjes",
-    "noYears": "Nog geen jaren"
+    "noYears": "Nog geen jaren",
+    "exportImport": "Exporteren"
+  },
+  "export": {
+    "description": "Download inkomsten, uitgaven en transacties van een heel jaar of geselecteerde maanden als Excel-bestand.",
+    "scope": "Bereik",
+    "scopeWholeYear": "Heel jaar",
+    "scopeMonths": "Selecteer maanden",
+    "months": "Maanden",
+    "download": "Downloaden",
+    "downloadStarted": "Export gestart"
   },
   "common": {
     "save": "Opslaan",
