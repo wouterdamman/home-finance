@@ -1,7 +1,11 @@
+export type UserRole = 'admin' | 'user'
+
 export interface User {
   id: number
   email: string
   displayName: string
+  role: UserRole
+  avatarUrl?: string | null
 }
 
 export interface Period {

@@ -116,20 +116,3 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
-
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	uid, ok := auth.UserIDFromCtx(r.Context())
-	if !ok {
-		Error(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
-		return
-	}
-	var id int64
-	var email, displayName string
-	if err := s.pool.QueryRow(r.Context(),
-		`SELECT id, email, display_name FROM users WHERE id = $1`, uid).
-		Scan(&id, &email, &displayName); err != nil {
-		Error(w, http.StatusUnauthorized, "unauthorized", "user not found")
-		return
-	}
-	JSON(w, http.StatusOK, map[string]any{"id": id, "email": email, "displayName": displayName})
-}

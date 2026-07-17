@@ -7,6 +7,7 @@ import { notifications } from '@mantine/notifications'
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear, useYears } from '../api/hooks/usePeriods'
+import { useMe } from '../api/hooks/useMe'
 import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { getErrorMessage } from '../api/client'
@@ -25,6 +26,8 @@ export default function YearDashboard() {
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data, isLoading, error } = useYearSummary(y)
   const { data: years } = useYears()
+  const { data: me } = useMe()
+  const isAdmin = me?.role === 'admin'
   const createPeriod = useCreatePeriod()
   const lockYear = useLockYear(y)
   const unlockYear = useUnlockYear(y)
@@ -142,17 +145,19 @@ export default function YearDashboard() {
           ))}
         </MobileList>
 
-        <Group justify="center">
-          {isLocked ? (
-            <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
-              {t('year.unlockAction')}
-            </Button>
-          ) : (
-            <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
-              {t('year.lockAction')}
-            </Button>
-          )}
-        </Group>
+        {isAdmin && (
+          <Group justify="center">
+            {isLocked ? (
+              <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
+                {t('year.unlockAction')}
+              </Button>
+            ) : (
+              <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
+                {t('year.lockAction')}
+              </Button>
+            )}
+          </Group>
+        )}
 
         <PasswordModal
           opened={lockModalOpen}
@@ -186,14 +191,16 @@ export default function YearDashboard() {
           <Title order={2}>{t('year.title', { year: y })}</Title>
           {isLocked && <Badge color="red">{t('year.locked')}</Badge>}
         </Group>
-        {isLocked ? (
-          <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
-            {t('year.unlockAction')}
-          </Button>
-        ) : (
-          <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
-            {t('year.lockAction')}
-          </Button>
+        {isAdmin && (
+          isLocked ? (
+            <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
+              {t('year.unlockAction')}
+            </Button>
+          ) : (
+            <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
+              {t('year.lockAction')}
+            </Button>
+          )
         )}
       </Group>
 

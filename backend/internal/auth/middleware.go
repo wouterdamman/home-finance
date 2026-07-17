@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type ctxKey string
@@ -26,6 +27,28 @@ func Require(sm *scs.SessionManager, devFakeAuth bool) func(http.Handler) http.H
 			}
 			ctx := context.WithValue(r.Context(), ctxUserID, uid)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// RequireAdmin looks the caller's role up fresh on every request (rather
+// than caching it in the session) so a role change in Settings > Users
+// takes effect immediately, without forcing the affected user to log out
+// and back in.
+func RequireAdmin(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uid, ok := UserIDFromCtx(r.Context())
+			if !ok {
+				http.Error(w, `{"error":{"code":"unauthorized","message":"unauthorized"}}`, http.StatusUnauthorized)
+				return
+			}
+			var role string
+			if err := pool.QueryRow(r.Context(), `SELECT role FROM users WHERE id=$1`, uid).Scan(&role); err != nil || role != "admin" {
+				http.Error(w, `{"error":{"code":"forbidden","message":"admin required"}}`, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }

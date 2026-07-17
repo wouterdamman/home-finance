@@ -1,6 +1,6 @@
 import { Outlet, NavLink as RouterNavLink, useNavigate } from 'react-router-dom'
 import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon } from '@mantine/core'
-import { IconWallet, IconLogout, IconPigMoney, IconSettings, IconApi, IconCalendar } from '@tabler/icons-react'
+import { IconWallet, IconLogout, IconPigMoney, IconSettings, IconCalendar } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
 import { useYears } from '../api/hooks/usePeriods'
@@ -53,7 +53,6 @@ export default function AppShell() {
         ))}
         <NavLink label={t('nav.pots')} leftSection={<IconPigMoney size={16} />} component={RouterNavLink} to="/pots" />
         <NavLink label={t('settings.title')} leftSection={<IconSettings size={16} />} component={RouterNavLink} to="/settings" />
-        <NavLink label={t('nav.apiDocs')} leftSection={<IconApi size={16} />} component="a" href="/api/docs" target="_blank" rel="noopener noreferrer" />
       </MantineAppShell.Navbar>
       <MantineAppShell.Main>
         <Outlet />

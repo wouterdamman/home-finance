@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, useMantineColorScheme } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, Avatar, useMantineColorScheme } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
   IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload, IconUpload,
+  IconUsers, IconUserCircle, IconApi, IconShieldCheck,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +20,8 @@ import {
 } from '../api/hooks/useSettings'
 import { useYears, useCreateYear, useImportXLSX } from '../api/hooks/usePeriods'
 import { useCurrentYear } from '../api/hooks/useCurrentYear'
+import { useMe } from '../api/hooks/useMe'
+import { useUpdateMe, useUploadAvatar, useUsers, useUpdateUserRole } from '../api/hooks/useUsers'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
 import type { ImportReport } from '../api/types'
@@ -88,23 +92,39 @@ function SortMenu<K extends string>({ sort, onSort, options }: {
   )
 }
 
-type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'preferences'
+type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'users' | 'apiDocs' | 'profile' | 'preferences'
+
+interface SettingsMenuItem {
+  key: SettingsSection
+  label: string
+  icon: typeof IconTags
+  content: React.ReactNode
+  adminOnly?: boolean
+  external?: string
+}
 
 export default function Settings() {
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const [searchParams, setSearchParams] = useSearchParams()
   const section = searchParams.get('section') as SettingsSection | null
+  const { data: me } = useMe()
+  const isAdmin = me?.role === 'admin'
+
+  const allMenuItems: SettingsMenuItem[] = [
+    { key: 'categories', label: t('settings.categories'), icon: IconTags, content: <CategoriesTab />, adminOnly: true },
+    { key: 'sources', label: t('settings.incomeSources'), icon: IconCoin, content: <SourcesTab />, adminOnly: true },
+    { key: 'pots', label: t('settings.pots'), icon: IconPigMoney, content: <PotsTab />, adminOnly: true },
+    { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab />, adminOnly: true },
+    { key: 'exportImport', label: t('settings.exportImport'), icon: IconFileSpreadsheet, content: <ExportImportTab />, adminOnly: true },
+    { key: 'users', label: t('settings.users'), icon: IconUsers, content: <UsersTab />, adminOnly: true },
+    { key: 'apiDocs', label: t('nav.apiDocs'), icon: IconApi, content: null, adminOnly: true, external: '/api/docs' },
+    { key: 'profile', label: t('settings.profile'), icon: IconUserCircle, content: <ProfileTab /> },
+    { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
+  ]
+  const menu = allMenuItems.filter(m => isAdmin || !m.adminOnly)
 
   if (isMobile) {
-    const menu: { key: SettingsSection; label: string; icon: typeof IconTags; content: React.ReactNode }[] = [
-      { key: 'categories', label: t('settings.categories'), icon: IconTags, content: <CategoriesTab /> },
-      { key: 'sources', label: t('settings.incomeSources'), icon: IconCoin, content: <SourcesTab /> },
-      { key: 'pots', label: t('settings.pots'), icon: IconPigMoney, content: <PotsTab /> },
-      { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab /> },
-      { key: 'exportImport', label: t('settings.exportImport'), icon: IconFileSpreadsheet, content: <ExportImportTab /> },
-      { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
-    ]
     const active = menu.find(m => m.key === section)
 
     if (active) {
@@ -130,8 +150,8 @@ export default function Settings() {
               key={m.key}
               leftSection={<m.icon size={18} />}
               title={m.label}
-              chevron
-              onClick={() => setSearchParams({ section: m.key })}
+              chevron={!m.external}
+              onClick={() => m.external ? window.open(m.external, '_blank', 'noopener,noreferrer') : setSearchParams({ section: m.key })}
             />
           ))}
         </MobileList>
@@ -139,24 +159,26 @@ export default function Settings() {
     )
   }
 
+  const defaultTab = isAdmin ? 'categories' : 'profile'
+
   return (
     <>
       <Title order={2} mb="md">{t('settings.title')}</Title>
-      <Tabs defaultValue="categories">
+      <Tabs defaultValue={defaultTab}>
         <Tabs.List>
-          <Tabs.Tab value="categories">{t('settings.categories')}</Tabs.Tab>
-          <Tabs.Tab value="sources">{t('settings.incomeSources')}</Tabs.Tab>
-          <Tabs.Tab value="pots">{t('settings.pots')}</Tabs.Tab>
-          <Tabs.Tab value="years">{t('settings.years')}</Tabs.Tab>
-          <Tabs.Tab value="exportImport">{t('settings.exportImport')}</Tabs.Tab>
-          <Tabs.Tab value="preferences">{t('settings.preferences')}</Tabs.Tab>
+          {menu.map(m => (
+            <Tabs.Tab
+              key={m.key}
+              value={m.key}
+              onClick={m.external ? (e) => { e.preventDefault(); window.open(m.external, '_blank', 'noopener,noreferrer') } : undefined}
+            >
+              {m.label}
+            </Tabs.Tab>
+          ))}
         </Tabs.List>
-        <Tabs.Panel value="categories" pt="md"><CategoriesTab /></Tabs.Panel>
-        <Tabs.Panel value="sources" pt="md"><SourcesTab /></Tabs.Panel>
-        <Tabs.Panel value="pots" pt="md"><PotsTab /></Tabs.Panel>
-        <Tabs.Panel value="years" pt="md"><YearsTab /></Tabs.Panel>
-        <Tabs.Panel value="exportImport" pt="md"><ExportImportTab /></Tabs.Panel>
-        <Tabs.Panel value="preferences" pt="md"><PreferencesTab /></Tabs.Panel>
+        {menu.filter(m => !m.external).map(m => (
+          <Tabs.Panel key={m.key} value={m.key} pt="md">{m.content}</Tabs.Panel>
+        ))}
       </Tabs>
     </>
   )
@@ -1252,5 +1274,123 @@ function ImportSection() {
         onConfirm={(password) => runImport(password)}
       />
     </Stack>
+  )
+}
+
+function ProfileTab() {
+  const { t } = useTranslation()
+  const { data: me } = useMe()
+  const updateMe = useUpdateMe()
+  const uploadAvatar = useUploadAvatar()
+  const [name, setName] = useState('')
+
+  useEffect(() => {
+    if (me) setName(me.displayName)
+  }, [me])
+
+  const handleAvatarChange = (file: File | null) => {
+    if (file) uploadAvatar.mutate(file)
+  }
+
+  return (
+    <Stack gap="md" maw={360}>
+      <Group>
+        <Avatar src={me?.avatarUrl ?? undefined} size={64} radius="xl">
+          {me?.displayName ? me.displayName[0].toUpperCase() : '?'}
+        </Avatar>
+        <FileInput
+          placeholder={t('settings.uploadAvatar')}
+          leftSection={<IconUpload size={16} />}
+          accept="image/png,image/jpeg,image/webp"
+          onChange={handleAvatarChange}
+          loading={uploadAvatar.isPending}
+          clearable
+        />
+      </Group>
+      <TextInput label={t('settings.name')} value={name} onChange={e => setName(e.target.value)} />
+      <Badge
+        w="fit-content"
+        color={me?.role === 'admin' ? 'teal' : 'gray'}
+        leftSection={<IconShieldCheck size={12} />}
+      >
+        {me?.role === 'admin' ? t('settings.roleAdmin') : t('settings.roleUser')}
+      </Badge>
+      <Button onClick={() => updateMe.mutate(name)} loading={updateMe.isPending} disabled={!name}>
+        {t('common.save')}
+      </Button>
+    </Stack>
+  )
+}
+
+function UsersTab() {
+  const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const { data: me } = useMe()
+  const { data: users } = useUsers()
+  const updateRole = useUpdateUserRole()
+
+  const roleLabel = (role: string) => role === 'admin' ? t('settings.roleAdmin') : t('settings.roleUser')
+
+  const toggleRole = (u: { id: number; role: string; displayName: string; email: string }) => {
+    const nextRole = u.role === 'admin' ? 'user' : 'admin'
+    const applyChange = () => updateRole.mutate({ id: u.id, role: nextRole }, {
+      onError: (err: unknown) => notifications.show({ color: 'red', title: t('common.error'), message: getErrorMessage(err, t('common.error')) }),
+    })
+    if (nextRole === 'user' && u.id === me?.id) {
+      modals.openConfirmModal({
+        title: t('settings.demoteSelfTitle'),
+        children: <Text size="sm">{t('settings.demoteSelfConfirm')}</Text>,
+        labels: { confirm: t('common.confirm'), cancel: t('common.cancel') },
+        confirmProps: { color: 'red' },
+        onConfirm: applyChange,
+      })
+      return
+    }
+    applyChange()
+  }
+
+  if (isMobile) {
+    return (
+      <MobileList>
+        {(users ?? []).map(u => (
+          <MobileListRow
+            key={u.id}
+            title={u.displayName || u.email}
+            subtitle={u.email}
+            trailing={<Badge color={u.role === 'admin' ? 'teal' : 'gray'} size="sm">{roleLabel(u.role)}</Badge>}
+            onClick={() => toggleRole(u)}
+          />
+        ))}
+      </MobileList>
+    )
+  }
+
+  return (
+    <Table.ScrollContainer minWidth={480}>
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>{t('settings.name')}</Table.Th>
+            <Table.Th>{t('settings.email')}</Table.Th>
+            <Table.Th>{t('settings.role')}</Table.Th>
+            <Table.Th />
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {(users ?? []).map(u => (
+            <Table.Tr key={u.id}>
+              <Table.Td>{u.displayName || '—'}</Table.Td>
+              <Table.Td>{u.email}</Table.Td>
+              <Table.Td><Badge color={u.role === 'admin' ? 'teal' : 'gray'}>{roleLabel(u.role)}</Badge></Table.Td>
+              <Table.Td>
+                <Button size="xs" variant="subtle" loading={updateRole.isPending} onClick={() => toggleRole(u)}>
+                  {u.role === 'admin' ? t('settings.demote') : t('settings.promote')}
+                </Button>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
   )
 }

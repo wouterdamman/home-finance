@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -48,23 +49,37 @@ func validateSignedAmountCents(cents int64) error {
 	return nil
 }
 
+// upsertUserCtx creates or refreshes the user row on login. Role is only
+// ever set on the INSERT branch (via INITIAL_ADMIN_EMAILS) — an existing
+// user's role is deliberately left untouched here so a login never
+// silently reverts an admin's role change made via Settings > Users.
 func (s *Server) upsertUserCtx(ctx context.Context, sub, email, name string) (int64, error) {
+	role := "user"
+	for _, e := range s.cfg.InitialAdminEmails {
+		if strings.EqualFold(e, email) {
+			role = "admin"
+			break
+		}
+	}
 	var id int64
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO users (oidc_subject, email, display_name)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO users (oidc_subject, email, display_name, role)
+		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (oidc_subject) DO UPDATE SET email = EXCLUDED.email, display_name = EXCLUDED.display_name
 		 RETURNING id`,
-		sub, email, name).Scan(&id)
+		sub, email, name, role).Scan(&id)
 	return id, err
 }
 
+// ensureDevUser bootstraps the single DEV_FAKE_AUTH account as admin —
+// there's only ever one local dev user, and it needs full access to
+// exercise every admin-gated screen.
 func (s *Server) ensureDevUser(ctx context.Context) {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO users (id, oidc_subject, email, display_name)
+		`INSERT INTO users (id, oidc_subject, email, display_name, role)
 		 OVERRIDING SYSTEM VALUE
-		 VALUES (1, 'dev-user', 'dev@example.com', 'Dev User')
-		 ON CONFLICT DO NOTHING`)
+		 VALUES (1, 'dev-user', 'dev@example.com', 'Dev User', 'admin')
+		 ON CONFLICT (id) DO UPDATE SET role = 'admin'`)
 	if err != nil {
 		slog.Warn("ensureDevUser", "err", err)
 	}

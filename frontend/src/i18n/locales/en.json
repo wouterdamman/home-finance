@@ -128,7 +128,19 @@
     "noSources": "No income sources yet",
     "noPots": "No pots yet",
     "noYears": "No years yet",
-    "exportImport": "Export/Import"
+    "exportImport": "Export/Import",
+    "profile": "Profile",
+    "users": "Users",
+    "role": "Role",
+    "roleAdmin": "Admin",
+    "roleUser": "User",
+    "uploadAvatar": "Upload profile photo",
+    "promote": "Make admin",
+    "demote": "Make user",
+    "email": "Email",
+    "demoteSelfTitle": "Demote yourself",
+    "demoteSelfConfirm": "This removes your own admin rights. Are you sure?",
+    "lastAdminError": "Cannot demote the last remaining admin."
   },
   "export": {
     "description": "Download income, expenses and transactions for a whole year or selected months as an Excel file.",

@@ -128,7 +128,19 @@
     "noSources": "Nog geen inkomstenbronnen",
     "noPots": "Nog geen potjes",
     "noYears": "Nog geen jaren",
-    "exportImport": "Exporteren/Importeren"
+    "exportImport": "Exporteren/Importeren",
+    "profile": "Profiel",
+    "users": "Gebruikers",
+    "role": "Rol",
+    "roleAdmin": "Admin",
+    "roleUser": "Gebruiker",
+    "uploadAvatar": "Profielfoto uploaden",
+    "promote": "Maak admin",
+    "demote": "Maak gebruiker",
+    "email": "E-mail",
+    "demoteSelfTitle": "Jezelf degraderen",
+    "demoteSelfConfirm": "Je verliest hiermee je eigen admin-rechten. Weet je het zeker?",
+    "lastAdminError": "Kan de laatste admin niet degraderen."
   },
   "export": {
     "description": "Download inkomsten, uitgaven en transacties van een heel jaar of geselecteerde maanden als Excel-bestand.",

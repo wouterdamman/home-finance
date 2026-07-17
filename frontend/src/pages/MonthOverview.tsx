@@ -10,6 +10,7 @@ import { IconTrash, IconX, IconDotsVertical, IconPlus } from '@tabler/icons-reac
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
+import { useMe } from '../api/hooks/useMe'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
 import { useCategories, usePots } from '../api/hooks/useSettings'
@@ -44,6 +45,8 @@ export default function MonthOverview() {
 
   const navigate = useNavigate()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const { data: me } = useMe()
+  const isAdmin = me?.role === 'admin'
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
@@ -189,10 +192,10 @@ export default function MonthOverview() {
             </Menu.Target>
             <Menu.Dropdown>
               <Menu.Item component={Link} to={`/months/${y}/${m}/transactions`}>{t('month.transactions')}</Menu.Item>
-              {isClosed
+              {isAdmin && (isClosed
                 ? <Menu.Item color="orange" onClick={handleReopen}>{t('month.reopenAction')}</Menu.Item>
-                : <Menu.Item color="green" onClick={handleClose}>{t('month.closeAction')}</Menu.Item>}
-              {!isClosed && <Menu.Item color="red" onClick={() => setDeleteOpen(true)}>{t('month.delete')}</Menu.Item>}
+                : <Menu.Item color="green" onClick={handleClose}>{t('month.closeAction')}</Menu.Item>)}
+              {isAdmin && !isClosed && <Menu.Item color="red" onClick={() => setDeleteOpen(true)}>{t('month.delete')}</Menu.Item>}
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -424,15 +427,15 @@ export default function MonthOverview() {
           <Button component={Link} to={`/months/${y}/${m}/transactions`} variant="subtle" size="sm">
             {t('month.transactions')}
           </Button>
-          {!isClosed && (
+          {isAdmin && !isClosed && (
             <Button color="red" variant="subtle" size="sm" onClick={() => setDeleteOpen(true)}>
               {t('month.delete')}
             </Button>
           )}
-          {isClosed
+          {isAdmin && (isClosed
             ? <Button color="orange" onClick={handleReopen} loading={reopenPeriod.isPending}>{t('month.reopenAction')}</Button>
             : <Button color="green" onClick={handleClose} loading={closePeriod.isPending}>{t('month.closeAction')}</Button>
-          }
+          )}
         </Group>
       </Group>
 
