@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.0](https://github.com/wouterdamman/home-finance/compare/v1.4.0...v1.5.0) (2026-07-17)
+
+
+### Features
+
+* **audit-log:** paginated/filterable UI + optional S3 export (G2) ([0203110](https://github.com/wouterdamman/home-finance/commit/02031107aa5a81772c13abfc75fbbad4d9a44129))
+* **export:** add Excel export for a year or selected months ([0be8035](https://github.com/wouterdamman/home-finance/commit/0be80355c3fe887d0db38bdc35d1e07c63565a71))
+* **import:** add Excel import for legacy Fam_Finance files ([a6d3dba](https://github.com/wouterdamman/home-finance/commit/a6d3dba4d4bfdb04fde31d782d2c89c65f05675e))
+* **import:** also accept the app's own export format, fix two latent bugs ([ed9ffbf](https://github.com/wouterdamman/home-finance/commit/ed9ffbfca8a1bafe1f09196a8ec28684c01d1f19))
+* **nav:** collapsible sidebar with peek/pin, tidy Settings tab bar ([fa086cd](https://github.com/wouterdamman/home-finance/commit/fa086cdce9ac1f4f84920fcddb15da0a9bd331dc))
+* **rbac:** add admin/user roles, profile, and avatar upload (G1) ([3c0c8a3](https://github.com/wouterdamman/home-finance/commit/3c0c8a3c43e43e02b844404c225b3a6abde3f0bb))
+
+
+### Bug Fixes
+
+* **auth:** bootstrap dev admin user eagerly, not only on login ([10bc294](https://github.com/wouterdamman/home-finance/commit/10bc294ff521ec86f7ffb6033d4ea3440b99494c))
+
 ## [1.4.0](https://github.com/wouterdamman/home-finance/compare/v1.3.0...v1.4.0) (2026-07-16)
 
 
