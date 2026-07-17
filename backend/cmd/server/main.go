@@ -11,6 +11,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	migrations "github.com/wouterdamman/home-finance/migrations"
+	"github.com/wouterdamman/home-finance/internal/auditexport"
 	"github.com/wouterdamman/home-finance/internal/auth"
 	"github.com/wouterdamman/home-finance/internal/config"
 	"github.com/wouterdamman/home-finance/internal/httpapi"
@@ -71,6 +72,8 @@ func main() {
 	}
 
 	handler := httpapi.NewServer(cfg, pool, sm, oidcProvider)
+
+	go auditexport.Start(ctx, pool, cfg)
 
 	addr := ":" + cfg.Port
 	slog.Info("server starting", "addr", addr)

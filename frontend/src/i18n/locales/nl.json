@@ -144,7 +144,17 @@
     "email": "E-mail",
     "demoteSelfTitle": "Jezelf degraderen",
     "demoteSelfConfirm": "Je verliest hiermee je eigen admin-rechten. Weet je het zeker?",
-    "lastAdminError": "Kan de laatste admin niet degraderen."
+    "lastAdminError": "Kan de laatste admin niet degraderen.",
+    "auditLog": "Audit-log",
+    "auditLogAction": "Actie",
+    "auditLogEntityType": "Type",
+    "auditLogUser": "Gebruiker",
+    "auditLogFrom": "Vanaf",
+    "auditLogTo": "Tot",
+    "auditLogDate": "Datum",
+    "auditLogDetails": "Details",
+    "auditLogEmpty": "Geen audit-log-regels gevonden",
+    "auditLogLoadMore": "Meer laden"
   },
   "export": {
     "description": "Download inkomsten, uitgaven en transacties van een heel jaar of geselecteerde maanden als Excel-bestand.",

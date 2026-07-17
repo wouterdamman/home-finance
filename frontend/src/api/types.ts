@@ -146,3 +146,13 @@ export interface ImportReportMonth {
 export interface ImportReport {
   months: ImportReportMonth[]
 }
+
+export interface AuditLogEntry {
+  id: number
+  createdAt: string
+  userEmail?: string
+  action: string
+  entityType?: string
+  entityId?: number
+  details?: string
+}

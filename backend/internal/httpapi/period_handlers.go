@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -535,6 +537,12 @@ func (s *Server) handleDeletePeriod(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleListAuditLog supports keyset pagination (before=<id>, walking
+// backwards through id DESC — id order tracks created_at order since both
+// are monotonic on insert, and it sidesteps created_at tie-breaking) plus
+// optional filters. All filters are exact match except the date range,
+// which are applied server-side so the audit-log UI never has to page
+// through everything client-side to find a narrow slice.
 func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		ID         int64   `json:"id"`
@@ -545,9 +553,51 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		EntityID   *int64  `json:"entityId,omitempty"`
 		Details    *string `json:"details,omitempty"`
 	}
-	rows, err := s.pool.Query(r.Context(), `
+
+	q := r.URL.Query()
+	limit := 50
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 200 {
+		limit = v
+	}
+
+	conds := []string{}
+	args := []any{}
+	arg := func(v any) string {
+		args = append(args, v)
+		return "$" + strconv.Itoa(len(args))
+	}
+
+	if v := q.Get("before"); v != "" {
+		if beforeID, err := strconv.ParseInt(v, 10, 64); err == nil {
+			conds = append(conds, "id < "+arg(beforeID))
+		}
+	}
+	if v := q.Get("action"); v != "" {
+		conds = append(conds, "action = "+arg(v))
+	}
+	if v := q.Get("entityType"); v != "" {
+		conds = append(conds, "entity_type = "+arg(v))
+	}
+	if v := q.Get("userEmail"); v != "" {
+		conds = append(conds, "user_email = "+arg(v))
+	}
+	if v := q.Get("from"); v != "" {
+		conds = append(conds, "created_at >= "+arg(v))
+	}
+	if v := q.Get("to"); v != "" {
+		conds = append(conds, "created_at < ("+arg(v)+"::date + interval '1 day')")
+	}
+
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
+	args = append(args, limit)
+	query := fmt.Sprintf(`
 		SELECT id, created_at, user_email, action, entity_type, entity_id, details::text
-		FROM audit_log ORDER BY created_at DESC LIMIT 200`)
+		FROM audit_log %s ORDER BY id DESC LIMIT $%d`, where, len(args))
+
+	rows, err := s.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return

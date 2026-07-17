@@ -144,7 +144,17 @@
     "email": "Email",
     "demoteSelfTitle": "Demote yourself",
     "demoteSelfConfirm": "This removes your own admin rights. Are you sure?",
-    "lastAdminError": "Cannot demote the last remaining admin."
+    "lastAdminError": "Cannot demote the last remaining admin.",
+    "auditLog": "Audit Log",
+    "auditLogAction": "Action",
+    "auditLogEntityType": "Type",
+    "auditLogUser": "User",
+    "auditLogFrom": "From",
+    "auditLogTo": "To",
+    "auditLogDate": "Date",
+    "auditLogDetails": "Details",
+    "auditLogEmpty": "No audit log entries found",
+    "auditLogLoadMore": "Load more"
   },
   "export": {
     "description": "Download income, expenses and transactions for a whole year or selected months as an Excel file.",

@@ -28,6 +28,11 @@ type Config struct {
 	S3SecretKey string `env:"S3_SECRET_ACCESS_KEY"`
 	S3Region    string `env:"S3_REGION"`
 	S3UseSSL    bool   `env:"S3_USE_SSL" envDefault:"true"`
+
+	// AuditExportInterval is a Go duration string (e.g. "10s", "1h", "12h").
+	// Empty disables the background exporter entirely — it's opt-in, same
+	// as S3 itself.
+	AuditExportInterval string `env:"AUDIT_EXPORT_INTERVAL"`
 }
 
 // S3Configured reports whether enough S3 settings are present to build a

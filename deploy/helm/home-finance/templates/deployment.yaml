@@ -37,6 +37,33 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.oidc.existingSecret }}
                   key: {{ .Values.oidc.clientSecretKey }}
+            {{- if .Values.s3.enabled }}
+            - name: S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: {{ .Values.s3.endpointKey }}
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: {{ .Values.s3.accessKeyIdKey }}
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: {{ .Values.s3.secretAccessKeyKey }}
+            - name: S3_BUCKET
+              value: {{ .Values.s3.bucket | quote }}
+            - name: S3_REGION
+              value: {{ .Values.s3.region | quote }}
+            - name: S3_USE_SSL
+              value: {{ .Values.s3.useSSL | quote }}
+            {{- if .Values.auditExport.interval }}
+            - name: AUDIT_EXPORT_INTERVAL
+              value: {{ .Values.auditExport.interval | quote }}
+            {{- end }}
+            {{- end }}
             {{- range $key, $val := .Values.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}

@@ -8,7 +8,7 @@ import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
   IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload, IconUpload,
-  IconUsers, IconUserCircle, IconApi, IconShieldCheck,
+  IconUsers, IconUserCircle, IconApi, IconShieldCheck, IconHistory,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +22,7 @@ import { useYears, useCreateYear, useImportXLSX } from '../api/hooks/usePeriods'
 import { useCurrentYear } from '../api/hooks/useCurrentYear'
 import { useMe } from '../api/hooks/useMe'
 import { useUpdateMe, useUploadAvatar, useUsers, useUpdateUserRole } from '../api/hooks/useUsers'
+import { useAuditLog } from '../api/hooks/useAuditLog'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
 import type { ImportReport } from '../api/types'
@@ -92,7 +93,7 @@ function SortMenu<K extends string>({ sort, onSort, options }: {
   )
 }
 
-type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'users' | 'apiDocs' | 'profile' | 'preferences'
+type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'users' | 'auditLog' | 'apiDocs' | 'profile' | 'preferences'
 
 interface SettingsMenuItem {
   key: SettingsSection
@@ -121,6 +122,7 @@ export default function Settings() {
     { key: 'years', label: t('settings.years'), icon: IconCalendar, content: <YearsTab />, adminOnly: true },
     { key: 'exportImport', label: t('settings.exportImport'), icon: IconFileSpreadsheet, content: <ExportImportTab />, adminOnly: true },
     { key: 'users', label: t('settings.users'), icon: IconUsers, content: <UsersTab />, adminOnly: true },
+    { key: 'auditLog', label: t('settings.auditLog'), icon: IconHistory, content: <AuditLogTab />, adminOnly: true },
     { key: 'profile', label: t('settings.profile'), icon: IconUserCircle, content: <ProfileTab /> },
     { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
     { key: 'apiDocs', label: t('nav.apiDocs'), icon: IconApi, content: null, adminOnly: true, external: '/api/docs' },
@@ -1415,5 +1417,79 @@ function UsersTab() {
         </Table.Tbody>
       </Table>
     </Table.ScrollContainer>
+  )
+}
+
+function AuditLogTab() {
+  const { t } = useTranslation()
+  const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const [action, setAction] = useState('')
+  const [entityType, setEntityType] = useState('')
+  const [userEmail, setUserEmail] = useState('')
+  const [from, setFrom] = useState<string | null>(null)
+  const [to, setTo] = useState<string | null>(null)
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useAuditLog({ action, entityType, userEmail, from, to })
+  const entries = data?.pages.flat() ?? []
+
+  const entityLabel = (e: { entityType?: string; entityId?: number }) =>
+    e.entityType ? `${e.entityType}${e.entityId != null ? ' #' + e.entityId : ''}` : '—'
+
+  return (
+    <Stack gap="sm">
+      <Group wrap="wrap" gap="sm">
+        <TextInput label={t('settings.auditLogAction')} value={action} onChange={e => setAction(e.target.value)} placeholder="period.close" w={180} />
+        <TextInput label={t('settings.auditLogEntityType')} value={entityType} onChange={e => setEntityType(e.target.value)} placeholder="period" w={140} />
+        <TextInput label={t('settings.auditLogUser')} value={userEmail} onChange={e => setUserEmail(e.target.value)} w={200} />
+        <DateInput label={t('settings.auditLogFrom')} value={from} onChange={setFrom} valueFormat="DD-MM-YYYY" clearable w={140} />
+        <DateInput label={t('settings.auditLogTo')} value={to} onChange={setTo} valueFormat="DD-MM-YYYY" clearable w={140} />
+      </Group>
+
+      {entries.length === 0 && !isLoading ? (
+        <EmptyState message={t('settings.auditLogEmpty')} />
+      ) : isMobile ? (
+        <MobileList>
+          {entries.map(e => (
+            <MobileListRow
+              key={e.id}
+              title={e.action}
+              subtitle={`${dayjs(e.createdAt).format('DD-MM-YYYY HH:mm')} · ${e.userEmail ?? '—'}`}
+              trailing={<Badge size="xs" color="gray">{entityLabel(e)}</Badge>}
+            />
+          ))}
+        </MobileList>
+      ) : (
+        <Table.ScrollContainer minWidth={700}>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>{t('settings.auditLogDate')}</Table.Th>
+                <Table.Th>{t('settings.auditLogUser')}</Table.Th>
+                <Table.Th>{t('settings.auditLogAction')}</Table.Th>
+                <Table.Th>{t('settings.auditLogEntityType')}</Table.Th>
+                <Table.Th>{t('settings.auditLogDetails')}</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {entries.map(e => (
+                <Table.Tr key={e.id}>
+                  <Table.Td style={{ whiteSpace: 'nowrap' }}>{dayjs(e.createdAt).format('DD-MM-YYYY HH:mm')}</Table.Td>
+                  <Table.Td>{e.userEmail ?? '—'}</Table.Td>
+                  <Table.Td>{e.action}</Table.Td>
+                  <Table.Td>{entityLabel(e)}</Table.Td>
+                  <Table.Td><Text size="xs" c="dimmed" maw={300} style={{ whiteSpace: 'pre-wrap' }}>{e.details ?? ''}</Text></Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+
+      {hasNextPage && (
+        <Button variant="subtle" size="xs" onClick={() => fetchNextPage()} loading={isFetchingNextPage}>
+          {t('settings.auditLogLoadMore')}
+        </Button>
+      )}
+    </Stack>
   )
 }

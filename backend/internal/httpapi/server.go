@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -11,10 +10,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/wouterdamman/home-finance/internal/auth"
 	"github.com/wouterdamman/home-finance/internal/config"
+	"github.com/wouterdamman/home-finance/internal/s3client"
 )
 
 type Server struct {
@@ -25,27 +24,8 @@ type Server struct {
 	s3   *minio.Client
 }
 
-// newS3Client returns nil (not an error) when S3 isn't configured — avatar
-// upload/proxy handlers check for that and respond with a clear error
-// instead of the app failing to start without object storage.
-func newS3Client(cfg *config.Config) *minio.Client {
-	if !cfg.S3Configured() {
-		return nil
-	}
-	client, err := minio.New(cfg.S3Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.S3AccessKey, cfg.S3SecretKey, ""),
-		Secure: cfg.S3UseSSL,
-		Region: cfg.S3Region,
-	})
-	if err != nil {
-		slog.Error("s3 client init failed", "err", err)
-		return nil
-	}
-	return client
-}
-
 func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, oidcProvider *auth.Provider) http.Handler {
-	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, s3: newS3Client(cfg)}
+	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, s3: s3client.New(cfg)}
 	passwordLimiter := newPasswordRateLimiter()
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
