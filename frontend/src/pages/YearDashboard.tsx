@@ -11,7 +11,8 @@ import { useMe } from '../api/hooks/useMe'
 import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { getErrorMessage } from '../api/client'
-import { formatCents } from '../lib/money'
+import { formatCents, formatCentsCompact } from '../lib/money'
+import { niceAxisTicks } from '../lib/chartAxis'
 import HeroStat from '../components/mobile/HeroStat'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
 
@@ -53,6 +54,9 @@ export default function YearDashboard() {
     [t('year.expenses')]: m.expenseTotalCents / 100,
     [t('year.surplus')]: m.surplusCents / 100,
   }))
+  const chartMaxValue = Math.max(...data.months.flatMap((m) => [m.incomeTotalCents, m.expenseTotalCents, m.surplusCents]), 0) / 100
+  const chartTicks = niceAxisTicks(chartMaxValue)
+  const chartYAxisProps = { tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks: chartTicks, domain: [0, chartTicks[chartTicks.length - 1]] }
 
   const handleLock = (password: string) => {
     lockYear.mutate(password, {
@@ -109,6 +113,7 @@ export default function YearDashboard() {
               dataKey="month"
               withLegend={false}
               valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+              yAxisProps={chartYAxisProps}
               series={[
                 { name: t('year.income'), color: 'teal.6', type: 'bar' },
                 { name: t('year.expenses'), color: 'red.6', type: 'bar' },
@@ -232,6 +237,7 @@ export default function YearDashboard() {
             data={chartData}
             dataKey="month"
             valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+            yAxisProps={chartYAxisProps}
             series={[
               { name: t('year.income'), color: 'teal.6', type: 'bar' },
               { name: t('year.expenses'), color: 'red.6', type: 'bar' },

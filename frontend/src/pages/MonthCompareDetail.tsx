@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react'
-import { Title, Skeleton, Alert, Text, Stack, Group, MultiSelect, Paper, Table, TextInput, ActionIcon, Tooltip, Anchor, Box } from '@mantine/core'
+import { Title, Skeleton, Alert, Text, Stack, Group, SimpleGrid, MultiSelect, Paper, Table, TextInput, ActionIcon, Tooltip, Anchor, Box } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
 import { useQueries } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { CompositeChart } from '@mantine/charts'
 import { IconSearch, IconEyeOff, IconChevronUp, IconChevronDown, IconSelector } from '@tabler/icons-react'
 import { api } from '../api/client'
 import type { YearSummary } from '../api/types'
 import { useTrendsCategoryTotals } from '../api/hooks/usePeriods'
-import { formatCents } from '../lib/money'
+import { formatCents, formatCentsCompact } from '../lib/money'
+import { niceAxisTicks } from '../lib/chartAxis'
+import ChartLegend from '../components/trends/ChartLegend'
 import { MobileListRow } from '../components/mobile/MobileList'
 import EmptyState from '../components/EmptyState'
 
@@ -59,13 +62,51 @@ function SortableTh({ label, active, dir, align, onClick }: { label: string; act
   )
 }
 
+// Income/expenses (bars) + surplus (line) across the selected periods —
+// the same bar+bar+line convention as the year-dashboard overview chart,
+// scoped to just the periods being compared here.
+function TotalsTrendChart({ periodLabels, totalsRows, locale }: { periodLabels: string[]; totalsRows: { label: string; values: number[]; higherIsBad: boolean }[]; locale: string }) {
+  const { t } = useTranslation()
+  const income = totalsRows.find((r) => r.label === t('year.income'))?.values ?? []
+  const expenses = totalsRows.find((r) => r.label === t('year.expenses'))?.values ?? []
+  const surplus = totalsRows.find((r) => r.label === t('year.surplus'))?.values ?? []
+  const chartData = periodLabels.map((label, i) => ({
+    period: label,
+    [t('year.income')]: (income[i] ?? 0) / 100,
+    [t('year.expenses')]: (expenses[i] ?? 0) / 100,
+    [t('year.surplus')]: (surplus[i] ?? 0) / 100,
+  }))
+  const series = [
+    { name: t('year.income'), color: 'teal.6', type: 'bar' as const },
+    { name: t('year.expenses'), color: 'red.6', type: 'bar' as const },
+    { name: t('year.surplus'), color: 'blue.6', type: 'line' as const },
+  ]
+  const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
+  const ticks = niceAxisTicks(maxValue)
+  return (
+    <Paper withBorder p="md">
+      <div style={{ flexShrink: 0 }}>
+        <ChartLegend series={series.map((s) => ({ name: s.name, color: s.color }))} />
+      </div>
+      <CompositeChart
+        h={220}
+        data={chartData}
+        dataKey="period"
+        withLegend={false}
+        valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+        yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
+        series={series}
+      />
+    </Paper>
+  )
+}
+
 // Simple horizontal ranking bars — a magnitude read (dataviz: sequential,
 // single hue) of which categories moved most between the first and last
 // selected period, ahead of the full numeric table below it.
 function BiggestMoversChart({ rows, locale }: { rows: { name: string; trend: number }[]; locale: string }) {
   const top = [...rows].sort((a, b) => Math.abs(b.trend) - Math.abs(a.trend)).slice(0, 8)
   const maxAbs = Math.max(...top.map((r) => Math.abs(r.trend)), 1)
-  if (top.every((r) => r.trend === 0)) return null
   const { t } = useTranslation()
   return (
     <Paper withBorder p="md">
@@ -209,28 +250,32 @@ export default function MonthCompareDetail() {
 
       {enoughPeriods && (
         <>
-          <Table.ScrollContainer minWidth={360}>
-            <Paper withBorder p="md">
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th></Table.Th>
-                    {periodLabels.map((label) => <Table.Th key={label} ta="right">{label}</Table.Th>)}
-                    <Table.Th ta="right">{t('trends.trend')}</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {totalsRows.map((row) => (
-                    <Table.Tr key={row.label}>
-                      <Table.Td><Text size="sm" c="dimmed">{row.label}</Text></Table.Td>
-                      {row.values.map((v, i) => <Table.Td key={i} ta="right">{formatCents(v, locale)}</Table.Td>)}
-                      <Table.Td ta="right"><TrendText diff={row.values[row.values.length - 1] - row.values[0]} locale={locale} higherIsBad={row.higherIsBad} /></Table.Td>
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+            <Table.ScrollContainer minWidth={360}>
+              <Paper withBorder p="md" h="100%">
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th></Table.Th>
+                      {periodLabels.map((label) => <Table.Th key={label} ta="right">{label}</Table.Th>)}
+                      <Table.Th ta="right">{t('trends.trend')}</Table.Th>
                     </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Paper>
-          </Table.ScrollContainer>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {totalsRows.map((row) => (
+                      <Table.Tr key={row.label}>
+                        <Table.Td><Text size="sm" c="dimmed">{row.label}</Text></Table.Td>
+                        {row.values.map((v, i) => <Table.Td key={i} ta="right">{formatCents(v, locale)}</Table.Td>)}
+                        <Table.Td ta="right"><TrendText diff={row.values[row.values.length - 1] - row.values[0]} locale={locale} higherIsBad={row.higherIsBad} /></Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Paper>
+            </Table.ScrollContainer>
+
+            <TotalsTrendChart periodLabels={periodLabels} totalsRows={totalsRows} locale={locale} />
+          </SimpleGrid>
 
           <BiggestMoversChart rows={categoryRows} locale={locale} />
 
