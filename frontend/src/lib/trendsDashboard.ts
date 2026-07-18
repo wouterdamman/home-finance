@@ -2,8 +2,7 @@ export type ChartKind = 'line' | 'bar'
 
 export type WidgetConfig =
   | { type: 'kpi'; metric: 'income' | 'expenses' | 'surplus' | 'yearsTracked' }
-  | { type: 'categoryChart'; categoryId: number; chartKind: ChartKind }
-  | { type: 'yearCompare'; chartKind: ChartKind }
+  | { type: 'categoryChart'; categoryIds: number[]; chartKind: ChartKind }
   // Self-contained: its own year + month selection, independent of the
   // page's global year filter — compares specific months within one year
   // (e.g. "why was Jan pricier than Feb") rather than years against
@@ -42,9 +41,11 @@ function genId(): string {
 
 function defaultHeight(config: WidgetConfig): WidgetHeight {
   if (config.type === 'kpi') return 1
-  if (config.type === 'yearCompare' || config.type === 'monthCompare' || config.type === 'allTimeTrend' || config.type === 'monthAcrossYears') return 3
+  if (config.type === 'monthCompare' || config.type === 'allTimeTrend' || config.type === 'monthAcrossYears') return 3
   return 2
 }
+
+const KNOWN_WIDGET_TYPES: WidgetConfig['type'][] = ['kpi', 'categoryChart', 'monthCompare', 'allTimeTrend', 'monthAcrossYears']
 
 // No categoryChart widgets by default — per-category small multiples add
 // clutter without answering "why", they're still addable manually via
@@ -57,7 +58,6 @@ export function defaultWidgets(years: number[]): Widget[] {
     { type: 'kpi', metric: 'expenses' },
     { type: 'kpi', metric: 'surplus' },
     { type: 'kpi', metric: 'yearsTracked' },
-    { type: 'yearCompare', chartKind: 'bar' },
     { type: 'allTimeTrend', fromYear, toYear, chartKind: 'line' },
   ]
   return configs.map((config) => ({ id: genId(), visible: true, width: 1, height: defaultHeight(config), config }))
@@ -71,11 +71,15 @@ export function loadDashboard(): Widget[] | null {
     if (!Array.isArray(parsed.widgets)) return null
     // Widgets saved before `width`/`height` existed don't have the fields —
     // default them rather than letting `gridColumn/gridRow: span undefined` break.
-    return (parsed.widgets as Widget[]).map((w) => ({
-      ...w,
-      width: w.width ?? 1,
-      height: w.height ?? defaultHeight(w.config),
-    }))
+    // Widgets whose type has since been removed (e.g. the retired
+    // `yearCompare`) are dropped rather than crashing the render.
+    return (parsed.widgets as Widget[])
+      .filter((w) => KNOWN_WIDGET_TYPES.includes(w.config?.type))
+      .map((w) => ({
+        ...w,
+        width: w.width ?? 1,
+        height: w.height ?? defaultHeight(w.config),
+      }))
   } catch {
     return null
   }

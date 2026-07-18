@@ -3,7 +3,7 @@ import { CompositeChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
 import { useTrendsMonthlyTotals } from '../../api/hooks/usePeriods'
 import type { ChartKind } from '../../lib/trendsDashboard'
-import { formatCents } from '../../lib/money'
+import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicks } from '../../lib/chartAxis'
 import ChartLegend from './ChartLegend'
 
@@ -45,6 +45,11 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
   ]
   const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
+  // Recharts' own auto-thinning of x-axis labels picks an uneven subset once
+  // labels don't all fit (e.g. dropping just "Nov" while keeping every other
+  // month) — pick a fixed, even stride ourselves so it's always a clean
+  // "every Nth month" instead of an arbitrary-looking gap.
+  const xInterval = Math.max(0, Math.ceil(chartData.length / 6) - 1)
 
   return (
     <>
@@ -58,7 +63,8 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
           dataKey="month"
           withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-          yAxisProps={{ ticks, domain: [0, ticks[ticks.length - 1]] }}
+          xAxisProps={{ interval: xInterval }}
+          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
           series={series}
         />
       </div>

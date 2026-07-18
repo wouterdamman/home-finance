@@ -8,6 +8,8 @@ import SizeGridPicker from './SizeGridPicker'
 
 type BaseType = WidgetConfig['type']
 
+const MAX_CATEGORIES = 4
+
 const MONTH_OPTIONS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
 const MONTH_OPTIONS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -30,8 +32,8 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
 
   const [type, setType] = useState<BaseType>(initial?.type ?? 'categoryChart')
   const [metric, setMetric] = useState<string>(initial?.type === 'kpi' ? initial.metric : 'income')
-  const [categoryId, setCategoryId] = useState<string | null>(
-    initial?.type === 'categoryChart' ? String(initial.categoryId) : (categories[0] ? String(categories[0].id) : null),
+  const [categoryIds, setCategoryIds] = useState<string[]>(
+    initial?.type === 'categoryChart' ? initial.categoryIds.map(String) : (categories[0] ? [String(categories[0].id)] : []),
   )
   const [chartKind, setChartKind] = useState<ChartKind>(
     initial && initial.type !== 'kpi' ? initial.chartKind : 'line',
@@ -61,7 +63,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
     if (!opened) return
     setType(initial?.type ?? 'categoryChart')
     setMetric(initial?.type === 'kpi' ? initial.metric : 'income')
-    setCategoryId(initial?.type === 'categoryChart' ? String(initial.categoryId) : (categories[0] ? String(categories[0].id) : null))
+    setCategoryIds(initial?.type === 'categoryChart' ? initial.categoryIds.map(String) : (categories[0] ? [String(categories[0].id)] : []))
     setChartKind(initial && initial.type !== 'kpi' ? initial.chartKind : 'line')
     setMonthYear(initial?.type === 'monthCompare' ? String(initial.year) : (years[years.length - 1] ? String(years[years.length - 1]) : null))
     setSelectedMonths(initial?.type === 'monthCompare' ? initial.months.map(String) : ['1', '2'])
@@ -74,7 +76,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, initial, initialWidth, initialHeight])
 
-  const canSubmit = (type !== 'categoryChart' || categoryId != null)
+  const canSubmit = (type !== 'categoryChart' || categoryIds.length >= 1)
     && (type !== 'monthCompare' || (monthYear != null && selectedMonths.length >= 1))
     && (type !== 'allTimeTrend' || (fromYear != null && toYear != null && Number(fromYear) <= Number(toYear)))
     && (type !== 'monthAcrossYears' || (singleMonth != null && selectedYears.length >= 1))
@@ -83,19 +85,17 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
     if (type === 'kpi') {
       onSubmit({ type: 'kpi', metric: metric as 'income' | 'expenses' | 'surplus' | 'yearsTracked' }, width, height)
     } else if (type === 'categoryChart') {
-      if (!categoryId) return
-      onSubmit({ type: 'categoryChart', categoryId: Number(categoryId), chartKind }, width, height)
+      if (categoryIds.length === 0) return
+      onSubmit({ type: 'categoryChart', categoryIds: categoryIds.map(Number), chartKind }, width, height)
     } else if (type === 'monthCompare') {
       if (!monthYear || selectedMonths.length === 0) return
       onSubmit({ type: 'monthCompare', year: Number(monthYear), months: selectedMonths.map(Number), chartKind }, width, height)
     } else if (type === 'allTimeTrend') {
       if (!fromYear || !toYear) return
       onSubmit({ type: 'allTimeTrend', fromYear: Number(fromYear), toYear: Number(toYear), chartKind }, width, height)
-    } else if (type === 'monthAcrossYears') {
+    } else {
       if (!singleMonth || selectedYears.length === 0) return
       onSubmit({ type: 'monthAcrossYears', month: Number(singleMonth), years: selectedYears.map(Number), chartKind }, width, height)
-    } else {
-      onSubmit({ type: 'yearCompare', chartKind }, width, height)
     }
     onClose()
   }
@@ -112,7 +112,6 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
             data={[
               { value: 'kpi', label: t('trends.widgetType_kpi') },
               { value: 'categoryChart', label: t('trends.widgetType_categoryChart') },
-              { value: 'yearCompare', label: t('trends.widgetType_yearCompare') },
               { value: 'monthCompare', label: t('trends.widgetType_monthCompare') },
               { value: 'allTimeTrend', label: t('trends.widgetType_allTimeTrend') },
               { value: 'monthAcrossYears', label: t('trends.widgetType_monthAcrossYears') },
@@ -136,11 +135,12 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
 
         {type === 'categoryChart' && (
           <>
-            <Select
+            <MultiSelect
               label={t('settings.categories')}
               data={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-              value={categoryId}
-              onChange={setCategoryId}
+              value={categoryIds}
+              onChange={setCategoryIds}
+              maxValues={MAX_CATEGORIES}
               searchable
             />
             {categories.length === 0 && <Text size="sm" c="dimmed">{t('trends.noData')}</Text>}
@@ -154,18 +154,6 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, yea
               ]}
             />
           </>
-        )}
-
-        {type === 'yearCompare' && (
-          <SegmentedControl
-            fullWidth
-            value={chartKind}
-            onChange={(v) => setChartKind(v as ChartKind)}
-            data={[
-              { label: t('trends.chartKind_line'), value: 'line' },
-              { label: t('trends.chartKind_bar'), value: 'bar' },
-            ]}
-          />
         )}
 
         {type === 'monthCompare' && (

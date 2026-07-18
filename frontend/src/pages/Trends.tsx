@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Title, Skeleton, Alert, Text, Stack, SimpleGrid, Group, SegmentedControl, Select, MultiSelect, ActionIcon, Tooltip, Button, Chip } from '@mantine/core'
+import { Title, Skeleton, Alert, Stack, SimpleGrid, Group, Select, ActionIcon, Tooltip, Button, Chip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { IconPencil, IconCheck, IconPlus, IconEye, IconArrowsLeftRight } from '@tabler/icons-react'
+import { IconPencil, IconCheck, IconPlus, IconEye, IconArrowsLeftRight, IconTrash } from '@tabler/icons-react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -11,14 +11,13 @@ import {
 import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { useTrendsYears, useTrendsCategoryTotals, useYears } from '../api/hooks/usePeriods'
 import type { TrendsFilter } from '../lib/trendsFilter'
-import { MAX_COMPARE_YEARS, loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
+import { loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
 import type { Widget, WidgetConfig, WidgetWidth, WidgetHeight } from '../lib/trendsDashboard'
 import { loadDashboard, saveDashboard, defaultWidgets, newWidget } from '../lib/trendsDashboard'
 import type { CategoryTotalsCategory } from '../api/types'
 import WidgetFrame from '../components/trends/WidgetFrame'
 import KpiWidget from '../components/trends/KpiWidget'
 import CategoryWidget from '../components/trends/CategoryWidget'
-import YearCompareWidget from '../components/trends/YearCompareWidget'
 import MonthCompareWidget from '../components/trends/MonthCompareWidget'
 import AllTimeTrendWidget from '../components/trends/AllTimeTrendWidget'
 import MonthAcrossYearsWidget from '../components/trends/MonthAcrossYearsWidget'
@@ -36,12 +35,11 @@ const ROW_UNIT_PX = 90
 
 function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string, opts?: Record<string, unknown>) => string, monthNames: string[]): string {
   if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
-  if (config.type === 'yearCompare') return t('trends.yearsTitle')
   if (config.type === 'monthCompare') return t('trends.monthsTitle', { year: config.year })
   if (config.type === 'allTimeTrend') return t('trends.allTimeTrendTitle', { fromYear: config.fromYear, toYear: config.toYear })
   if (config.type === 'monthAcrossYears') return t('trends.monthAcrossYearsTitle', { month: monthNames[config.month - 1] })
-  if (config.type === 'categoryChart') return categories.find((c) => c.id === config.categoryId)?.name ?? t('trends.unknownCategory')
-  return t('trends.unknownCategory')
+  const names = config.categoryIds.map((id) => categories.find((c) => c.id === id)?.name).filter((n): n is string => n != null)
+  return names.length > 0 ? names.join(', ') : t('trends.unknownCategory')
 }
 
 export default function Trends() {
@@ -68,17 +66,10 @@ export default function Trends() {
   // Every year registered in the app (Settings > Years) — same list the
   // sidebar shows — so the selector never looks like it's "missing" a year
   // the user can clearly see exists elsewhere. Years with no periods yet
-  // just render as zero everywhere (KpiWidget/CategoryWidget/YearCompare
-  // already default missing data to 0).
+  // just render as zero everywhere (KpiWidget/CategoryWidget already
+  // default missing data to 0).
   const registeredYears = useMemo(() => registeredYearsQuery.data ?? [], [registeredYearsQuery.data])
   const allYears = useMemo(() => yearsQuery.data ?? [], [yearsQuery.data])
-  // Years that actually have data — used only to pick sensible defaults
-  // (which year to preselect), not to filter what's selectable.
-  const yearsWithData = useMemo(
-    () => allYears.filter((y) => y.incomeTotalCents !== 0 || y.expenseTotalCents !== 0).map((y) => y.year),
-    [allYears],
-  )
-  const defaultYearPool = registeredYears.length > 0 ? registeredYears : yearsWithData
 
   useEffect(() => {
     if (dashboard === null && registeredYears.length > 0) {
@@ -124,6 +115,10 @@ export default function Trends() {
     updateDashboard(dashboard.map((w) => (w.id === id ? { ...w, visible } : w)))
   }
 
+  const handleDeleteWidget = (id: string) => {
+    updateDashboard(dashboard.filter((w) => w.id !== id))
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -143,16 +138,11 @@ export default function Trends() {
     updateDashboard(dashboard.map((w) => (w.id === editingWidgetId ? { ...w, config, width, height } : w)))
   }
 
-  const handleYearClick = (year: number) => {
-    updateFilter({ mode: 'single', year })
-  }
-
   const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
 
   const renderWidgetBody = (config: WidgetConfig) => {
     // Self-contained — each has its own year/month(s), doesn't depend on the
-    // page-level year filter at all, so these are checked before that
-    // filter's own empty-selection guard below.
+    // page-level year filter at all.
     if (config.type === 'monthCompare') {
       return <MonthCompareWidget year={config.year} months={config.months} chartKind={config.chartKind} />
     }
@@ -162,67 +152,34 @@ export default function Trends() {
     if (config.type === 'monthAcrossYears') {
       return <MonthAcrossYearsWidget month={config.month} years={config.years} chartKind={config.chartKind} />
     }
-    if (filter.mode === 'compare' && filter.years.length === 0) {
-      return <Text size="sm" c="dimmed">{t('trends.selectYearsHint')}</Text>
-    }
     if (config.type === 'kpi') return <KpiWidget metric={config.metric} filter={filter} allYears={allYears} />
-    if (config.type === 'categoryChart') return <CategoryWidget categoryId={config.categoryId} chartKind={config.chartKind} filter={filter} catData={catData} />
-    return <YearCompareWidget chartKind={config.chartKind} allYears={allYears} onYearClick={handleYearClick} />
+    return <CategoryWidget categoryIds={config.categoryIds} chartKind={config.chartKind} filter={filter} catData={catData} />
   }
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" wrap="wrap">
         <Title order={isMobile ? 3 : 2}>{t('trends.title')}</Title>
-        <Group gap="xs" wrap="nowrap">
-          <Button component={Link} to="/trends/months" variant="light" size={isMobile ? 'xs' : 'sm'} leftSection={<IconArrowsLeftRight size={16} />}>
-            {t('trends.compareMonthsLink')}
-          </Button>
-          <Tooltip label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')}>
-            <ActionIcon variant={editMode ? 'filled' : 'subtle'} size="lg" aria-label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')} onClick={() => setEditMode((v) => !v)}>
-              {editMode ? <IconCheck size={18} /> : <IconPencil size={18} />}
-            </ActionIcon>
-          </Tooltip>
-        </Group>
+        <Tooltip label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')}>
+          <ActionIcon variant={editMode ? 'filled' : 'subtle'} size="lg" aria-label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')} onClick={() => setEditMode((v) => !v)}>
+            {editMode ? <IconCheck size={18} /> : <IconPencil size={18} />}
+          </ActionIcon>
+        </Tooltip>
       </Group>
 
-      <Stack gap="xs">
-        <SegmentedControl
-          value={filter.mode}
-          onChange={(v) => {
-            if (v === 'single') {
-              updateFilter({ mode: 'single', year: defaultYearPool[defaultYearPool.length - 1] ?? new Date().getFullYear() })
-            } else {
-              const years = defaultYearPool.slice(-2)
-              updateFilter({ mode: 'compare', years })
-            }
-          }}
-          data={[
-            { label: t('trends.modeSingle'), value: 'single' },
-            { label: t('trends.modeCompare'), value: 'compare' },
-          ]}
-          fullWidth={isMobile}
-          style={{ maxWidth: isMobile ? undefined : 320 }}
+      <Group justify="space-between" wrap="wrap" align="flex-end">
+        <Select
+          label={t('settings.year')}
+          data={registeredYears.map(String)}
+          value={String(filter.year)}
+          onChange={(v) => v && updateFilter({ year: Number(v) })}
+          w={isMobile ? '100%' : 160}
+          allowDeselect={false}
         />
-        {filter.mode === 'single' ? (
-          <Select
-            data={registeredYears.map(String)}
-            value={String(filter.year)}
-            onChange={(v) => v && updateFilter({ mode: 'single', year: Number(v) })}
-            w={isMobile ? '100%' : 160}
-            allowDeselect={false}
-          />
-        ) : (
-          <MultiSelect
-            data={registeredYears.map(String)}
-            value={filter.years.map(String)}
-            onChange={(vs) => updateFilter({ mode: 'compare', years: vs.map(Number) })}
-            maxValues={MAX_COMPARE_YEARS}
-            placeholder={t('trends.selectYearsHint')}
-            w={isMobile ? '100%' : 320}
-          />
-        )}
-      </Stack>
+        <Button component={Link} to="/trends/months" variant="light" size={isMobile ? 'xs' : 'sm'} leftSection={<IconArrowsLeftRight size={16} />} fullWidth={isMobile}>
+          {t('trends.compareMonthsLink')}
+        </Button>
+      </Group>
 
       {visibleWidgets.length === 0 ? (
         <EmptyState message={t('trends.noWidgets')} />
@@ -239,6 +196,7 @@ export default function Trends() {
                   width={Math.min(w.width, maxWidgetWidth) as WidgetWidth}
                   height={w.height}
                   onHide={() => handleSetVisible(w.id, false)}
+                  onDelete={() => handleDeleteWidget(w.id)}
                   onConfigure={() => { setEditingWidgetId(w.id); setModalOpened(true) }}
                 >
                   {renderWidgetBody(w.config)}
@@ -254,9 +212,16 @@ export default function Trends() {
           {hiddenWidgets.length > 0 && (
             <Group gap="xs">
               {hiddenWidgets.map((w) => (
-                <Chip key={w.id} checked={false} icon={<IconEye size={14} />} onChange={() => handleSetVisible(w.id, true)}>
-                  {widgetTitle(w.config, catData.categories, t, monthNames)}
-                </Chip>
+                <Group key={w.id} gap={2} wrap="nowrap">
+                  <Chip checked={false} icon={<IconEye size={14} />} onChange={() => handleSetVisible(w.id, true)}>
+                    {widgetTitle(w.config, catData.categories, t, monthNames)}
+                  </Chip>
+                  <Tooltip label={t('trends.deleteWidget')}>
+                    <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('trends.deleteWidget')} onClick={() => handleDeleteWidget(w.id)}>
+                      <IconTrash size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               ))}
             </Group>
           )}

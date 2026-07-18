@@ -5,7 +5,7 @@ import { useQueries } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { YearSummary } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
-import { formatCents } from '../../lib/money'
+import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicks } from '../../lib/chartAxis'
 import ChartLegend from './ChartLegend'
 
@@ -73,7 +73,7 @@ export default function MonthAcrossYearsWidget({ month, years, chartKind }: Prop
           dataKey="year"
           withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-          yAxisProps={{ ticks, domain: [0, ticks[ticks.length - 1]] }}
+          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
           series={series}
         />
       </div>

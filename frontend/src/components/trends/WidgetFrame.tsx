@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Paper, Group, Text, ActionIcon, Tooltip } from '@mantine/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { IconGripVertical, IconEyeOff, IconSettings } from '@tabler/icons-react'
+import { IconGripVertical, IconEyeOff, IconSettings, IconTrash } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import type { WidgetWidth, WidgetHeight } from '../../lib/trendsDashboard'
 
@@ -13,11 +13,12 @@ interface Props {
   width: WidgetWidth
   height: WidgetHeight
   onHide: () => void
+  onDelete: () => void
   onConfigure?: () => void
   children: ReactNode
 }
 
-export default function WidgetFrame({ id, title, editMode, width, height, onHide, onConfigure, children }: Props) {
+export default function WidgetFrame({ id, title, editMode, width, height, onHide, onDelete, onConfigure, children }: Props) {
   const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !editMode })
   const style = {
@@ -51,6 +52,11 @@ export default function WidgetFrame({ id, title, editMode, width, height, onHide
             <Tooltip label={t('trends.hideWidget')}>
               <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('trends.hideWidget')} onClick={onHide}>
                 <IconEyeOff size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label={t('trends.deleteWidget')}>
+              <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('trends.deleteWidget')} onClick={onDelete}>
+                <IconTrash size={16} />
               </ActionIcon>
             </Tooltip>
           </Group>

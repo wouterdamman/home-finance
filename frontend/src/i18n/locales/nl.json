@@ -48,6 +48,7 @@
     "addWidget": "Widget toevoegen",
     "configureWidget": "Widget configureren",
     "hideWidget": "Widget verbergen",
+    "deleteWidget": "Widget verwijderen",
     "dragHandle": "Verslepen om te herschikken",
     "narrower": "Smaller maken",
     "wider": "Breder maken",
@@ -80,6 +81,9 @@
     "compareMonthsTitle": "Maanden vergelijken",
     "periodA": "Periode A",
     "periodB": "Periode B",
+    "searchCategories": "Zoek categorie...",
+    "hideCategory": "Categorie verbergen in deze vergelijking",
+    "showHiddenCategories": "{{count}} verborgen — alles tonen",
     "back": "← Terug naar Trends",
     "chartKind_line": "Lijn",
     "chartKind_bar": "Balk"

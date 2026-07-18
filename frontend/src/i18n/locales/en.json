@@ -48,6 +48,7 @@
     "addWidget": "Add widget",
     "configureWidget": "Configure widget",
     "hideWidget": "Hide widget",
+    "deleteWidget": "Delete widget",
     "dragHandle": "Drag to reorder",
     "narrower": "Make narrower",
     "wider": "Make wider",
@@ -80,6 +81,9 @@
     "compareMonthsTitle": "Compare months",
     "periodA": "Period A",
     "periodB": "Period B",
+    "searchCategories": "Search category...",
+    "hideCategory": "Hide category in this comparison",
+    "showHiddenCategories": "{{count}} hidden — show all",
     "back": "← Back to Trends",
     "chartKind_line": "Line",
     "chartKind_bar": "Bar"
