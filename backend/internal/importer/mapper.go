@@ -33,17 +33,7 @@ type MonthReport struct {
 
 func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts ImportOptions) (*Report, error) {
 	if opts.ResetMaster {
-		if _, err := pool.Exec(ctx, `
-			DELETE FROM pot_ledger;
-			DELETE FROM pot_splits;
-			DELETE FROM transactions;
-			DELETE FROM budget_lines;
-			DELETE FROM income_entries;
-			DELETE FROM periods;
-			DELETE FROM pots;
-			DELETE FROM categories;
-			DELETE FROM income_sources;
-		`); err != nil {
+		if err := resetMasterdata(ctx, pool); err != nil {
 			return nil, fmt.Errorf("reset masterdata: %w", err)
 		}
 	} else if opts.Wipe {
@@ -336,6 +326,27 @@ func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs
 func wipe(ctx context.Context, pool *pgxpool.Pool, year int) error {
 	_, err := pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
 	return err
+}
+
+// resetMasterdata wipes all periods (cascading to every period-scoped table:
+// income_entries, income_transactions, budget_lines, transactions, pot_splits,
+// pot_ledger) plus the masterdata tables themselves. pgx v5's extended query
+// protocol rejects multiple semicolon-separated statements in one Exec, so each
+// DELETE runs as its own statement; wrapped in a transaction so a failure partway
+// through doesn't leave masterdata half-wiped.
+func resetMasterdata(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, table := range []string{"periods", "pots", "categories", "income_sources"} {
+		if _, err := tx.Exec(ctx, `DELETE FROM `+table); err != nil {
+			return fmt.Errorf("delete %s: %w", table, err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func loadMasterdata(ctx context.Context, pool *pgxpool.Pool, catIDs, srcIDs, potIDs map[string]int64, potKinds map[string]string) error {
