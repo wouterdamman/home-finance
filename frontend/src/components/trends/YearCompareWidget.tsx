@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { YearTrend } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents } from '../../lib/money'
+import ChartLegend from './ChartLegend'
 
 interface Props {
   chartKind: ChartKind
@@ -42,13 +43,13 @@ export default function YearCompareWidget({ chartKind, allYears, onYearClick }: 
 
   return (
     <div>
+      <ChartLegend series={series.map((s) => ({ name: s.name, color: s.color }))} />
       <div style={{ cursor: 'pointer' }}>
         <CompositeChart
           h={220}
           data={data}
           dataKey="year"
-          withLegend
-          legendProps={{ wrapperStyle: { position: 'relative', width: '100%', display: 'flex', flexWrap: 'wrap', justifyContent: 'center' } }}
+          withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
           series={series}
           composedChartProps={{ onClick: handleClick }}

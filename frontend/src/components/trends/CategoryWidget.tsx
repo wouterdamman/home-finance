@@ -5,6 +5,7 @@ import { YEAR_COLORS } from '../../lib/trendsFilter'
 import type { CategoryTotals } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents } from '../../lib/money'
+import ChartLegend from './ChartLegend'
 
 const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -51,14 +52,16 @@ export default function CategoryWidget({ categoryId, chartKind, filter, catData 
   const series = years.map((y, idx) => ({ name: String(y), color: YEAR_COLORS[idx] }))
 
   return (
-    <Chart
-      h={140}
-      data={data}
-      dataKey="month"
-      withLegend
-      legendProps={{ wrapperStyle: { position: 'relative', width: '100%', display: 'flex', flexWrap: 'wrap', justifyContent: 'center' } }}
-      valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-      series={series}
-    />
+    <>
+      <ChartLegend series={series} />
+      <Chart
+        h={140}
+        data={data}
+        dataKey="month"
+        withLegend={false}
+        valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+        series={series}
+      />
+    </>
   )
 }
