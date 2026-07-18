@@ -4,6 +4,11 @@ export type WidgetConfig =
   | { type: 'kpi'; metric: 'income' | 'expenses' | 'surplus' | 'yearsTracked' }
   | { type: 'categoryChart'; categoryId: number; chartKind: ChartKind }
   | { type: 'yearCompare'; chartKind: ChartKind }
+  // Self-contained: its own year + month selection, independent of the
+  // page's global year filter — compares specific months within one year
+  // (e.g. "why was Jan pricier than Feb") rather than years against
+  // each other.
+  | { type: 'monthCompare'; year: number; months: number[]; chartKind: ChartKind }
 
 // Size in grid units. Width = columns (desktop grid is 4 wide, see
 // Trends.tsx's SimpleGrid `cols`). Height = row-units of a fixed
@@ -32,7 +37,7 @@ function genId(): string {
 
 function defaultHeight(config: WidgetConfig): WidgetHeight {
   if (config.type === 'kpi') return 1
-  if (config.type === 'yearCompare') return 3
+  if (config.type === 'yearCompare' || config.type === 'monthCompare') return 3
   return 2
 }
 

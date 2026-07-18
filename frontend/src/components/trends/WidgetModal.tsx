@@ -1,24 +1,30 @@
 import { useEffect, useState } from 'react'
-import { Modal, Select, SegmentedControl, Stack, Button, Text, Divider } from '@mantine/core'
+import { Modal, Select, MultiSelect, SegmentedControl, Stack, Button, Text, Divider } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
 import type { WidgetConfig, ChartKind, WidgetWidth, WidgetHeight } from '../../lib/trendsDashboard'
+import { MAX_COMPARE_YEARS } from '../../lib/trendsFilter'
 import type { CategoryTotalsCategory } from '../../api/types'
 import SizeGridPicker from './SizeGridPicker'
 
 type BaseType = WidgetConfig['type']
+
+const MONTH_OPTIONS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
+const MONTH_OPTIONS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 interface Props {
   opened: boolean
   onClose: () => void
   onSubmit: (config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => void
   categories: CategoryTotalsCategory[]
+  years: number[]
   initial?: WidgetConfig
   initialWidth?: WidgetWidth
   initialHeight?: WidgetHeight
 }
 
-export default function WidgetModal({ opened, onClose, onSubmit, categories, initial, initialWidth, initialHeight }: Props) {
-  const { t } = useTranslation()
+export default function WidgetModal({ opened, onClose, onSubmit, categories, years, initial, initialWidth, initialHeight }: Props) {
+  const { t, i18n } = useTranslation()
+  const monthNames = i18n.language.startsWith('nl') ? MONTH_OPTIONS_NL : MONTH_OPTIONS_EN
   const [type, setType] = useState<BaseType>(initial?.type ?? 'categoryChart')
   const [metric, setMetric] = useState<string>(initial?.type === 'kpi' ? initial.metric : 'income')
   const [categoryId, setCategoryId] = useState<string | null>(
@@ -26,6 +32,12 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
   )
   const [chartKind, setChartKind] = useState<ChartKind>(
     initial && initial.type !== 'kpi' ? initial.chartKind : 'line',
+  )
+  const [monthYear, setMonthYear] = useState<string | null>(
+    initial?.type === 'monthCompare' ? String(initial.year) : (years[years.length - 1] ? String(years[years.length - 1]) : null),
+  )
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(
+    initial?.type === 'monthCompare' ? initial.months.map(String) : ['1', '2'],
   )
   const [width, setWidth] = useState<WidgetWidth>(initialWidth ?? 1)
   const [height, setHeight] = useState<WidgetHeight>(initialHeight ?? 2)
@@ -36,12 +48,15 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
     setMetric(initial?.type === 'kpi' ? initial.metric : 'income')
     setCategoryId(initial?.type === 'categoryChart' ? String(initial.categoryId) : (categories[0] ? String(categories[0].id) : null))
     setChartKind(initial && initial.type !== 'kpi' ? initial.chartKind : 'line')
+    setMonthYear(initial?.type === 'monthCompare' ? String(initial.year) : (years[years.length - 1] ? String(years[years.length - 1]) : null))
+    setSelectedMonths(initial?.type === 'monthCompare' ? initial.months.map(String) : ['1', '2'])
     setWidth(initialWidth ?? 1)
     setHeight(initialHeight ?? 2)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, initial, initialWidth, initialHeight])
 
-  const canSubmit = type !== 'categoryChart' || categoryId != null
+  const canSubmit = (type !== 'categoryChart' || categoryId != null)
+    && (type !== 'monthCompare' || (monthYear != null && selectedMonths.length >= 1))
 
   const handleSubmit = () => {
     if (type === 'kpi') {
@@ -49,6 +64,9 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
     } else if (type === 'categoryChart') {
       if (!categoryId) return
       onSubmit({ type: 'categoryChart', categoryId: Number(categoryId), chartKind }, width, height)
+    } else if (type === 'monthCompare') {
+      if (!monthYear || selectedMonths.length === 0) return
+      onSubmit({ type: 'monthCompare', year: Number(monthYear), months: selectedMonths.map(Number), chartKind }, width, height)
     } else {
       onSubmit({ type: 'yearCompare', chartKind }, width, height)
     }
@@ -67,6 +85,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
               { label: t('trends.widgetType_kpi'), value: 'kpi' },
               { label: t('trends.widgetType_categoryChart'), value: 'categoryChart' },
               { label: t('trends.widgetType_yearCompare'), value: 'yearCompare' },
+              { label: t('trends.widgetType_monthCompare'), value: 'monthCompare' },
             ]}
           />
         )}
@@ -117,6 +136,33 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
               { label: t('trends.chartKind_bar'), value: 'bar' },
             ]}
           />
+        )}
+
+        {type === 'monthCompare' && (
+          <>
+            <Select
+              label={t('settings.year')}
+              data={years.map(String)}
+              value={monthYear}
+              onChange={setMonthYear}
+            />
+            <MultiSelect
+              label={t('trends.selectMonthsHint')}
+              data={monthNames.map((label, i) => ({ value: String(i + 1), label }))}
+              value={selectedMonths}
+              onChange={setSelectedMonths}
+              maxValues={MAX_COMPARE_YEARS}
+            />
+            <SegmentedControl
+              fullWidth
+              value={chartKind}
+              onChange={(v) => setChartKind(v as ChartKind)}
+              data={[
+                { label: t('trends.chartKind_line'), value: 'line' },
+                { label: t('trends.chartKind_bar'), value: 'bar' },
+              ]}
+            />
+          </>
         )}
 
         <Divider my={4} />

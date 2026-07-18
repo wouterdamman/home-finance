@@ -18,6 +18,7 @@ import WidgetFrame from '../components/trends/WidgetFrame'
 import KpiWidget from '../components/trends/KpiWidget'
 import CategoryWidget from '../components/trends/CategoryWidget'
 import YearCompareWidget from '../components/trends/YearCompareWidget'
+import MonthCompareWidget from '../components/trends/MonthCompareWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
 
@@ -27,9 +28,10 @@ import EmptyState from '../components/EmptyState'
 // shorter siblings with dead space instead of stacking anything.
 const ROW_UNIT_PX = 90
 
-function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string) => string): string {
+function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
   if (config.type === 'yearCompare') return t('trends.yearsTitle')
+  if (config.type === 'monthCompare') return t('trends.monthsTitle', { year: config.year })
   return categories.find((c) => c.id === config.categoryId)?.name ?? t('trends.unknownCategory')
 }
 
@@ -138,6 +140,12 @@ export default function Trends() {
   const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
 
   const renderWidgetBody = (config: WidgetConfig) => {
+    // Self-contained — has its own year/months, doesn't depend on the
+    // page-level year filter at all, so it's checked before that filter's
+    // own empty-selection guard below.
+    if (config.type === 'monthCompare') {
+      return <MonthCompareWidget year={config.year} months={config.months} chartKind={config.chartKind} />
+    }
     if (filter.mode === 'compare' && filter.years.length === 0) {
       return <Text size="sm" c="dimmed">{t('trends.selectYearsHint')}</Text>
     }
@@ -247,6 +255,7 @@ export default function Trends() {
         onClose={() => setModalOpened(false)}
         onSubmit={editingWidget ? handleSaveWidgetConfig : handleAddWidget}
         categories={catData.categories}
+        years={registeredYears}
         initial={editingWidget?.config}
         initialWidth={editingWidget?.width}
         initialHeight={editingWidget?.height}

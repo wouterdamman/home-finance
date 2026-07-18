@@ -64,6 +64,9 @@
     "widgetType_kpi": "Kengetal",
     "widgetType_categoryChart": "Categorie-grafiek",
     "widgetType_yearCompare": "Jaren-vergelijking",
+    "widgetType_monthCompare": "Maanden-vergelijking",
+    "monthsTitle": "Maanden {{year}}",
+    "selectMonthsHint": "Selecteer maanden",
     "chartKind_line": "Lijn",
     "chartKind_bar": "Balk"
   },

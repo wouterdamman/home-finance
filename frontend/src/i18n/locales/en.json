@@ -64,6 +64,9 @@
     "widgetType_kpi": "KPI",
     "widgetType_categoryChart": "Category chart",
     "widgetType_yearCompare": "Year comparison",
+    "widgetType_monthCompare": "Month comparison",
+    "monthsTitle": "Months {{year}}",
+    "selectMonthsHint": "Select months",
     "chartKind_line": "Line",
     "chartKind_bar": "Bar"
   },
