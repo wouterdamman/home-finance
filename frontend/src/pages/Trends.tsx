@@ -72,12 +72,18 @@ export default function Trends() {
   const allYears = useMemo(() => yearsQuery.data ?? [], [yearsQuery.data])
 
   useEffect(() => {
-    if (dashboard === null && registeredYears.length > 0) {
-      const generated = defaultWidgets(registeredYears)
+    if (dashboard === null && registeredYears.length > 0 && categoryQuery.data) {
+      const lastYear = Math.max(...registeredYears)
+      const topCategoryIds = categoryQuery.data.categories.map((c) => c.id)
+      const recentMonths = categoryQuery.data.entries
+        .filter((e) => e.year === lastYear)
+        .map((e) => e.month)
+        .sort((a, b) => a - b)
+      const generated = defaultWidgets(registeredYears, topCategoryIds, recentMonths)
       setDashboard(generated)
       saveDashboard(generated)
     }
-  }, [dashboard, registeredYears])
+  }, [dashboard, registeredYears, categoryQuery.data])
 
   useEffect(() => {
     if (filter === null && registeredYears.length > 0) {

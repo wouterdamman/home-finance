@@ -47,12 +47,15 @@ function defaultHeight(config: WidgetConfig): WidgetHeight {
 
 const KNOWN_WIDGET_TYPES: WidgetConfig['type'][] = ['kpi', 'categoryChart', 'monthCompare', 'allTimeTrend', 'monthAcrossYears']
 
-// No categoryChart widgets by default — per-category small multiples add
-// clutter without answering "why", they're still addable manually via
-// "Add widget" for anyone who wants them back.
-export function defaultWidgets(years: number[]): Widget[] {
+// One multi-category widget (not 8 separate ones — that was the clutter
+// complaint) with the biggest-spend categories, plus a recent-months
+// comparison, so the empty dashboard already answers real questions instead
+// of just showing totals. `topCategoryIds` is expected pre-sorted by total
+// spend descending (the trends/category-totals API already sorts this way).
+export function defaultWidgets(years: number[], topCategoryIds: number[], recentMonths: number[]): Widget[] {
   const fromYear = years.length > 0 ? Math.min(...years) : new Date().getFullYear()
   const toYear = years.length > 0 ? Math.max(...years) : new Date().getFullYear()
+  const lastYear = years.length > 0 ? Math.max(...years) : new Date().getFullYear()
   const configs: WidgetConfig[] = [
     { type: 'kpi', metric: 'income' },
     { type: 'kpi', metric: 'expenses' },
@@ -60,6 +63,12 @@ export function defaultWidgets(years: number[]): Widget[] {
     { type: 'kpi', metric: 'yearsTracked' },
     { type: 'allTimeTrend', fromYear, toYear, chartKind: 'line' },
   ]
+  if (topCategoryIds.length > 0) {
+    configs.push({ type: 'categoryChart', categoryIds: topCategoryIds.slice(0, 4), chartKind: 'line' })
+  }
+  if (recentMonths.length >= 2) {
+    configs.push({ type: 'monthCompare', year: lastYear, months: recentMonths.slice(-3), chartKind: 'line' })
+  }
   return configs.map((config) => ({ id: genId(), visible: true, width: 1, height: defaultHeight(config), config }))
 }
 
