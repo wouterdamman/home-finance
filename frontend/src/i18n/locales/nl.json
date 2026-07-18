@@ -38,9 +38,12 @@
   },
   "trends": {
     "title": "Trends",
+    "totalIncome": "Totaal inkomsten",
+    "totalExpenses": "Totaal uitgaven",
+    "totalSurplus": "Totaal overschot",
+    "yearsTracked": "Jaren bijgehouden",
     "yearsTitle": "Jaren vergelijken",
     "categoriesTitle": "Categorie-trends",
-    "selectCategories": "Selecteer categorieën",
     "noData": "Nog geen data"
   },
   "month": {

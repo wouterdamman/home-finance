@@ -38,9 +38,12 @@
   },
   "trends": {
     "title": "Trends",
+    "totalIncome": "Total income",
+    "totalExpenses": "Total expenses",
+    "totalSurplus": "Total surplus",
+    "yearsTracked": "Years tracked",
     "yearsTitle": "Compare years",
     "categoriesTitle": "Category trends",
-    "selectCategories": "Select categories",
     "noData": "No data yet"
   },
   "month": {
