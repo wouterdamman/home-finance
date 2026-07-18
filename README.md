@@ -4,25 +4,14 @@ Family budget tracker — Go API + React SPA + PostgreSQL. Replaces an Excel-bas
 
 ## Features
 
-- Monthly income & expense tracking (budget lines + itemized transactions, dated)
-- Budget-vs-actual progress bars per tracked category
-- Year dashboard: income/expense/surplus chart, savings pot balances
-- Savings pots overview with full ledger (deposits, withdrawals, adjustments, opening balance) and balance-trend chart
-- Savings goals: optional target amount + target date per pot, with progress bars
-- Pot % allocation on month close; carryover pot always absorbs whatever isn't allocated to another pot (percentage is computed, not entered) and flows to next month as income
-- Explicit year registry (Settings > Years) — no hardcoded year range
-- Template system: income sources and categories marked for auto-copy to new months
-- Excel export per year or selected months (income, expenses, transactions, year overview, pot balances)
-- Excel import: legacy Fam_Finance workbook migration or re-importing the app's own export (auto-detected), with optional wipe/reset behind a password confirm
-- Role-based access (Admin/User): admins manage structure (categories, sources, pots, years, users) and destructive month/year actions; users handle day-to-day entries. Bootstrapped via `INITIAL_ADMIN_EMAILS`
-- Profile: display name + avatar upload (S3-compatible object storage, optional)
-- Audit log for close, reopen, delete, pot entry, import, and role-change actions — paginated/filterable viewer in Settings (admin-only), with optional periodic S3 export (any interval, seconds to hours)
-- Collapsible sidebar (icon rail by default; peek or pin open)
-- Dark/light/system theme toggle
-- Dutch + English UI
-- OIDC auth (Authentik in prod, Dex in dev)
-- Installable PWA (offline-capable static assets, network-first API)
-- Mobile-native UI below tablet width: bottom tab bar, swipeable lists, bottom-sheet editing — not a shrunk desktop layout
+Monthly income/expense tracking with budget-vs-actual progress, a savings-pots ledger with
+goals and automatic month-close allocation, a modular Trends dashboard (customizable widgets:
+category breakdowns, multi-period comparisons, all-time trends) plus a dedicated month-vs-month
+drill-down, Excel export/import (including migration from the original spreadsheet), role-based
+access with an audit log, and a native mobile IA below tablet width — not a shrunk desktop layout.
+
+Full feature history lives in [`CHANGELOG.md`](CHANGELOG.md) (auto-generated per release); this
+list intentionally stays a short summary rather than growing indefinitely.
 
 ## Stack
 
