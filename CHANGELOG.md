@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.6.0](https://github.com/wouterdamman/home-finance/compare/v1.5.0...v1.6.0) (2026-07-18)
+
+
+### Features
+
+* **income:** add income-itemizing for sources like BD/MTC (H) ([a3149b1](https://github.com/wouterdamman/home-finance/commit/a3149b1aa34b53b7d5bb0e3f456d01291c1f4d52))
+* **settings:** selectable chart color palette + fix table/chart height mismatch ([90cf9a2](https://github.com/wouterdamman/home-finance/commit/90cf9a223a132dba59f65fe9866e4da236a29869))
+* **trends:** 2D widget resize (width x height) with HA-style picker ([2c4c307](https://github.com/wouterdamman/home-finance/commit/2c4c307454562fcdaf7531d14e0ae41144fb138c))
+* **trends:** add category spend trends over months (C2) ([4aaa53a](https://github.com/wouterdamman/home-finance/commit/4aaa53ae5a06272dd85060bc4efcf099f66c15c3))
+* **trends:** add month-vs-month comparison widget ([1965327](https://github.com/wouterdamman/home-finance/commit/1965327179685f39e38ad4be57ea977f766dee25))
+* **trends:** drop Compare-years widget, add multi-category + widget delete + month-compare filtering ([c9b9d14](https://github.com/wouterdamman/home-finance/commit/c9b9d14b5cc9d630a1da2edf09c5cdb4298d799d))
+* **trends:** rebuild as a modular, Power BI-like dashboard ([7fbbba5](https://github.com/wouterdamman/home-finance/commit/7fbbba5476613d079153c5cfba63c132f31237be))
+* **trends:** replace category-widget clutter with 4 focused comparisons ([fe3af08](https://github.com/wouterdamman/home-finance/commit/fe3af0806421218539ec5d0a43fb1a2e6e8c3c90))
+* **trends:** rework C2 into a cross-year Trends nav page ([b930811](https://github.com/wouterdamman/home-finance/commit/b93081164abcdab868ca3803fcc56a0994e58755))
+* **trends:** richer default dashboard + multi-period month compare ([e2d34ba](https://github.com/wouterdamman/home-finance/commit/e2d34ba4fdf5e8e4888feb1f84f1e695d4c63367))
+
+
+### Bug Fixes
+
+* **import:** split ResetMaster into separate statements per pgx v5 ([01bf05b](https://github.com/wouterdamman/home-finance/commit/01bf05b4da1e18413dc6d942c7835f9be29d2f86))
+* **periods:** check DB/parse errors in handleReplaceSplits ([963a6a0](https://github.com/wouterdamman/home-finance/commit/963a6a0f10da6023b73a41c28620b5b0cf959180))
+* **periods:** use itemized-income totals everywhere, not plain SUM(amount_cents) ([ec757e2](https://github.com/wouterdamman/home-finance/commit/ec757e2b4a622a0add4090810c65457110384caf))
+* **trends:** compact y-axis tick labels so they stop bleeding past the card ([7b0e57a](https://github.com/wouterdamman/home-finance/commit/7b0e57a5249c6e4b98526494b268a559ac81c45c))
+* **trends:** replace MultiSelect overlay with a small-multiples dashboard ([422892e](https://github.com/wouterdamman/home-finance/commit/422892efb12ed7ad6d0fe37e3e22fc49bb9b8e88))
+* **trends:** replace recharts legend with a plain Mantine legend ([4063d07](https://github.com/wouterdamman/home-finance/commit/4063d0717f93b627a1a20d1e90f069e0044bb962))
+* **trends:** validate persisted widget config shape, not just type ([b278f7b](https://github.com/wouterdamman/home-finance/commit/b278f7b308ef8e1708a3bae678ebb8b8a2cc88c3))
+* **trends:** y-axis overflow on remaining widgets + add year-dashboard-style chart option ([616ab20](https://github.com/wouterdamman/home-finance/commit/616ab20bdd8c06ad9717a50a91762aad04179d21))
+* **trends:** year selector only listed years with data, not every registered year ([061210d](https://github.com/wouterdamman/home-finance/commit/061210d32425ac366a538faade581bec5bd0a273))
+
 ## [1.5.0](https://github.com/wouterdamman/home-finance/compare/v1.4.0...v1.5.0) (2026-07-17)
 
 
