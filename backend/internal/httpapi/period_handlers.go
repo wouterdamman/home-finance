@@ -38,14 +38,8 @@ func (s *Server) handleListPeriods(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT p.id, p.year, p.month, p.status, p.closed_at,
-		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
-		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id = ie.period_id AND it.source_id = ie.source_id), 0)
-		    ELSE ie.amount_cents END)
-		  FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id = ie.source_id WHERE ie.period_id = p.id), 0),
-		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
-		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id = bl.period_id AND t.category_id = bl.category_id), 0)
-		    ELSE bl.amount_cents END)
-		  FROM budget_lines bl WHERE bl.period_id = p.id), 0)
+		  (SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id = ie.source_id WHERE ie.period_id = p.id),
+		  (SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id = p.id)
 		FROM periods p WHERE p.year = $1 ORDER BY p.month`, year)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -353,15 +347,11 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var incomeTotal, expenseTotal int64
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, id).Scan(&incomeTotal); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=$1`, id).Scan(&incomeTotal); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
-	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(SUM(CASE WHEN bl.tracks_transactions
-		  THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
-		  ELSE bl.amount_cents END),0)
-		FROM budget_lines bl WHERE bl.period_id=$1`, id).Scan(&expenseTotal); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=$1`, id).Scan(&expenseTotal); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
@@ -1119,13 +1109,8 @@ func (s *Server) handleYearSummary(w http.ResponseWriter, r *http.Request) {
 
 	rows, _ := s.pool.Query(ctx, `
 		SELECT p.month, p.id, p.status,
-		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
-		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
-		    ELSE ie.amount_cents END)
-		  FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=p.id),0),
-		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
-		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
-		    ELSE bl.amount_cents END) FROM budget_lines bl WHERE bl.period_id=p.id),0)
+		  (SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=p.id),
+		  (SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=p.id)
 		FROM periods p WHERE p.year=$1 ORDER BY p.month`, year)
 	defer rows.Close()
 
@@ -1194,19 +1179,15 @@ func (s *Server) handleTrendsYears(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT y.year,
-		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
-		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
-		    ELSE ie.amount_cents END)
+		  (SELECT `+domain.EffectiveIncomeCentsSQL+`
 		  FROM income_entries ie
 		  JOIN periods p ON p.id=ie.period_id
 		  LEFT JOIN income_sources isrc ON isrc.id=ie.source_id
-		  WHERE p.year=y.year),0),
-		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
-		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
-		    ELSE bl.amount_cents END)
+		  WHERE p.year=y.year),
+		  (SELECT `+domain.EffectiveExpenseCentsSQL+`
 		  FROM budget_lines bl
 		  JOIN periods p ON p.id=bl.period_id
-		  WHERE p.year=y.year),0)
+		  WHERE p.year=y.year)
 		FROM years y ORDER BY y.year`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -1238,13 +1219,8 @@ func (s *Server) handleTrendsMonthlyTotals(w http.ResponseWriter, r *http.Reques
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.year, p.month,
-		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
-		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
-		    ELSE ie.amount_cents END)
-		  FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=p.id),0),
-		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
-		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
-		    ELSE bl.amount_cents END) FROM budget_lines bl WHERE bl.period_id=p.id),0)
+		  (SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=p.id),
+		  (SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=p.id)
 		FROM periods p ORDER BY p.year, p.month`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())

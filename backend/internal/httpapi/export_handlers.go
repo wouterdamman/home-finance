@@ -125,18 +125,24 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	row++
 
 	incRows, _ := s.pool.Query(ctx, `
-		SELECT COALESCE(src.name, ie.label, ''), ie.amount_cents
+		SELECT COALESCE(src.name, ie.label, ''), ie.amount_cents, COALESCE(src.is_itemized,false),
+		  COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
 		FROM income_entries ie LEFT JOIN income_sources src ON src.id = ie.source_id
 		WHERE ie.period_id=$1 ORDER BY ie.sort_order, ie.id`, periodID)
 	for incRows.Next() {
 		var label string
-		var cents int64
-		if incRows.Scan(&label, &cents) != nil {
+		var cents, txCents int64
+		var itemized bool
+		if incRows.Scan(&label, &cents, &itemized, &txCents) != nil {
 			continue
 		}
+		effective := cents
+		if itemized {
+			effective = txCents
+		}
 		f.SetCellValue(sheetName, cellRef("A", row), label)
-		f.SetCellValue(sheetName, cellRef("B", row), float64(cents)/100)
-		incomeTotal += cents
+		f.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
+		incomeTotal += effective
 		row++
 	}
 	incRows.Close()

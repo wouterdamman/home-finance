@@ -223,14 +223,8 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 
 		// Calculate totals for report
 		var incTotal, expTotal int64
-		pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1 AND entry_type='normal'`, periodID).Scan(&incTotal)
-		pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(
-				CASE WHEN bl.tracks_transactions
-				THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
-				ELSE bl.amount_cents END
-			),0)
-			FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
+		pool.QueryRow(ctx, `SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=$1 AND ie.entry_type='normal'`, periodID).Scan(&incTotal)
+		pool.QueryRow(ctx, `SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
 
 		mr := MonthReport{
 			Month:             monthNum,
@@ -282,14 +276,8 @@ func closePeriod(ctx context.Context, pool *pgxpool.Pool, periodID int64, potIDs
 	}
 
 	var incTotal, expTotal int64
-	pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_cents),0) FROM income_entries WHERE period_id=$1`, periodID).Scan(&incTotal)
-	pool.QueryRow(ctx, `
-		SELECT COALESCE(SUM(
-			CASE WHEN bl.tracks_transactions
-			THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
-			ELSE bl.amount_cents END
-		),0)
-		FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
+	pool.QueryRow(ctx, `SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=$1`, periodID).Scan(&incTotal)
+	pool.QueryRow(ctx, `SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal)
 	surplus := incTotal - expTotal
 
 	allocs := domain.LargestRemainderSplit(surplus, inputs)
