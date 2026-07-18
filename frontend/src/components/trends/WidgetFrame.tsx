@@ -4,28 +4,33 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { IconGripVertical, IconEyeOff, IconSettings } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
+import type { WidgetWidth, WidgetHeight } from '../../lib/trendsDashboard'
 
 interface Props {
   id: string
   title: string
   editMode: boolean
+  width: WidgetWidth
+  height: WidgetHeight
   onHide: () => void
   onConfigure?: () => void
   children: ReactNode
 }
 
-export default function WidgetFrame({ id, title, editMode, onHide, onConfigure, children }: Props) {
+export default function WidgetFrame({ id, title, editMode, width, height, onHide, onConfigure, children }: Props) {
   const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !editMode })
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    gridColumn: `span ${width}`,
+    gridRow: `span ${height}`,
   }
 
   return (
-    <Paper ref={setNodeRef} style={style} shadow="xs" p="sm" withBorder>
-      <Group justify="space-between" mb={4} wrap="nowrap">
+    <Paper ref={setNodeRef} style={{ ...style, height: '100%', display: 'flex', flexDirection: 'column' }} shadow="xs" p="sm" withBorder>
+      <Group justify="space-between" mb={4} wrap="nowrap" style={{ flexShrink: 0 }}>
         <Group gap={4} wrap="nowrap" style={{ minWidth: 0 }}>
           {editMode && (
             <ActionIcon variant="subtle" color="gray" size="sm" style={{ touchAction: 'none', cursor: 'grab' }} aria-label={t('trends.dragHandle')} {...attributes} {...listeners}>
@@ -51,7 +56,9 @@ export default function WidgetFrame({ id, title, editMode, onHide, onConfigure, 
           </Group>
         )}
       </Group>
-      {children}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {children}
+      </div>
     </Paper>
   )
 }

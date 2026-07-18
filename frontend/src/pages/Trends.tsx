@@ -11,7 +11,7 @@ import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortab
 import { useTrendsYears, useTrendsCategoryTotals, useYears } from '../api/hooks/usePeriods'
 import type { TrendsFilter } from '../lib/trendsFilter'
 import { MAX_COMPARE_YEARS, loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
-import type { Widget, WidgetConfig } from '../lib/trendsDashboard'
+import type { Widget, WidgetConfig, WidgetWidth, WidgetHeight } from '../lib/trendsDashboard'
 import { loadDashboard, saveDashboard, defaultWidgets, newWidget } from '../lib/trendsDashboard'
 import type { CategoryTotalsCategory } from '../api/types'
 import WidgetFrame from '../components/trends/WidgetFrame'
@@ -20,6 +20,12 @@ import CategoryWidget from '../components/trends/CategoryWidget'
 import YearCompareWidget from '../components/trends/YearCompareWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
+
+// A fixed row-track height (rather than auto-sized rows) is what lets
+// `gridAutoFlow: dense` pack a short widget into the space beside a tall
+// one — auto rows size to their tallest occupant, which just stretches
+// shorter siblings with dead space instead of stacking anything.
+const ROW_UNIT_PX = 90
 
 function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string) => string): string {
   if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
@@ -30,6 +36,13 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
 export default function Trends() {
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
+  // Matches the SimpleGrid's own `sm`/`lg` breakpoints below (cols base:1,
+  // sm:2, lg:4) so a widget's configured span never exceeds the grid's
+  // actual column count — spanning more than the explicit columns forces
+  // CSS Grid to add implicit ones, which can push the grid wider than its
+  // container.
+  const isMediumWidth = useMediaQuery('(max-width: 74.99em)')
+  const maxWidgetWidth: WidgetWidth = isMobile ? 1 : isMediumWidth ? 2 : 4
   const yearsQuery = useTrendsYears()
   const categoryQuery = useTrendsCategoryTotals()
   const registeredYearsQuery = useYears()
@@ -109,13 +122,13 @@ export default function Trends() {
     updateDashboard([...reordered, ...hiddenWidgets])
   }
 
-  const handleAddWidget = (config: WidgetConfig) => {
-    updateDashboard([...dashboard, newWidget(config)])
+  const handleAddWidget = (config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => {
+    updateDashboard([...dashboard, { ...newWidget(config), width, height }])
   }
 
-  const handleSaveWidgetConfig = (config: WidgetConfig) => {
+  const handleSaveWidgetConfig = (config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => {
     if (!editingWidgetId) return
-    updateDashboard(dashboard.map((w) => (w.id === editingWidgetId ? { ...w, config } : w)))
+    updateDashboard(dashboard.map((w) => (w.id === editingWidgetId ? { ...w, config, width, height } : w)))
   }
 
   const handleYearClick = (year: number) => {
@@ -187,13 +200,15 @@ export default function Trends() {
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={visibleWidgets.map((w) => w.id)} strategy={rectSortingStrategy}>
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} style={{ gridAutoFlow: 'dense', gridAutoRows: `${ROW_UNIT_PX}px` }}>
               {visibleWidgets.map((w) => (
                 <WidgetFrame
                   key={w.id}
                   id={w.id}
                   title={widgetTitle(w.config, catData.categories, t)}
                   editMode={editMode}
+                  width={Math.min(w.width, maxWidgetWidth) as WidgetWidth}
+                  height={w.height}
                   onHide={() => handleSetVisible(w.id, false)}
                   onConfigure={() => { setEditingWidgetId(w.id); setModalOpened(true) }}
                 >
@@ -233,6 +248,8 @@ export default function Trends() {
         onSubmit={editingWidget ? handleSaveWidgetConfig : handleAddWidget}
         categories={catData.categories}
         initial={editingWidget?.config}
+        initialWidth={editingWidget?.width}
+        initialHeight={editingWidget?.height}
       />
     </Stack>
   )

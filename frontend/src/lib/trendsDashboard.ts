@@ -5,9 +5,21 @@ export type WidgetConfig =
   | { type: 'categoryChart'; categoryId: number; chartKind: ChartKind }
   | { type: 'yearCompare'; chartKind: ChartKind }
 
+// Size in grid units. Width = columns (desktop grid is 4 wide, see
+// Trends.tsx's SimpleGrid `cols`). Height = row-units of a fixed
+// `ROW_UNIT_PX` each (see Trends.tsx) — fixed row tracks are what make
+// `gridAutoFlow: dense` actually pack smaller widgets into the leftover
+// space next to a bigger one; auto-sized rows can't do that (a shorter
+// neighbour just gets stretched with dead space, which is the bug this
+// replaced).
+export type WidgetWidth = 1 | 2 | 3 | 4
+export type WidgetHeight = 1 | 2 | 3 | 4
+
 export interface Widget {
   id: string
   visible: boolean
+  width: WidgetWidth
+  height: WidgetHeight
   config: WidgetConfig
 }
 
@@ -18,19 +30,22 @@ function genId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function defaultHeight(config: WidgetConfig): WidgetHeight {
+  if (config.type === 'kpi') return 1
+  if (config.type === 'yearCompare') return 3
+  return 2
+}
+
 export function defaultWidgets(categories: { id: number; name: string }[]): Widget[] {
-  const kpiMetrics: WidgetConfig[] = [
+  const configs: WidgetConfig[] = [
     { type: 'kpi', metric: 'income' },
     { type: 'kpi', metric: 'expenses' },
     { type: 'kpi', metric: 'surplus' },
     { type: 'kpi', metric: 'yearsTracked' },
+    { type: 'yearCompare', chartKind: 'bar' },
+    ...categories.slice(0, DEFAULT_CATEGORY_COUNT).map((cat): WidgetConfig => ({ type: 'categoryChart', categoryId: cat.id, chartKind: 'line' })),
   ]
-  const widgets: Widget[] = kpiMetrics.map((config) => ({ id: genId(), visible: true, config }))
-  widgets.push({ id: genId(), visible: true, config: { type: 'yearCompare', chartKind: 'bar' } })
-  for (const cat of categories.slice(0, DEFAULT_CATEGORY_COUNT)) {
-    widgets.push({ id: genId(), visible: true, config: { type: 'categoryChart', categoryId: cat.id, chartKind: 'line' } })
-  }
-  return widgets
+  return configs.map((config) => ({ id: genId(), visible: true, width: 1, height: defaultHeight(config), config }))
 }
 
 export function loadDashboard(): Widget[] | null {
@@ -39,7 +54,13 @@ export function loadDashboard(): Widget[] | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as { widgets?: unknown }
     if (!Array.isArray(parsed.widgets)) return null
-    return parsed.widgets as Widget[]
+    // Widgets saved before `width`/`height` existed don't have the fields —
+    // default them rather than letting `gridColumn/gridRow: span undefined` break.
+    return (parsed.widgets as Widget[]).map((w) => ({
+      ...w,
+      width: w.width ?? 1,
+      height: w.height ?? defaultHeight(w.config),
+    }))
   } catch {
     return null
   }
@@ -50,5 +71,5 @@ export function saveDashboard(widgets: Widget[]) {
 }
 
 export function newWidget(config: WidgetConfig): Widget {
-  return { id: genId(), visible: true, config }
+  return { id: genId(), visible: true, width: 1, height: defaultHeight(config), config }
 }

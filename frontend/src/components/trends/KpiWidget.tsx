@@ -45,14 +45,16 @@ export default function KpiWidget({ metric, filter, allYears }: Props) {
   })
 
   return (
-    <BarChart
-      h={100}
-      data={data}
-      dataKey="year"
-      withLegend={false}
-      withYAxis={false}
-      valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-      series={[{ name: 'value', color: METRIC_COLOR[metric] }]}
-    />
+    <div style={{ flex: 1, minHeight: 0 }}>
+      <BarChart
+        h="100%"
+        data={data}
+        dataKey="year"
+        withLegend={false}
+        withYAxis={false}
+        valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+        series={[{ name: 'value', color: METRIC_COLOR[metric] }]}
+      />
+    </div>
   )
 }

@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react'
-import { Modal, Select, SegmentedControl, Stack, Button, Text } from '@mantine/core'
+import { Modal, Select, SegmentedControl, Stack, Button, Text, Divider } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
-import type { WidgetConfig, ChartKind } from '../../lib/trendsDashboard'
+import type { WidgetConfig, ChartKind, WidgetWidth, WidgetHeight } from '../../lib/trendsDashboard'
 import type { CategoryTotalsCategory } from '../../api/types'
+import SizeGridPicker from './SizeGridPicker'
 
 type BaseType = WidgetConfig['type']
 
 interface Props {
   opened: boolean
   onClose: () => void
-  onSubmit: (config: WidgetConfig) => void
+  onSubmit: (config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => void
   categories: CategoryTotalsCategory[]
   initial?: WidgetConfig
+  initialWidth?: WidgetWidth
+  initialHeight?: WidgetHeight
 }
 
-export default function WidgetModal({ opened, onClose, onSubmit, categories, initial }: Props) {
+export default function WidgetModal({ opened, onClose, onSubmit, categories, initial, initialWidth, initialHeight }: Props) {
   const { t } = useTranslation()
   const [type, setType] = useState<BaseType>(initial?.type ?? 'categoryChart')
   const [metric, setMetric] = useState<string>(initial?.type === 'kpi' ? initial.metric : 'income')
@@ -24,6 +27,8 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
   const [chartKind, setChartKind] = useState<ChartKind>(
     initial && initial.type !== 'kpi' ? initial.chartKind : 'line',
   )
+  const [width, setWidth] = useState<WidgetWidth>(initialWidth ?? 1)
+  const [height, setHeight] = useState<WidgetHeight>(initialHeight ?? 2)
 
   useEffect(() => {
     if (!opened) return
@@ -31,19 +36,21 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
     setMetric(initial?.type === 'kpi' ? initial.metric : 'income')
     setCategoryId(initial?.type === 'categoryChart' ? String(initial.categoryId) : (categories[0] ? String(categories[0].id) : null))
     setChartKind(initial && initial.type !== 'kpi' ? initial.chartKind : 'line')
+    setWidth(initialWidth ?? 1)
+    setHeight(initialHeight ?? 2)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, initial])
+  }, [opened, initial, initialWidth, initialHeight])
 
   const canSubmit = type !== 'categoryChart' || categoryId != null
 
   const handleSubmit = () => {
     if (type === 'kpi') {
-      onSubmit({ type: 'kpi', metric: metric as 'income' | 'expenses' | 'surplus' | 'yearsTracked' })
+      onSubmit({ type: 'kpi', metric: metric as 'income' | 'expenses' | 'surplus' | 'yearsTracked' }, width, height)
     } else if (type === 'categoryChart') {
       if (!categoryId) return
-      onSubmit({ type: 'categoryChart', categoryId: Number(categoryId), chartKind })
+      onSubmit({ type: 'categoryChart', categoryId: Number(categoryId), chartKind }, width, height)
     } else {
-      onSubmit({ type: 'yearCompare', chartKind })
+      onSubmit({ type: 'yearCompare', chartKind }, width, height)
     }
     onClose()
   }
@@ -111,6 +118,9 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, ini
             ]}
           />
         )}
+
+        <Divider my={4} />
+        <SizeGridPicker width={width} height={height} onChange={(w, h) => { setWidth(w); setHeight(h) }} />
 
         <Button disabled={!canSubmit} onClick={handleSubmit}>
           {initial ? t('common.save') : t('common.add')}

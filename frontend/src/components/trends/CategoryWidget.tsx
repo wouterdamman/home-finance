@@ -5,6 +5,7 @@ import { YEAR_COLORS } from '../../lib/trendsFilter'
 import type { CategoryTotals } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents } from '../../lib/money'
+import { niceAxisTicks } from '../../lib/chartAxis'
 import ChartLegend from './ChartLegend'
 
 const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
@@ -28,15 +29,19 @@ export default function CategoryWidget({ categoryId, chartKind, filter, catData 
       const entry = catData.entries.find((e) => e.year === filter.year && e.month === i + 1)
       return { month: label, value: (entry?.values[String(categoryId)] ?? 0) / 100 }
     })
+    const ticks = niceAxisTicks(Math.max(...data.map((d) => d.value), 0))
     return (
-      <Chart
-        h={140}
-        data={data}
-        dataKey="month"
-        withLegend={false}
-        valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-        series={[{ name: 'value', color: 'teal.6' }]}
-      />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <Chart
+          h="100%"
+          data={data}
+          dataKey="month"
+          withLegend={false}
+          valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+          series={[{ name: 'value', color: 'teal.6' }]}
+          yAxisProps={{ ticks, domain: [0, ticks[ticks.length - 1]] }}
+        />
+      </div>
     )
   }
 
@@ -50,18 +55,23 @@ export default function CategoryWidget({ categoryId, chartKind, filter, catData 
     return row
   })
   const series = years.map((y, idx) => ({ name: String(y), color: YEAR_COLORS[idx] }))
+  const maxValue = Math.max(...data.flatMap((row) => years.map((y) => Number(row[String(y)]) || 0)), 0)
+  const ticks = niceAxisTicks(maxValue)
 
   return (
     <>
-      <ChartLegend series={series} />
-      <Chart
-        h={140}
-        data={data}
-        dataKey="month"
-        withLegend={false}
-        valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-        series={series}
-      />
+      <div style={{ flexShrink: 0 }}><ChartLegend series={series} /></div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <Chart
+          h="100%"
+          data={data}
+          dataKey="month"
+          withLegend={false}
+          valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+          series={series}
+          yAxisProps={{ ticks, domain: [0, ticks[ticks.length - 1]] }}
+        />
+      </div>
     </>
   )
 }

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { YearTrend } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
+import { niceAxisTicks } from '../../lib/chartAxis'
 import ChartLegend from './ChartLegend'
 
 interface Props {
@@ -40,23 +41,27 @@ export default function YearCompareWidget({ chartKind, allYears, onYearClick }: 
     { name: t('year.expenses'), color: 'red.6', type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
     { name: t('year.surplus'), color: 'blue.6', type: 'line' as const },
   ]
+  const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
+  const ticks = niceAxisTicks(maxValue)
 
   return (
-    <div>
-      <ChartLegend series={series.map((s) => ({ name: s.name, color: s.color }))} />
-      <div style={{ cursor: 'pointer' }}>
+    <>
+      <div style={{ flexShrink: 0 }}>
+        <ChartLegend series={series.map((s) => ({ name: s.name, color: s.color }))} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, cursor: 'pointer' }}>
         <CompositeChart
-          h={220}
+          h="100%"
           data={data}
           dataKey="year"
           withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56 }}
+          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
           series={series}
           composedChartProps={{ onClick: handleClick }}
         />
       </div>
-      <Text size="xs" c="dimmed" ta="center" mt={2}>{t('trends.clickYearHint')}</Text>
-    </div>
+      <Text size="xs" c="dimmed" ta="center" mt={2} style={{ flexShrink: 0 }}>{t('trends.clickYearHint')}</Text>
+    </>
   )
 }
