@@ -226,7 +226,6 @@ function PaletteDots({ paletteId }: { paletteId: PaletteId }) {
 function PreferencesTab() {
   const { t, i18n } = useTranslation()
   const { colorScheme, setColorScheme } = useMantineColorScheme()
-  const { paletteId, setPaletteId } = useChartPalette()
 
   return (
     <Stack gap="lg" maw={360}>
@@ -251,24 +250,6 @@ function PreferencesTab() {
           data={[{ value: 'nl', label: 'Nederlands' }, { value: 'en', label: 'English' }]}
           value={i18n.language.startsWith('nl') ? 'nl' : 'en'}
           onChange={(v) => v && i18n.changeLanguage(v)}
-        />
-      </Stack>
-      <Stack gap="xs">
-        <Text size="sm" fw={600}>{t('settings.chartPalette')}</Text>
-        <SegmentedControl
-          value={paletteId}
-          onChange={(v) => setPaletteId(v as PaletteId)}
-          aria-label={t('settings.chartPalette')}
-          fullWidth
-          data={PALETTE_IDS.map((id) => ({
-            value: id,
-            label: (
-              <Stack gap={2} align="center">
-                <PaletteDots paletteId={id} />
-                <Text size="xs">{t(`settings.palette_${id}`)}</Text>
-              </Stack>
-            ),
-          }))}
         />
       </Stack>
     </Stack>
@@ -1351,6 +1332,7 @@ function ProfileTab() {
   const { data: me } = useMe()
   const updateMe = useUpdateMe()
   const uploadAvatar = useUploadAvatar()
+  const { paletteId, setPaletteId } = useChartPalette()
   const [name, setName] = useState('')
 
   useEffect(() => {
@@ -1387,6 +1369,27 @@ function ProfileTab() {
       <Button onClick={() => updateMe.mutate(name)} loading={updateMe.isPending} disabled={!name}>
         {t('common.save')}
       </Button>
+
+      <Divider my={4} />
+
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>{t('settings.chartPalette')}</Text>
+        <SegmentedControl
+          value={paletteId}
+          onChange={(v) => setPaletteId(v as PaletteId)}
+          aria-label={t('settings.chartPalette')}
+          fullWidth
+          data={PALETTE_IDS.map((id) => ({
+            value: id,
+            label: (
+              <Stack gap={2} align="center">
+                <PaletteDots paletteId={id} />
+                <Text size="xs">{t(`settings.palette_${id}`)}</Text>
+              </Stack>
+            ),
+          }))}
+        />
+      </Stack>
     </Stack>
   )
 }
