@@ -45,7 +45,59 @@ function defaultHeight(config: WidgetConfig): WidgetHeight {
   return 2
 }
 
-const KNOWN_WIDGET_TYPES: WidgetConfig['type'][] = ['kpi', 'categoryChart', 'monthCompare', 'allTimeTrend', 'monthAcrossYears']
+function isNumberArray(v: unknown): v is number[] {
+  return Array.isArray(v) && v.every((x) => typeof x === 'number')
+}
+
+function normalizeChartKind(v: unknown): ChartKind {
+  return v === 'bar' ? 'bar' : 'line'
+}
+
+// Validates (and where possible migrates) a persisted widget config's shape.
+// Storage-schema changes have broken this before — `categoryChart` moved from
+// a single `categoryId: number` to `categoryIds: number[]` under the same
+// storage key, and an unvalidated old config crashed the page with
+// `config.categoryIds.map is not a function`. Returns null for configs that
+// can't be salvaged, so the widget gets dropped instead of crashing the page.
+function sanitizeConfig(config: unknown): WidgetConfig | null {
+  if (typeof config !== 'object' || config === null || !('type' in config)) return null
+  const c = config as Record<string, unknown>
+  switch (c.type) {
+    case 'kpi':
+      if (c.metric === 'income' || c.metric === 'expenses' || c.metric === 'surplus' || c.metric === 'yearsTracked') {
+        return { type: 'kpi', metric: c.metric }
+      }
+      return null
+    case 'categoryChart': {
+      let categoryIds: number[] | null = null
+      if (isNumberArray(c.categoryIds) && c.categoryIds.length > 0) {
+        categoryIds = c.categoryIds
+      } else if (typeof c.categoryId === 'number') {
+        // Pre-multi-select shape: migrate the single id into the array form.
+        categoryIds = [c.categoryId]
+      }
+      if (categoryIds == null) return null
+      return { type: 'categoryChart', categoryIds, chartKind: normalizeChartKind(c.chartKind) }
+    }
+    case 'monthCompare':
+      if (typeof c.year === 'number' && isNumberArray(c.months) && c.months.length > 0) {
+        return { type: 'monthCompare', year: c.year, months: c.months, chartKind: normalizeChartKind(c.chartKind) }
+      }
+      return null
+    case 'allTimeTrend':
+      if (typeof c.fromYear === 'number' && typeof c.toYear === 'number') {
+        return { type: 'allTimeTrend', fromYear: c.fromYear, toYear: c.toYear, chartKind: normalizeChartKind(c.chartKind) }
+      }
+      return null
+    case 'monthAcrossYears':
+      if (typeof c.month === 'number' && isNumberArray(c.years) && c.years.length > 0) {
+        return { type: 'monthAcrossYears', month: c.month, years: c.years, chartKind: normalizeChartKind(c.chartKind) }
+      }
+      return null
+    default:
+      return null
+  }
+}
 
 // One multi-category widget (not 8 separate ones — that was the clutter
 // complaint) with the biggest-spend categories, plus a recent-months
@@ -81,14 +133,22 @@ export function loadDashboard(): Widget[] | null {
     // Widgets saved before `width`/`height` existed don't have the fields —
     // default them rather than letting `gridColumn/gridRow: span undefined` break.
     // Widgets whose type has since been removed (e.g. the retired
-    // `yearCompare`) are dropped rather than crashing the render.
-    return (parsed.widgets as Widget[])
-      .filter((w) => KNOWN_WIDGET_TYPES.includes(w.config?.type))
-      .map((w) => ({
-        ...w,
-        width: w.width ?? 1,
-        height: w.height ?? defaultHeight(w.config),
-      }))
+    // `yearCompare`) or whose config shape doesn't match the current schema
+    // (e.g. pre-multi-select `categoryChart`) are dropped/migrated rather
+    // than crashing the render — see sanitizeConfig.
+    const out: Widget[] = []
+    for (const w of parsed.widgets as Record<string, unknown>[]) {
+      const config = sanitizeConfig(w.config)
+      if (config == null || typeof w.id !== 'string') continue
+      out.push({
+        id: w.id,
+        visible: typeof w.visible === 'boolean' ? w.visible : true,
+        width: (typeof w.width === 'number' ? w.width : 1) as WidgetWidth,
+        height: (typeof w.height === 'number' ? w.height : defaultHeight(config)) as WidgetHeight,
+        config,
+      })
+    }
+    return out
   } catch {
     return null
   }
