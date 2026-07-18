@@ -1225,6 +1225,44 @@ func (s *Server) handleTrendsYears(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, out)
 }
 
+func (s *Server) handleTrendsMonthlyTotals(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	type monthlyTotal struct {
+		Year              int   `json:"year"`
+		Month             int   `json:"month"`
+		IncomeTotalCents  int64 `json:"incomeTotalCents"`
+		ExpenseTotalCents int64 `json:"expenseTotalCents"`
+		SurplusCents      int64 `json:"surplusCents"`
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.year, p.month,
+		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
+		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
+		    ELSE ie.amount_cents END)
+		  FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=p.id),0),
+		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
+		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+		    ELSE bl.amount_cents END) FROM budget_lines bl WHERE bl.period_id=p.id),0)
+		FROM periods p ORDER BY p.year, p.month`)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]monthlyTotal, 0)
+	for rows.Next() {
+		var mt monthlyTotal
+		if err := rows.Scan(&mt.Year, &mt.Month, &mt.IncomeTotalCents, &mt.ExpenseTotalCents); err != nil {
+			continue
+		}
+		mt.SurplusCents = mt.IncomeTotalCents - mt.ExpenseTotalCents
+		out = append(out, mt)
+	}
+	JSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

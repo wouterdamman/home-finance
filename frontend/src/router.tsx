@@ -7,6 +7,7 @@ import AppShell from './components/AppShell'
 const Login = lazy(() => import('./pages/Login'))
 const YearDashboard = lazy(() => import('./pages/YearDashboard'))
 const Trends = lazy(() => import('./pages/Trends'))
+const MonthCompareDetail = lazy(() => import('./pages/MonthCompareDetail'))
 const MonthOverview = lazy(() => import('./pages/MonthOverview'))
 const MonthTransactions = lazy(() => import('./pages/MonthTransactions'))
 const IncomeTransactions = lazy(() => import('./pages/IncomeTransactions'))
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to={`/years/${new Date().getFullYear()}`} replace /> },
       { path: '/years/:year', element: <Suspense fallback={fallback}><YearDashboard /></Suspense> },
       { path: '/trends', element: <Suspense fallback={fallback}><Trends /></Suspense> },
+      { path: '/trends/months', element: <Suspense fallback={fallback}><MonthCompareDetail /></Suspense> },
       { path: '/months/:year/:month', element: <Suspense fallback={fallback}><MonthOverview /></Suspense> },
       { path: '/months/:year/:month/transactions', element: <Suspense fallback={fallback}><MonthTransactions /></Suspense> },
       { path: '/months/:year/:month/income', element: <Suspense fallback={fallback}><IncomeTransactions /></Suspense> },

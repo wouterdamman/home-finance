@@ -1,0 +1,82 @@
+import { Skeleton, Text } from '@mantine/core'
+import { CompositeChart } from '@mantine/charts'
+import { useTranslation } from 'react-i18next'
+import { useQueries } from '@tanstack/react-query'
+import { api } from '../../api/client'
+import type { YearSummary } from '../../api/types'
+import type { ChartKind } from '../../lib/trendsDashboard'
+import { formatCents } from '../../lib/money'
+import { niceAxisTicks } from '../../lib/chartAxis'
+import ChartLegend from './ChartLegend'
+
+const MONTHS_NL = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+interface Props {
+  month: number
+  years: number[]
+  chartKind: ChartKind
+}
+
+// X-axis = years (one point per selected year), 3 fixed-color series for
+// income/expenses/surplus of that single month — mirrors YearCompareWidget's
+// convention rather than putting the 3 metrics on the x-axis, which would
+// wrongly imply a continuum between unrelated measures.
+export default function MonthAcrossYearsWidget({ month, years, chartKind }: Props) {
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
+  const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
+  const sortedYears = [...years].sort((a, b) => a - b)
+
+  const results = useQueries({
+    queries: sortedYears.map((year) => ({
+      queryKey: ['year-summary', year],
+      queryFn: () => api.get<YearSummary>(`/api/years/${year}/summary`),
+    })),
+  })
+
+  if (sortedYears.length === 0) {
+    return <Text size="sm" c="dimmed">{t('trends.selectYearsHint')}</Text>
+  }
+  if (results.some((r) => r.isLoading)) return <Skeleton h="100%" />
+  if (results.some((r) => !r.data)) return <Text size="sm" c="dimmed">{t('trends.noData')}</Text>
+
+  const chartData = sortedYears.map((year, i) => {
+    const row = results[i].data!.months[month - 1]
+    return {
+      year: String(year),
+      [t('year.income')]: row.incomeTotalCents / 100,
+      [t('year.expenses')]: row.expenseTotalCents / 100,
+      [t('year.surplus')]: row.surplusCents / 100,
+    }
+  })
+
+  const markType = chartKind === 'bar' ? 'bar' : 'line'
+  const series = [
+    { name: t('year.income'), color: 'teal.6', type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
+    { name: t('year.expenses'), color: 'red.6', type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
+    { name: t('year.surplus'), color: 'blue.6', type: 'line' as const },
+  ]
+  const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
+  const ticks = niceAxisTicks(maxValue)
+
+  return (
+    <>
+      <Text size="xs" c="dimmed" ta="center" style={{ flexShrink: 0 }}>{monthNames[month - 1]}</Text>
+      <div style={{ flexShrink: 0 }}>
+        <ChartLegend series={series.map((s) => ({ name: s.name, color: s.color }))} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <CompositeChart
+          h="100%"
+          data={chartData}
+          dataKey="year"
+          withLegend={false}
+          valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+          yAxisProps={{ ticks, domain: [0, ticks[ticks.length - 1]] }}
+          series={series}
+        />
+      </div>
+    </>
+  )
+}

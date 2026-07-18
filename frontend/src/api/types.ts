@@ -159,6 +159,14 @@ export interface YearTrend {
   surplusCents: number
 }
 
+export interface TrendsMonthlyTotal {
+  year: number
+  month: number
+  incomeTotalCents: number
+  expenseTotalCents: number
+  surplusCents: number
+}
+
 export interface IncomeSource {
   id: number
   name: string

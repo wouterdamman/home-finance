@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Title, Skeleton, Alert, Text, Stack, SimpleGrid, Group, SegmentedControl, Select, MultiSelect, ActionIcon, Tooltip, Button, Chip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
-import { IconPencil, IconCheck, IconPlus, IconEye } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
+import { IconPencil, IconCheck, IconPlus, IconEye, IconArrowsLeftRight } from '@tabler/icons-react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -19,8 +20,13 @@ import KpiWidget from '../components/trends/KpiWidget'
 import CategoryWidget from '../components/trends/CategoryWidget'
 import YearCompareWidget from '../components/trends/YearCompareWidget'
 import MonthCompareWidget from '../components/trends/MonthCompareWidget'
+import AllTimeTrendWidget from '../components/trends/AllTimeTrendWidget'
+import MonthAcrossYearsWidget from '../components/trends/MonthAcrossYearsWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
+
+const MONTH_NAMES_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
+const MONTH_NAMES_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // A fixed row-track height (rather than auto-sized rows) is what lets
 // `gridAutoFlow: dense` pack a short widget into the space beside a tall
@@ -28,15 +34,19 @@ import EmptyState from '../components/EmptyState'
 // shorter siblings with dead space instead of stacking anything.
 const ROW_UNIT_PX = 90
 
-function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string, opts?: Record<string, unknown>) => string): string {
+function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string, opts?: Record<string, unknown>) => string, monthNames: string[]): string {
   if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
   if (config.type === 'yearCompare') return t('trends.yearsTitle')
   if (config.type === 'monthCompare') return t('trends.monthsTitle', { year: config.year })
-  return categories.find((c) => c.id === config.categoryId)?.name ?? t('trends.unknownCategory')
+  if (config.type === 'allTimeTrend') return t('trends.allTimeTrendTitle', { fromYear: config.fromYear, toYear: config.toYear })
+  if (config.type === 'monthAcrossYears') return t('trends.monthAcrossYearsTitle', { month: monthNames[config.month - 1] })
+  if (config.type === 'categoryChart') return categories.find((c) => c.id === config.categoryId)?.name ?? t('trends.unknownCategory')
+  return t('trends.unknownCategory')
 }
 
 export default function Trends() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const monthNames = i18n.language.startsWith('nl') ? MONTH_NAMES_NL : MONTH_NAMES_EN
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   // Matches the SimpleGrid's own `sm`/`lg` breakpoints below (cols base:1,
   // sm:2, lg:4) so a widget's configured span never exceeds the grid's
@@ -71,12 +81,12 @@ export default function Trends() {
   const defaultYearPool = registeredYears.length > 0 ? registeredYears : yearsWithData
 
   useEffect(() => {
-    if (dashboard === null && categoryQuery.data) {
-      const generated = defaultWidgets(categoryQuery.data.categories)
+    if (dashboard === null && registeredYears.length > 0) {
+      const generated = defaultWidgets(registeredYears)
       setDashboard(generated)
       saveDashboard(generated)
     }
-  }, [dashboard, categoryQuery.data])
+  }, [dashboard, registeredYears])
 
   useEffect(() => {
     if (filter === null && registeredYears.length > 0) {
@@ -140,11 +150,17 @@ export default function Trends() {
   const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
 
   const renderWidgetBody = (config: WidgetConfig) => {
-    // Self-contained — has its own year/months, doesn't depend on the
-    // page-level year filter at all, so it's checked before that filter's
-    // own empty-selection guard below.
+    // Self-contained — each has its own year/month(s), doesn't depend on the
+    // page-level year filter at all, so these are checked before that
+    // filter's own empty-selection guard below.
     if (config.type === 'monthCompare') {
       return <MonthCompareWidget year={config.year} months={config.months} chartKind={config.chartKind} />
+    }
+    if (config.type === 'allTimeTrend') {
+      return <AllTimeTrendWidget fromYear={config.fromYear} toYear={config.toYear} chartKind={config.chartKind} />
+    }
+    if (config.type === 'monthAcrossYears') {
+      return <MonthAcrossYearsWidget month={config.month} years={config.years} chartKind={config.chartKind} />
     }
     if (filter.mode === 'compare' && filter.years.length === 0) {
       return <Text size="sm" c="dimmed">{t('trends.selectYearsHint')}</Text>
@@ -158,11 +174,16 @@ export default function Trends() {
     <Stack gap="xl">
       <Group justify="space-between" wrap="wrap">
         <Title order={isMobile ? 3 : 2}>{t('trends.title')}</Title>
-        <Tooltip label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')}>
-          <ActionIcon variant={editMode ? 'filled' : 'subtle'} size="lg" aria-label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')} onClick={() => setEditMode((v) => !v)}>
-            {editMode ? <IconCheck size={18} /> : <IconPencil size={18} />}
-          </ActionIcon>
-        </Tooltip>
+        <Group gap="xs" wrap="nowrap">
+          <Button component={Link} to="/trends/months" variant="light" size={isMobile ? 'xs' : 'sm'} leftSection={<IconArrowsLeftRight size={16} />}>
+            {t('trends.compareMonthsLink')}
+          </Button>
+          <Tooltip label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')}>
+            <ActionIcon variant={editMode ? 'filled' : 'subtle'} size="lg" aria-label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')} onClick={() => setEditMode((v) => !v)}>
+              {editMode ? <IconCheck size={18} /> : <IconPencil size={18} />}
+            </ActionIcon>
+          </Tooltip>
+        </Group>
       </Group>
 
       <Stack gap="xs">
@@ -213,7 +234,7 @@ export default function Trends() {
                 <WidgetFrame
                   key={w.id}
                   id={w.id}
-                  title={widgetTitle(w.config, catData.categories, t)}
+                  title={widgetTitle(w.config, catData.categories, t, monthNames)}
                   editMode={editMode}
                   width={Math.min(w.width, maxWidgetWidth) as WidgetWidth}
                   height={w.height}
@@ -234,7 +255,7 @@ export default function Trends() {
             <Group gap="xs">
               {hiddenWidgets.map((w) => (
                 <Chip key={w.id} checked={false} icon={<IconEye size={14} />} onChange={() => handleSetVisible(w.id, true)}>
-                  {widgetTitle(w.config, catData.categories, t)}
+                  {widgetTitle(w.config, catData.categories, t, monthNames)}
                 </Chip>
               ))}
             </Group>
