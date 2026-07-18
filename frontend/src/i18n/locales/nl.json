@@ -33,7 +33,14 @@
     "lockConfirm": "Definitief vergrendelen",
     "unlockConfirm": "Ontgrendelen",
     "prevYear": "Vorig jaar",
-    "nextYear": "Volgend jaar"
+    "nextYear": "Volgend jaar",
+    "trendsLink": "Trends"
+  },
+  "trends": {
+    "title": "Categorie-trends {{year}}",
+    "selectCategories": "Selecteer categorieën",
+    "noData": "Nog geen budgetregels dit jaar",
+    "back": "Terug naar jaaroverzicht"
   },
   "month": {
     "income": "Inkomsten",

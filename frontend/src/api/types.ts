@@ -124,6 +124,22 @@ export interface YearSummary {
   potBalances: PotBalance[]
 }
 
+export interface CategoryTotalsCategory {
+  id: number
+  name: string
+}
+
+export interface CategoryTotalsMonth {
+  month: number
+  values: Record<string, number>
+}
+
+export interface CategoryTotals {
+  year: number
+  categories: CategoryTotalsCategory[]
+  months: CategoryTotalsMonth[]
+}
+
 export interface IncomeSource {
   id: number
   name: string

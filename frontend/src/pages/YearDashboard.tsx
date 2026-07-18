@@ -4,7 +4,7 @@ import { Title, Table, Text, Button, Group, Skeleton, Alert, Badge, SimpleGrid, 
 import { useMediaQuery } from '@mantine/hooks'
 import { CompositeChart } from '@mantine/charts'
 import { notifications } from '@mantine/notifications'
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react'
+import { IconChevronLeft, IconChevronRight, IconChartLine } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear, useYears } from '../api/hooks/usePeriods'
 import { useMe } from '../api/hooks/useMe'
@@ -79,9 +79,14 @@ export default function YearDashboard() {
             <Title order={3}>{y}</Title>
             {isLocked && <Badge color="red">{t('year.locked')}</Badge>}
           </Group>
-          <ActionIcon variant="subtle" disabled={!hasNextYear} aria-label={t('year.nextYear')} onClick={() => navigate(`/years/${y + 1}`)}>
-            <IconChevronRight size={18} />
-          </ActionIcon>
+          <Group gap={4} wrap="nowrap">
+            <ActionIcon variant="subtle" aria-label={t('year.trendsLink')} title={t('year.trendsLink')} onClick={() => navigate(`/years/${y}/trends`)}>
+              <IconChartLine size={18} />
+            </ActionIcon>
+            <ActionIcon variant="subtle" disabled={!hasNextYear} aria-label={t('year.nextYear')} onClick={() => navigate(`/years/${y + 1}`)}>
+              <IconChevronRight size={18} />
+            </ActionIcon>
+          </Group>
         </Group>
 
         <HeroStat label={t('year.surplus')} value={<MoneyText cents={data.yearSurplusCents} span fw={800} size="2.5rem" colored />} />
@@ -191,17 +196,22 @@ export default function YearDashboard() {
           <Title order={2}>{t('year.title', { year: y })}</Title>
           {isLocked && <Badge color="red">{t('year.locked')}</Badge>}
         </Group>
-        {isAdmin && (
-          isLocked ? (
-            <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
-              {t('year.unlockAction')}
-            </Button>
-          ) : (
-            <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
-              {t('year.lockAction')}
-            </Button>
-          )
-        )}
+        <Group gap="xs">
+          <Button size="xs" variant="subtle" leftSection={<IconChartLine size={16} />} onClick={() => navigate(`/years/${y}/trends`)}>
+            {t('year.trendsLink')}
+          </Button>
+          {isAdmin && (
+            isLocked ? (
+              <Button size="xs" color="orange" variant="subtle" onClick={() => setUnlockModalOpen(true)}>
+                {t('year.unlockAction')}
+              </Button>
+            ) : (
+              <Button size="xs" color="red" variant="subtle" onClick={() => setLockModalOpen(true)}>
+                {t('year.lockAction')}
+              </Button>
+            )
+          )}
+        </Group>
       </Group>
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">

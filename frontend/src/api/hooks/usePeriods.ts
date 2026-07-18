@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { api } from '../client'
 import i18n from '../../i18n/index'
-import type { Period, MonthOverview, YearSummary, ImportReport } from '../types'
+import type { Period, MonthOverview, YearSummary, ImportReport, CategoryTotals } from '../types'
 
 export function usePeriods(year: number) {
   return useQuery<Period[]>({
@@ -15,6 +15,13 @@ export function useYearSummary(year: number) {
   return useQuery<YearSummary>({
     queryKey: ['year-summary', year],
     queryFn: () => api.get<YearSummary>(`/api/years/${year}/summary`),
+  })
+}
+
+export function useYearCategoryTotals(year: number) {
+  return useQuery<CategoryTotals>({
+    queryKey: ['year-category-totals', year],
+    queryFn: () => api.get<CategoryTotals>(`/api/years/${year}/category-totals`),
   })
 }
 

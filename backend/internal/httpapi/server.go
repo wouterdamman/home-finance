@@ -130,6 +130,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/years", s.handleListYears)
 			r.With(requireAdmin).Post("/years", s.handleCreateYear)
 			r.Get("/years/{year}/summary", s.handleYearSummary)
+			r.Get("/years/{year}/category-totals", s.handleYearCategoryTotals)
 			r.With(requireAdmin, passwordLimiter.middleware).Post("/years/{year}/lock", s.handleLockYear)
 			r.With(requireAdmin, passwordLimiter.middleware).Post("/years/{year}/unlock", s.handleUnlockYear)
 

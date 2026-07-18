@@ -6,6 +6,7 @@ import AppShell from './components/AppShell'
 
 const Login = lazy(() => import('./pages/Login'))
 const YearDashboard = lazy(() => import('./pages/YearDashboard'))
+const CategoryTrends = lazy(() => import('./pages/CategoryTrends'))
 const MonthOverview = lazy(() => import('./pages/MonthOverview'))
 const MonthTransactions = lazy(() => import('./pages/MonthTransactions'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -21,6 +22,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to={`/years/${new Date().getFullYear()}`} replace /> },
       { path: '/years/:year', element: <Suspense fallback={fallback}><YearDashboard /></Suspense> },
+      { path: '/years/:year/trends', element: <Suspense fallback={fallback}><CategoryTrends /></Suspense> },
       { path: '/months/:year/:month', element: <Suspense fallback={fallback}><MonthOverview /></Suspense> },
       { path: '/months/:year/:month/transactions', element: <Suspense fallback={fallback}><MonthTransactions /></Suspense> },
       { path: '/pots', element: <Suspense fallback={fallback}><Pots /></Suspense> },

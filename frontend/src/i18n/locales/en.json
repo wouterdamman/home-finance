@@ -33,7 +33,14 @@
     "lockConfirm": "Lock permanently",
     "unlockConfirm": "Unlock",
     "prevYear": "Previous year",
-    "nextYear": "Next year"
+    "nextYear": "Next year",
+    "trendsLink": "Trends"
+  },
+  "trends": {
+    "title": "Category trends {{year}}",
+    "selectCategories": "Select categories",
+    "noData": "No budget lines yet this year",
+    "back": "Back to year overview"
   },
   "month": {
     "income": "Income",

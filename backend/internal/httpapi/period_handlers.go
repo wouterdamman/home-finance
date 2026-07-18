@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1065,5 +1066,81 @@ func (s *Server) handleYearSummary(w http.ResponseWriter, r *http.Request) {
 		"yearExpenseTotalCents": yearExpense,
 		"yearSurplusCents":      yearIncome - yearExpense,
 		"potBalances":           balances,
+	})
+}
+
+// ── Category totals (per month, per category) ───────────────────
+
+func (s *Server) handleYearCategoryTotals(w http.ResponseWriter, r *http.Request) {
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid year")
+		return
+	}
+	ctx := r.Context()
+
+	rows, _ := s.pool.Query(ctx, `
+		SELECT p.month, bl.category_id, c.name,
+		  CASE WHEN bl.tracks_transactions
+		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+		    ELSE bl.amount_cents END AS effective_cents
+		FROM budget_lines bl
+		JOIN periods p ON p.id = bl.period_id
+		JOIN categories c ON c.id = bl.category_id
+		WHERE p.year=$1
+		ORDER BY p.month`, year)
+	defer rows.Close()
+
+	type catInfo struct {
+		ID    int64  `json:"id"`
+		Name  string `json:"name"`
+		total int64
+	}
+	catOrder := make([]int64, 0)
+	cats := map[int64]*catInfo{}
+	monthValues := make([]map[int64]int64, 12)
+	for i := range monthValues {
+		monthValues[i] = map[int64]int64{}
+	}
+
+	for rows.Next() {
+		var month int
+		var catID int64
+		var name string
+		var cents int64
+		if err := rows.Scan(&month, &catID, &name, &cents); err != nil {
+			continue
+		}
+		if _, ok := cats[catID]; !ok {
+			cats[catID] = &catInfo{ID: catID, Name: name}
+			catOrder = append(catOrder, catID)
+		}
+		cats[catID].total += cents
+		monthValues[month-1][catID] += cents
+	}
+	rows.Close()
+
+	sort.Slice(catOrder, func(i, j int) bool {
+		return cats[catOrder[i]].total > cats[catOrder[j]].total
+	})
+
+	categories := make([]catInfo, 0, len(catOrder))
+	for _, id := range catOrder {
+		categories = append(categories, *cats[id])
+	}
+
+	type monthTotals struct {
+		Month  int             `json:"month"`
+		Values map[int64]int64 `json:"values"`
+	}
+	months := make([]monthTotals, 12)
+	for i := range months {
+		months[i] = monthTotals{Month: i + 1, Values: monthValues[i]}
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"year":       year,
+		"categories": categories,
+		"months":     months,
 	})
 }
