@@ -8,7 +8,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable'
-import { useTrendsYears, useTrendsCategoryTotals } from '../api/hooks/usePeriods'
+import { useTrendsYears, useTrendsCategoryTotals, useYears } from '../api/hooks/usePeriods'
 import type { TrendsFilter } from '../lib/trendsFilter'
 import { MAX_COMPARE_YEARS, loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
 import type { Widget, WidgetConfig } from '../lib/trendsDashboard'
@@ -32,6 +32,7 @@ export default function Trends() {
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const yearsQuery = useTrendsYears()
   const categoryQuery = useTrendsCategoryTotals()
+  const registeredYearsQuery = useYears()
 
   const [dashboard, setDashboard] = useState<Widget[] | null>(() => loadDashboard())
   const [filter, setFilter] = useState<TrendsFilter | null>(null)
@@ -39,11 +40,20 @@ export default function Trends() {
   const [modalOpened, setModalOpened] = useState(false)
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null)
 
-  const allYears = useMemo(
-    () => (yearsQuery.data ?? []).filter((y) => y.incomeTotalCents !== 0 || y.expenseTotalCents !== 0),
-    [yearsQuery.data],
+  // Every year registered in the app (Settings > Years) — same list the
+  // sidebar shows — so the selector never looks like it's "missing" a year
+  // the user can clearly see exists elsewhere. Years with no periods yet
+  // just render as zero everywhere (KpiWidget/CategoryWidget/YearCompare
+  // already default missing data to 0).
+  const registeredYears = useMemo(() => registeredYearsQuery.data ?? [], [registeredYearsQuery.data])
+  const allYears = useMemo(() => yearsQuery.data ?? [], [yearsQuery.data])
+  // Years that actually have data — used only to pick sensible defaults
+  // (which year to preselect), not to filter what's selectable.
+  const yearsWithData = useMemo(
+    () => allYears.filter((y) => y.incomeTotalCents !== 0 || y.expenseTotalCents !== 0).map((y) => y.year),
+    [allYears],
   )
-  const availableYears = useMemo(() => allYears.map((y) => y.year), [allYears])
+  const defaultYearPool = registeredYears.length > 0 ? registeredYears : yearsWithData
 
   useEffect(() => {
     if (dashboard === null && categoryQuery.data) {
@@ -54,20 +64,20 @@ export default function Trends() {
   }, [dashboard, categoryQuery.data])
 
   useEffect(() => {
-    if (filter === null && availableYears.length > 0) {
-      setFilter(loadTrendsFilter(availableYears))
+    if (filter === null && registeredYears.length > 0) {
+      setFilter(loadTrendsFilter(registeredYears))
     }
-  }, [filter, availableYears])
+  }, [filter, registeredYears])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
   )
 
-  if (yearsQuery.isLoading || categoryQuery.isLoading || dashboard === null || filter === null) {
+  if (yearsQuery.isLoading || categoryQuery.isLoading || registeredYearsQuery.isLoading || dashboard === null || filter === null) {
     return <Skeleton h={400} />
   }
-  if (yearsQuery.error || categoryQuery.error) return <Alert color="red">{t('common.error')}</Alert>
+  if (yearsQuery.error || categoryQuery.error || registeredYearsQuery.error) return <Alert color="red">{t('common.error')}</Alert>
   if (!categoryQuery.data) return null
 
   const catData = categoryQuery.data
@@ -109,7 +119,7 @@ export default function Trends() {
   }
 
   const handleYearClick = (year: number) => {
-    if (availableYears.includes(year)) updateFilter({ mode: 'single', year })
+    updateFilter({ mode: 'single', year })
   }
 
   const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
@@ -139,9 +149,9 @@ export default function Trends() {
           value={filter.mode}
           onChange={(v) => {
             if (v === 'single') {
-              updateFilter({ mode: 'single', year: availableYears[availableYears.length - 1] ?? new Date().getFullYear() })
+              updateFilter({ mode: 'single', year: defaultYearPool[defaultYearPool.length - 1] ?? new Date().getFullYear() })
             } else {
-              const years = availableYears.slice(-2)
+              const years = defaultYearPool.slice(-2)
               updateFilter({ mode: 'compare', years })
             }
           }}
@@ -154,7 +164,7 @@ export default function Trends() {
         />
         {filter.mode === 'single' ? (
           <Select
-            data={availableYears.map(String)}
+            data={registeredYears.map(String)}
             value={String(filter.year)}
             onChange={(v) => v && updateFilter({ mode: 'single', year: Number(v) })}
             w={isMobile ? '100%' : 160}
@@ -162,7 +172,7 @@ export default function Trends() {
           />
         ) : (
           <MultiSelect
-            data={availableYears.map(String)}
+            data={registeredYears.map(String)}
             value={filter.years.map(String)}
             onChange={(vs) => updateFilter({ mode: 'compare', years: vs.map(Number) })}
             maxValues={MAX_COMPARE_YEARS}
