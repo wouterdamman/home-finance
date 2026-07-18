@@ -1049,11 +1049,15 @@ func (s *Server) handleReplaceSplits(w http.ResponseWriter, r *http.Request) {
 	var otherTotal float64
 	carryoverIdx := -1
 	for i, sp := range body.Splits {
+		pct, err := strconv.ParseFloat(sp.Percentage, 64)
+		if err != nil || pct < 0 {
+			Error(w, http.StatusBadRequest, "bad_request", "invalid percentage for pot "+strconv.FormatInt(sp.PotID, 10))
+			return
+		}
 		if hasCarryover && sp.PotID == carryoverPotID {
 			carryoverIdx = i
 			continue
 		}
-		pct, _ := strconv.ParseFloat(sp.Percentage, 64)
 		otherTotal += pct
 	}
 
@@ -1077,14 +1081,31 @@ func (s *Server) handleReplaceSplits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, _ := s.pool.Begin(ctx)
-	defer tx.Rollback(ctx)
-	tx.Exec(ctx, `DELETE FROM pot_splits WHERE period_id=$1`, periodID)
-	for _, sp := range body.Splits {
-		pct, _ := strconv.ParseFloat(sp.Percentage, 64)
-		tx.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) VALUES ($1,$2,$3)`, periodID, sp.PotID, pct)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", "could not start transaction")
+		return
 	}
-	tx.Commit(ctx)
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM pot_splits WHERE period_id=$1`, periodID); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	for _, sp := range body.Splits {
+		pct, err := strconv.ParseFloat(sp.Percentage, 64)
+		if err != nil || pct < 0 {
+			Error(w, http.StatusBadRequest, "bad_request", "invalid percentage for pot "+strconv.FormatInt(sp.PotID, 10))
+			return
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) VALUES ($1,$2,$3)`, periodID, sp.PotID, pct); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
