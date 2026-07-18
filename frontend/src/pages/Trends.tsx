@@ -1,126 +1,229 @@
-import { Title, Paper, Skeleton, Alert, Text, Stack, SimpleGrid } from '@mantine/core'
+import { useEffect, useMemo, useState } from 'react'
+import { Title, Skeleton, Alert, Text, Stack, SimpleGrid, Group, SegmentedControl, Select, MultiSelect, ActionIcon, Tooltip, Button, Chip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
-import { CompositeChart, LineChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
+import { IconPencil, IconCheck, IconPlus, IconEye } from '@tabler/icons-react'
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { useTrendsYears, useTrendsCategoryTotals } from '../api/hooks/usePeriods'
-import { formatCents } from '../lib/money'
-import MoneyText from '../components/MoneyText'
+import type { TrendsFilter } from '../lib/trendsFilter'
+import { MAX_COMPARE_YEARS, loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
+import type { Widget, WidgetConfig } from '../lib/trendsDashboard'
+import { loadDashboard, saveDashboard, defaultWidgets, newWidget } from '../lib/trendsDashboard'
+import type { CategoryTotalsCategory } from '../api/types'
+import WidgetFrame from '../components/trends/WidgetFrame'
+import KpiWidget from '../components/trends/KpiWidget'
+import CategoryWidget from '../components/trends/CategoryWidget'
+import YearCompareWidget from '../components/trends/YearCompareWidget'
+import WidgetModal from '../components/trends/WidgetModal'
+import EmptyState from '../components/EmptyState'
 
-const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
-const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-// Small multiples, not one overlaid chart: each category card carries its own
-// identity via its title, so every card reuses the single brand hue rather
-// than cycling a categorical palette past its safe 8-color ceiling.
-const CATEGORY_LINE_COLOR = 'teal.6'
-const TOP_CATEGORY_COUNT = 8
+function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string) => string): string {
+  if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
+  if (config.type === 'yearCompare') return t('trends.yearsTitle')
+  return categories.find((c) => c.id === config.categoryId)?.name ?? t('trends.unknownCategory')
+}
 
 export default function Trends() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const yearsQuery = useTrendsYears()
   const categoryQuery = useTrendsCategoryTotals()
-  const months = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
-  const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
 
-  if (yearsQuery.isLoading || categoryQuery.isLoading) return <Skeleton h={400} />
+  const [dashboard, setDashboard] = useState<Widget[] | null>(() => loadDashboard())
+  const [filter, setFilter] = useState<TrendsFilter | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [modalOpened, setModalOpened] = useState(false)
+  const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null)
+
+  const allYears = useMemo(
+    () => (yearsQuery.data ?? []).filter((y) => y.incomeTotalCents !== 0 || y.expenseTotalCents !== 0),
+    [yearsQuery.data],
+  )
+  const availableYears = useMemo(() => allYears.map((y) => y.year), [allYears])
+
+  useEffect(() => {
+    if (dashboard === null && categoryQuery.data) {
+      const generated = defaultWidgets(categoryQuery.data.categories)
+      setDashboard(generated)
+      saveDashboard(generated)
+    }
+  }, [dashboard, categoryQuery.data])
+
+  useEffect(() => {
+    if (filter === null && availableYears.length > 0) {
+      setFilter(loadTrendsFilter(availableYears))
+    }
+  }, [filter, availableYears])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+  )
+
+  if (yearsQuery.isLoading || categoryQuery.isLoading || dashboard === null || filter === null) {
+    return <Skeleton h={400} />
+  }
   if (yearsQuery.error || categoryQuery.error) return <Alert color="red">{t('common.error')}</Alert>
-  if (!yearsQuery.data || !categoryQuery.data) return null
+  if (!categoryQuery.data) return null
 
-  const yearData = yearsQuery.data.filter((y) => y.incomeTotalCents !== 0 || y.expenseTotalCents !== 0)
   const catData = categoryQuery.data
 
-  const totalIncome = yearData.reduce((sum, y) => sum + y.incomeTotalCents, 0)
-  const totalExpenses = yearData.reduce((sum, y) => sum + y.expenseTotalCents, 0)
+  const updateFilter = (next: TrendsFilter) => {
+    setFilter(next)
+    saveTrendsFilter(next)
+  }
 
-  const yearChartData = yearData.map((y) => ({
-    year: String(y.year),
-    [t('year.income')]: y.incomeTotalCents / 100,
-    [t('year.expenses')]: y.expenseTotalCents / 100,
-    [t('year.surplus')]: y.surplusCents / 100,
-  }))
+  const updateDashboard = (next: Widget[]) => {
+    setDashboard(next)
+    saveDashboard(next)
+  }
 
-  const periodLabels = catData.entries.map((e) => `${months[e.month - 1]} '${String(e.year).slice(-2)}`)
-  const topCategories = catData.categories.slice(0, TOP_CATEGORY_COUNT)
-  const tickInterval = periodLabels.length > 8 ? Math.ceil(periodLabels.length / 6) : 0
+  const visibleWidgets = dashboard.filter((w) => w.visible)
+  const hiddenWidgets = dashboard.filter((w) => !w.visible)
+
+  const handleSetVisible = (id: string, visible: boolean) => {
+    updateDashboard(dashboard.map((w) => (w.id === id ? { ...w, visible } : w)))
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = visibleWidgets.findIndex((w) => w.id === active.id)
+    const newIndex = visibleWidgets.findIndex((w) => w.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const reordered = arrayMove(visibleWidgets, oldIndex, newIndex)
+    updateDashboard([...reordered, ...hiddenWidgets])
+  }
+
+  const handleAddWidget = (config: WidgetConfig) => {
+    updateDashboard([...dashboard, newWidget(config)])
+  }
+
+  const handleSaveWidgetConfig = (config: WidgetConfig) => {
+    if (!editingWidgetId) return
+    updateDashboard(dashboard.map((w) => (w.id === editingWidgetId ? { ...w, config } : w)))
+  }
+
+  const handleYearClick = (year: number) => {
+    if (availableYears.includes(year)) updateFilter({ mode: 'single', year })
+  }
+
+  const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
+
+  const renderWidgetBody = (config: WidgetConfig) => {
+    if (filter.mode === 'compare' && filter.years.length === 0) {
+      return <Text size="sm" c="dimmed">{t('trends.selectYearsHint')}</Text>
+    }
+    if (config.type === 'kpi') return <KpiWidget metric={config.metric} filter={filter} allYears={allYears} />
+    if (config.type === 'categoryChart') return <CategoryWidget categoryId={config.categoryId} chartKind={config.chartKind} filter={filter} catData={catData} />
+    return <YearCompareWidget chartKind={config.chartKind} allYears={allYears} onYearClick={handleYearClick} />
+  }
 
   return (
     <Stack gap="xl">
-      <Title order={isMobile ? 3 : 2}>{t('trends.title')}</Title>
+      <Group justify="space-between" wrap="wrap">
+        <Title order={isMobile ? 3 : 2}>{t('trends.title')}</Title>
+        <Tooltip label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')}>
+          <ActionIcon variant={editMode ? 'filled' : 'subtle'} size="lg" aria-label={editMode ? t('trends.doneEditing') : t('trends.editDashboard')} onClick={() => setEditMode((v) => !v)}>
+            {editMode ? <IconCheck size={18} /> : <IconPencil size={18} />}
+          </ActionIcon>
+        </Tooltip>
+      </Group>
 
-      {yearData.length === 0 ? (
-        <Text c="dimmed">{t('trends.noData')}</Text>
-      ) : (
-        <>
-          <SimpleGrid cols={{ base: 2, sm: 4 }}>
-            <Paper shadow="xs" p="md" withBorder>
-              <Text size="xs" c="dimmed">{t('trends.totalIncome')}</Text>
-              <MoneyText cents={totalIncome} size="lg" fw={700} />
-            </Paper>
-            <Paper shadow="xs" p="md" withBorder>
-              <Text size="xs" c="dimmed">{t('trends.totalExpenses')}</Text>
-              <MoneyText cents={totalExpenses} size="lg" fw={700} />
-            </Paper>
-            <Paper shadow="xs" p="md" withBorder>
-              <Text size="xs" c="dimmed">{t('trends.totalSurplus')}</Text>
-              <MoneyText cents={totalIncome - totalExpenses} size="lg" fw={700} colored />
-            </Paper>
-            <Paper shadow="xs" p="md" withBorder>
-              <Text size="xs" c="dimmed">{t('trends.yearsTracked')}</Text>
-              <Text size="lg" fw={700}>{yearData.length}</Text>
-            </Paper>
-          </SimpleGrid>
-
-          <Stack gap="sm">
-            <Title order={4}>{t('trends.yearsTitle')}</Title>
-            <Paper shadow="xs" p={isMobile ? 'sm' : 'md'} withBorder>
-              <CompositeChart
-                h={isMobile ? 220 : 300}
-                data={yearChartData}
-                dataKey="year"
-                withLegend={!isMobile}
-                valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-                series={[
-                  { name: t('year.income'), color: 'teal.6', type: 'bar' },
-                  { name: t('year.expenses'), color: 'red.6', type: 'bar' },
-                  { name: t('year.surplus'), color: 'blue.6', type: 'line' },
-                ]}
-              />
-            </Paper>
-          </Stack>
-        </>
-      )}
-
-      <Stack gap="sm">
-        <Title order={4}>{t('trends.categoriesTitle')}</Title>
-        {topCategories.length === 0 ? (
-          <Text c="dimmed">{t('trends.noData')}</Text>
+      <Stack gap="xs">
+        <SegmentedControl
+          value={filter.mode}
+          onChange={(v) => {
+            if (v === 'single') {
+              updateFilter({ mode: 'single', year: availableYears[availableYears.length - 1] ?? new Date().getFullYear() })
+            } else {
+              const years = availableYears.slice(-2)
+              updateFilter({ mode: 'compare', years })
+            }
+          }}
+          data={[
+            { label: t('trends.modeSingle'), value: 'single' },
+            { label: t('trends.modeCompare'), value: 'compare' },
+          ]}
+          fullWidth={isMobile}
+          style={{ maxWidth: isMobile ? undefined : 320 }}
+        />
+        {filter.mode === 'single' ? (
+          <Select
+            data={availableYears.map(String)}
+            value={String(filter.year)}
+            onChange={(v) => v && updateFilter({ mode: 'single', year: Number(v) })}
+            w={isMobile ? '100%' : 160}
+            allowDeselect={false}
+          />
         ) : (
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: topCategories.length > 6 ? 4 : 3 }}>
-            {topCategories.map((cat) => {
-              const data = catData.entries.map((e, i) => ({
-                period: periodLabels[i],
-                [cat.name]: (e.values[String(cat.id)] ?? 0) / 100,
-              }))
-              return (
-                <Paper key={cat.id} shadow="xs" p="sm" withBorder>
-                  <Text size="sm" fw={600} mb={4} truncate>{cat.name}</Text>
-                  <LineChart
-                    h={140}
-                    data={data}
-                    dataKey="period"
-                    withLegend={false}
-                    withDots={periodLabels.length <= 24}
-                    valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-                    xAxisProps={tickInterval > 0 ? { interval: tickInterval } : undefined}
-                    series={[{ name: cat.name, color: CATEGORY_LINE_COLOR }]}
-                  />
-                </Paper>
-              )
-            })}
-          </SimpleGrid>
+          <MultiSelect
+            data={availableYears.map(String)}
+            value={filter.years.map(String)}
+            onChange={(vs) => updateFilter({ mode: 'compare', years: vs.map(Number) })}
+            maxValues={MAX_COMPARE_YEARS}
+            placeholder={t('trends.selectYearsHint')}
+            w={isMobile ? '100%' : 320}
+          />
         )}
       </Stack>
+
+      {visibleWidgets.length === 0 ? (
+        <EmptyState message={t('trends.noWidgets')} />
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={visibleWidgets.map((w) => w.id)} strategy={rectSortingStrategy}>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+              {visibleWidgets.map((w) => (
+                <WidgetFrame
+                  key={w.id}
+                  id={w.id}
+                  title={widgetTitle(w.config, catData.categories, t)}
+                  editMode={editMode}
+                  onHide={() => handleSetVisible(w.id, false)}
+                  onConfigure={() => { setEditingWidgetId(w.id); setModalOpened(true) }}
+                >
+                  {renderWidgetBody(w.config)}
+                </WidgetFrame>
+              ))}
+            </SimpleGrid>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      {editMode && (
+        <Stack gap="xs">
+          {hiddenWidgets.length > 0 && (
+            <Group gap="xs">
+              {hiddenWidgets.map((w) => (
+                <Chip key={w.id} checked={false} icon={<IconEye size={14} />} onChange={() => handleSetVisible(w.id, true)}>
+                  {widgetTitle(w.config, catData.categories, t)}
+                </Chip>
+              ))}
+            </Group>
+          )}
+          <Button
+            variant="light"
+            leftSection={<IconPlus size={16} />}
+            onClick={() => { setEditingWidgetId(null); setModalOpened(true) }}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            {t('trends.addWidget')}
+          </Button>
+        </Stack>
+      )}
+
+      <WidgetModal
+        opened={modalOpened}
+        onClose={() => setModalOpened(false)}
+        onSubmit={editingWidget ? handleSaveWidgetConfig : handleAddWidget}
+        categories={catData.categories}
+        initial={editingWidget?.config}
+      />
     </Stack>
   )
 }
