@@ -99,6 +99,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Post("/periods/{id}/transactions", s.handleCreateTransaction)
 			r.Put("/transactions/{id}", s.handleUpdateTransaction)
 			r.Delete("/transactions/{id}", s.handleDeleteTransaction)
+			r.Get("/periods/{id}/income-transactions", s.handleListIncomeTransactions)
+			r.Post("/periods/{id}/income-transactions", s.handleCreateIncomeTransaction)
+			r.Delete("/income-transactions/{id}", s.handleDeleteIncomeTransaction)
 
 			// Splits
 			r.Put("/periods/{id}/splits", s.handleReplaceSplits)

@@ -51,6 +51,7 @@
     "reopenMonth": "Maand heropenen",
     "transactions": "Transacties",
     "transactionsTitle": "Transacties — {{month}}/{{year}}",
+    "incomeTransactionsTitle": "Inkomstenboekingen — {{month}}/{{year}}",
     "overviewLink": "Maandoverzicht",
     "notFound": "Maand niet gevonden.",
     "addIncome": "Inkomst toevoegen",

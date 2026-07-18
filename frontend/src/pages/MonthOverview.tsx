@@ -211,9 +211,10 @@ export default function MonthOverview() {
                 key={inc.id}
                 title={inc.label ?? t('month.unknownSource', { id: inc.sourceId })}
                 subtitle={inc.entryType === 'carryover' ? t('month.carryoverBadge') : undefined}
-                trailing={<MoneyText cents={inc.amountCents} fw={600} />}
-                chevron={!isClosed && inc.entryType !== 'carryover'}
-                onClick={!isClosed && inc.entryType !== 'carryover' ? () => { setIncomeSheet(inc.id); setEditIncomeAmount(inc.amountCents / 100) } : undefined}
+                trailing={<MoneyText cents={inc.effectiveCents} fw={600} />}
+                to={inc.isItemized ? `/months/${y}/${m}/income?source=${inc.sourceId}` : undefined}
+                chevron={inc.isItemized || (!isClosed && inc.entryType !== 'carryover')}
+                onClick={!inc.isItemized && !isClosed && inc.entryType !== 'carryover' ? () => { setIncomeSheet(inc.id); setEditIncomeAmount(inc.amountCents / 100) } : undefined}
               />
             ))}
             {!isClosed && (
@@ -448,14 +449,17 @@ export default function MonthOverview() {
             {incomes.map(inc => (
               <Table.Tr key={inc.id}>
                 <Table.Td>
-                  <Text size="sm" c={inc.entryType === 'carryover' ? 'dimmed' : undefined}>
-                    {inc.label ?? t('month.unknownSource', { id: inc.sourceId })}
-                    {inc.entryType === 'carryover' && <Badge size="xs" ml="xs" color="gray">{t('month.carryoverBadge')}</Badge>}
-                  </Text>
+                  {inc.isItemized
+                    ? <Text component={Link} to={`/months/${y}/${m}/income?source=${inc.sourceId}`} c="blue" size="sm">{inc.label ?? t('month.unknownSource', { id: inc.sourceId })}</Text>
+                    : <Text size="sm" c={inc.entryType === 'carryover' ? 'dimmed' : undefined}>
+                        {inc.label ?? t('month.unknownSource', { id: inc.sourceId })}
+                        {inc.entryType === 'carryover' && <Badge size="xs" ml="xs" color="gray">{t('month.carryoverBadge')}</Badge>}
+                      </Text>
+                  }
                 </Table.Td>
                 <Table.Td ta="right" w={160}>
-                  {isClosed || inc.entryType === 'carryover'
-                    ? <MoneyText cents={inc.amountCents} />
+                  {inc.isItemized || isClosed || inc.entryType === 'carryover'
+                    ? <MoneyText cents={inc.effectiveCents} />
                     : <NumberInput
                         size="xs"
                         defaultValue={inc.amountCents / 100}
@@ -472,7 +476,7 @@ export default function MonthOverview() {
                       />
                   }
                 </Table.Td>
-                {!isClosed && inc.entryType !== 'carryover' && (
+                {!isClosed && !inc.isItemized && inc.entryType !== 'carryover' && (
                   <Table.Td w={40}>
                     <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteIncome.mutate(inc.id)}><IconTrash size={14} /></ActionIcon>
                   </Table.Td>

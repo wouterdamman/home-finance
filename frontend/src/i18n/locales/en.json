@@ -51,6 +51,7 @@
     "reopenMonth": "Reopen Month",
     "transactions": "Transactions",
     "transactionsTitle": "Transactions — {{month}}/{{year}}",
+    "incomeTransactionsTitle": "Income entries — {{month}}/{{year}}",
     "overviewLink": "Month overview",
     "notFound": "Month not found.",
     "addIncome": "Add Income",

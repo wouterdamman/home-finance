@@ -28,6 +28,9 @@ export interface IncomeEntry {
   entryType: 'normal' | 'carryover'
   notes: string
   sortOrder: number
+  isItemized: boolean
+  transactionsTotalCents: number
+  effectiveCents: number
 }
 
 export interface Category {
@@ -54,6 +57,15 @@ export interface Transaction {
   id: number
   periodId: number
   categoryId: number
+  amountCents: number
+  description: string
+  txDate?: string
+}
+
+export interface IncomeTransaction {
+  id: number
+  periodId: number
+  sourceId: number
   amountCents: number
   description: string
   txDate?: string
@@ -144,6 +156,7 @@ export interface IncomeSource {
   id: number
   name: string
   defaultAmountCents: number
+  isItemized: boolean
   sortOrder: number
 }
 

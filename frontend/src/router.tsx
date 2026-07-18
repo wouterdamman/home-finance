@@ -9,6 +9,7 @@ const YearDashboard = lazy(() => import('./pages/YearDashboard'))
 const CategoryTrends = lazy(() => import('./pages/CategoryTrends'))
 const MonthOverview = lazy(() => import('./pages/MonthOverview'))
 const MonthTransactions = lazy(() => import('./pages/MonthTransactions'))
+const IncomeTransactions = lazy(() => import('./pages/IncomeTransactions'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Pots = lazy(() => import('./pages/Pots'))
 const PotDetail = lazy(() => import('./pages/PotDetail'))
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
       { path: '/years/:year/trends', element: <Suspense fallback={fallback}><CategoryTrends /></Suspense> },
       { path: '/months/:year/:month', element: <Suspense fallback={fallback}><MonthOverview /></Suspense> },
       { path: '/months/:year/:month/transactions', element: <Suspense fallback={fallback}><MonthTransactions /></Suspense> },
+      { path: '/months/:year/:month/income', element: <Suspense fallback={fallback}><IncomeTransactions /></Suspense> },
       { path: '/pots', element: <Suspense fallback={fallback}><Pots /></Suspense> },
       { path: '/pots/:id', element: <Suspense fallback={fallback}><PotDetail /></Suspense> },
       { path: '/settings', element: <Suspense fallback={fallback}><Settings /></Suspense> },

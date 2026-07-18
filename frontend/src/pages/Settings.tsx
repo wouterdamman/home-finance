@@ -449,7 +449,7 @@ function CategoriesTab() {
   )
 }
 
-type SourceSortKey = 'name' | 'default' | 'template'
+type SourceSortKey = 'name' | 'default' | 'itemized' | 'template'
 
 function SourcesTab() {
   const { t } = useTranslation()
@@ -461,9 +461,11 @@ function SourcesTab() {
   const [editing, setEditing] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editAmount, setEditAmount] = useState<number | string>('')
+  const [editItemized, setEditItemized] = useState(false)
   const [editTemplate, setEditTemplate] = useState(true)
   const [newName, setNewName] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
+  const [newItemized, setNewItemized] = useState(false)
   const [newTemplate, setNewTemplate] = useState(true)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortState<SourceSortKey>>({ key: 'name', dir: 'asc' })
@@ -474,15 +476,17 @@ function SourcesTab() {
     return filtered.sort((a, b) => {
       const c = sort.key === 'name' ? cmp(a.name, b.name)
         : sort.key === 'default' ? cmp(a.defaultAmountCents, b.defaultAmountCents)
+        : sort.key === 'itemized' ? cmp(Number(a.isItemized), Number(b.isItemized))
         : cmp(Number(a.includeInTemplate), Number(b.includeInTemplate))
       return sort.dir === 'asc' ? c : -c
     })
   }, [data, search, sort])
 
-  const startEdit = (src: { id: number; name: string; defaultAmountCents: number; includeInTemplate: boolean }) => {
+  const startEdit = (src: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) => {
     setEditing(src.id)
     setEditName(src.name)
     setEditAmount(src.defaultAmountCents / 100)
+    setEditItemized(src.isItemized)
     setEditTemplate(src.includeInTemplate)
   }
 
@@ -503,6 +507,7 @@ function SourcesTab() {
             options={[
               { key: 'name', label: t('settings.name') },
               { key: 'default', label: t('settings.default') },
+              { key: 'itemized', label: t('settings.itemized') },
               { key: 'template', label: t('settings.template') },
             ]}
           />
@@ -516,7 +521,7 @@ function SourcesTab() {
               <MobileListRow
                 key={src.id}
                 title={<>{src.name} {src.archivedAt && <Badge size="xs" color="gray" ml="xs">{t('settings.archived')}</Badge>}</>}
-                subtitle={src.includeInTemplate ? t('settings.template') : undefined}
+                subtitle={[src.isItemized && t('settings.itemized'), src.includeInTemplate && t('settings.template')].filter(Boolean).join(' · ')}
                 trailing={<Text size="sm">€ {(src.defaultAmountCents / 100).toFixed(2)}</Text>}
                 chevron
                 onClick={() => startEdit(src)}
@@ -530,10 +535,11 @@ function SourcesTab() {
             <>
               <TextInput label={t('settings.name')} value={editName} onChange={e => setEditName(e.target.value)} />
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+              <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
               <Group grow>
                 <Button
-                  onClick={() => update.mutate({ id: editingSrc.id, name: editName, defaultAmountCents: amountToCents(editAmount), includeInTemplate: editTemplate, sortOrder: editingSrc.sortOrder }, { onSuccess: () => setEditing(null) })}
+                  onClick={() => update.mutate({ id: editingSrc.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: editingSrc.sortOrder }, { onSuccess: () => setEditing(null) })}
                   loading={update.isPending}
                 >
                   {t('common.save')}
@@ -554,10 +560,11 @@ function SourcesTab() {
         <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
-            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewTemplate(true); closeAdd() }
+            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </BottomSheet>
@@ -583,6 +590,7 @@ function SourcesTab() {
           <Table.Tr>
             <SortableTh label={t('settings.name')} sortKey="name" sort={sort} onSort={k => setSort(s => toggleSort(s, k))} />
             <SortableTh label={t('settings.default')} sortKey="default" sort={sort} onSort={k => setSort(s => toggleSort(s, k))} ta="right" />
+            <SortableTh label={t('settings.itemized')} sortKey="itemized" sort={sort} onSort={k => setSort(s => toggleSort(s, k))} ta="center" />
             <SortableTh
               label={<Tooltip label={t('settings.templateHint')}><span>{t('settings.template')}</span></Tooltip>}
               sortKey="template" sort={sort} onSort={k => setSort(s => toggleSort(s, k))} ta="center"
@@ -592,7 +600,7 @@ function SourcesTab() {
         </Table.Thead>
         <Table.Tbody>
           {rows.length === 0 && (
-            <Table.Tr><Table.Td colSpan={4}><EmptyState message={t('settings.noSources')} /></Table.Td></Table.Tr>
+            <Table.Tr><Table.Td colSpan={5}><EmptyState message={t('settings.noSources')} /></Table.Td></Table.Tr>
           )}
           {rows.map(src => (
             <Table.Tr key={src.id} opacity={src.archivedAt ? 0.5 : 1}>
@@ -600,10 +608,11 @@ function SourcesTab() {
                 ? <>
                     <Table.Td><TextInput size="xs" value={editName} onChange={e => setEditName(e.target.value)} /></Table.Td>
                     <Table.Td><Group justify="flex-end"><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Group></Table.Td>
+                    <Table.Td><Group justify="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Group></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: amountToCents(editAmount), includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
+                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
                         <Button size="xs" variant="subtle" onClick={() => setEditing(null)}><IconX size={14} /></Button>
                       </Group>
                     </Table.Td>
@@ -611,10 +620,11 @@ function SourcesTab() {
                 : <>
                     <Table.Td>{src.name} {src.archivedAt && <Badge size="xs" color="gray">{t('settings.archived')}</Badge>}</Table.Td>
                     <Table.Td ta="right">€ {(src.defaultAmountCents / 100).toFixed(2)}</Table.Td>
+                    <Table.Td ta="center">{src.isItemized ? '✓' : ''}</Table.Td>
                     <Table.Td ta="center">{src.includeInTemplate ? '✓' : '—'}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" variant="subtle" onClick={() => { setEditing(src.id); setEditName(src.name); setEditAmount(src.defaultAmountCents / 100); setEditTemplate(src.includeInTemplate) }}>{t('common.edit')}</Button>
+                        <Button size="xs" variant="subtle" onClick={() => startEdit(src)}>{t('common.edit')}</Button>
                         <Button size="xs" variant="subtle" color={src.archivedAt ? 'green' : 'red'} onClick={() => archive.mutate(src.id)}>
                           {src.archivedAt ? t('settings.restore') : t('common.archive')}
                         </Button>
@@ -631,10 +641,11 @@ function SourcesTab() {
         <Stack gap="sm">
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
+          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
-            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewTemplate(true); closeAdd() }
+            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </Stack>

@@ -22,6 +22,7 @@ export interface IncomeSource {
   id: number
   name: string
   defaultAmountCents: number
+  isItemized: boolean
   includeInTemplate: boolean
   sortOrder: number
   archivedAt?: string
@@ -80,7 +81,7 @@ export function useIncomeSources() {
 export function useCreateIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; defaultAmountCents: number; includeInTemplate: boolean; sortOrder: number }) =>
+    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
       api.post('/api/income-sources', body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })
@@ -89,7 +90,7 @@ export function useCreateIncomeSource() {
 export function useUpdateIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; includeInTemplate: boolean; sortOrder: number }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
       api.put(`/api/income-sources/${id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })

@@ -38,7 +38,10 @@ func (s *Server) handleListPeriods(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT p.id, p.year, p.month, p.status, p.closed_at,
-		  COALESCE((SELECT SUM(ie.amount_cents) FROM income_entries ie WHERE ie.period_id = p.id), 0),
+		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
+		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id = ie.period_id AND it.source_id = ie.source_id), 0)
+		    ELSE ie.amount_cents END)
+		  FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id = ie.source_id WHERE ie.period_id = p.id), 0),
 		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
 		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id = bl.period_id AND t.category_id = bl.category_id), 0)
 		    ELSE bl.amount_cents END)
@@ -191,15 +194,24 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 	}
 
 	type income struct {
-		ID          int64   `json:"id"`
-		SourceID    *int64  `json:"sourceId,omitempty"`
-		Label       *string `json:"label,omitempty"`
-		AmountCents int64   `json:"amountCents"`
-		EntryType   string  `json:"entryType"`
-		Notes       string  `json:"notes"`
-		SortOrder   int     `json:"sortOrder"`
+		ID                     int64   `json:"id"`
+		SourceID               *int64  `json:"sourceId,omitempty"`
+		Label                  *string `json:"label,omitempty"`
+		AmountCents            int64   `json:"amountCents"`
+		EntryType              string  `json:"entryType"`
+		Notes                  string  `json:"notes"`
+		SortOrder              int     `json:"sortOrder"`
+		IsItemized             bool    `json:"isItemized"`
+		TransactionsTotalCents int64   `json:"transactionsTotalCents"`
+		EffectiveCents         int64   `json:"effectiveCents"`
 	}
-	incRows, err := s.pool.Query(ctx, `SELECT id,source_id,label,amount_cents,entry_type,notes,sort_order FROM income_entries WHERE period_id=$1 ORDER BY sort_order,id`, id)
+	incRows, err := s.pool.Query(ctx, `
+		SELECT ie.id, ie.source_id, ie.label, ie.amount_cents, ie.entry_type, ie.notes, ie.sort_order,
+		  COALESCE(isrc.is_itemized,false),
+		  COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
+		FROM income_entries ie
+		LEFT JOIN income_sources isrc ON isrc.id = ie.source_id
+		WHERE ie.period_id=$1 ORDER BY ie.sort_order,ie.id`, id)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -208,12 +220,17 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 	var incomeTotal int64
 	for incRows.Next() {
 		var e income
-		if err := incRows.Scan(&e.ID, &e.SourceID, &e.Label, &e.AmountCents, &e.EntryType, &e.Notes, &e.SortOrder); err != nil {
+		if err := incRows.Scan(&e.ID, &e.SourceID, &e.Label, &e.AmountCents, &e.EntryType, &e.Notes, &e.SortOrder, &e.IsItemized, &e.TransactionsTotalCents); err != nil {
 			incRows.Close()
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
 		}
-		incomeTotal += e.AmountCents
+		if e.IsItemized {
+			e.EffectiveCents = e.TransactionsTotalCents
+		} else {
+			e.EffectiveCents = e.AmountCents
+		}
+		incomeTotal += e.EffectiveCents
 		incomes = append(incomes, e)
 	}
 	incRows.Close()
@@ -917,6 +934,97 @@ func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ── Income transactions ─────────────────────────────────────────
+
+func (s *Server) handleListIncomeTransactions(w http.ResponseWriter, r *http.Request) {
+	periodID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var sourceID *int64
+	if c := r.URL.Query().Get("sourceId"); c != "" {
+		if v, err := strconv.ParseInt(c, 10, 64); err == nil {
+			sourceID = &v
+		}
+	}
+	type txRow struct {
+		ID          int64   `json:"id"`
+		PeriodID    int64   `json:"periodId"`
+		SourceID    int64   `json:"sourceId"`
+		AmountCents int64   `json:"amountCents"`
+		Description string  `json:"description"`
+		TxDate      *string `json:"txDate,omitempty"`
+	}
+	var rows pgx.Rows
+	if sourceID != nil {
+		rows, _ = s.pool.Query(r.Context(), `SELECT id,period_id,source_id,amount_cents,description,tx_date FROM income_transactions WHERE period_id=$1 AND source_id=$2 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID, *sourceID)
+	} else {
+		rows, _ = s.pool.Query(r.Context(), `SELECT id,period_id,source_id,amount_cents,description,tx_date FROM income_transactions WHERE period_id=$1 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID)
+	}
+	defer rows.Close()
+	out := make([]txRow, 0)
+	for rows.Next() {
+		var tx txRow
+		var d *time.Time
+		rows.Scan(&tx.ID, &tx.PeriodID, &tx.SourceID, &tx.AmountCents, &tx.Description, &d)
+		if d != nil {
+			ds := d.Format("2006-01-02")
+			tx.TxDate = &ds
+		}
+		out = append(out, tx)
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleCreateIncomeTransaction(w http.ResponseWriter, r *http.Request) {
+	periodID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
+		return
+	}
+	var body struct {
+		SourceID    int64   `json:"sourceId"`
+		AmountCents int64   `json:"amountCents"`
+		Description string  `json:"description"`
+		TxDate      *string `json:"txDate"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	var id int64
+	if err := s.pool.QueryRow(r.Context(),
+		`INSERT INTO income_transactions (period_id,source_id,amount_cents,description,tx_date) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+		periodID, body.SourceID, body.AmountCents, body.Description, body.TxDate).Scan(&id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "sourceId": body.SourceID, "amountCents": body.AmountCents, "description": body.Description, "txDate": body.TxDate})
+}
+
+func (s *Server) handleDeleteIncomeTransaction(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var periodID int64
+	s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_transactions WHERE id=$1`, id).Scan(&periodID)
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
+		return
+	}
+	s.pool.Exec(r.Context(), `DELETE FROM income_transactions WHERE id=$1`, id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ── Splits ───────────────────────────────────────────────────────
 
 type splitInput struct {
@@ -1011,7 +1119,10 @@ func (s *Server) handleYearSummary(w http.ResponseWriter, r *http.Request) {
 
 	rows, _ := s.pool.Query(ctx, `
 		SELECT p.month, p.id, p.status,
-		  COALESCE((SELECT SUM(ie.amount_cents) FROM income_entries ie WHERE ie.period_id=p.id),0),
+		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
+		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
+		    ELSE ie.amount_cents END)
+		  FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=p.id),0),
 		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
 		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
 		    ELSE bl.amount_cents END) FROM budget_lines bl WHERE bl.period_id=p.id),0)
