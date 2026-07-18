@@ -3,7 +3,7 @@ import { CompositeChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
 import type { YearTrend } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
-import { formatCents } from '../../lib/money'
+import { formatCents, formatCentsCompact } from '../../lib/money'
 import ChartLegend from './ChartLegend'
 
 interface Props {
@@ -51,6 +51,7 @@ export default function YearCompareWidget({ chartKind, allYears, onYearClick }: 
           dataKey="year"
           withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56 }}
           series={series}
           composedChartProps={{ onClick: handleClick }}
         />
