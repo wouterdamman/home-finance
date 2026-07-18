@@ -9,7 +9,8 @@
     "collapse": "Menu inklappen",
     "expand": "Menu uitklappen",
     "pin": "Menu vastzetten",
-    "unpin": "Menu losmaken"
+    "unpin": "Menu losmaken",
+    "trends": "Trends"
   },
   "auth": {
     "signIn": "Inloggen",
@@ -33,14 +34,14 @@
     "lockConfirm": "Definitief vergrendelen",
     "unlockConfirm": "Ontgrendelen",
     "prevYear": "Vorig jaar",
-    "nextYear": "Volgend jaar",
-    "trendsLink": "Trends"
+    "nextYear": "Volgend jaar"
   },
   "trends": {
-    "title": "Categorie-trends {{year}}",
+    "title": "Trends",
+    "yearsTitle": "Jaren vergelijken",
+    "categoriesTitle": "Categorie-trends",
     "selectCategories": "Selecteer categorieën",
-    "noData": "Nog geen budgetregels dit jaar",
-    "back": "Terug naar jaaroverzicht"
+    "noData": "Nog geen data"
   },
   "month": {
     "income": "Inkomsten",

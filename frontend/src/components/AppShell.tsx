@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom'
 import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Tooltip, Stack } from '@mantine/core'
-import { IconWallet, IconLogout, IconPigMoney, IconSettings, IconCalendar, IconChevronLeft, IconChevronRight, IconPin, IconPinFilled } from '@tabler/icons-react'
+import { IconWallet, IconLogout, IconPigMoney, IconSettings, IconCalendar, IconChevronLeft, IconChevronRight, IconPin, IconPinFilled, IconChartLine } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
 import { useYears } from '../api/hooks/usePeriods'
@@ -112,6 +112,7 @@ export default function AppShell() {
         <Stack gap={2} h="100%">
           {(years ?? []).map((y) => navLink(String(y), String(y), <IconCalendar size={16} />, `/years/${y}`))}
           {navLink('pots', t('nav.pots'), <IconPigMoney size={16} />, '/pots')}
+          {navLink('trends', t('nav.trends'), <IconChartLine size={16} />, '/trends')}
           {navLink('settings', t('settings.title'), <IconSettings size={16} />, '/settings')}
           <Stack gap={2} mt="auto">
             {expanded ? (

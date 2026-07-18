@@ -141,15 +141,22 @@ export interface CategoryTotalsCategory {
   name: string
 }
 
-export interface CategoryTotalsMonth {
+export interface CategoryTotalsEntry {
+  year: number
   month: number
   values: Record<string, number>
 }
 
 export interface CategoryTotals {
-  year: number
   categories: CategoryTotalsCategory[]
-  months: CategoryTotalsMonth[]
+  entries: CategoryTotalsEntry[]
+}
+
+export interface YearTrend {
+  year: number
+  incomeTotalCents: number
+  expenseTotalCents: number
+  surplusCents: number
 }
 
 export interface IncomeSource {

@@ -9,7 +9,8 @@
     "collapse": "Collapse menu",
     "expand": "Expand menu",
     "pin": "Pin menu open",
-    "unpin": "Unpin menu"
+    "unpin": "Unpin menu",
+    "trends": "Trends"
   },
   "auth": {
     "signIn": "Sign In",
@@ -33,14 +34,14 @@
     "lockConfirm": "Lock permanently",
     "unlockConfirm": "Unlock",
     "prevYear": "Previous year",
-    "nextYear": "Next year",
-    "trendsLink": "Trends"
+    "nextYear": "Next year"
   },
   "trends": {
-    "title": "Category trends {{year}}",
+    "title": "Trends",
+    "yearsTitle": "Compare years",
+    "categoriesTitle": "Category trends",
     "selectCategories": "Select categories",
-    "noData": "No budget lines yet this year",
-    "back": "Back to year overview"
+    "noData": "No data yet"
   },
   "month": {
     "income": "Income",

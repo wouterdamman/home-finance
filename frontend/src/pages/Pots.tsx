@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
-import { Title, SimpleGrid, Paper, Group, Text, Skeleton, Alert, Progress, Stack } from '@mantine/core'
+import { Title, SimpleGrid, Paper, Group, Text, Skeleton, Alert, Progress, Stack, ActionIcon, Tooltip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
-import { IconPigMoney } from '@tabler/icons-react'
+import { IconPigMoney, IconChartLine } from '@tabler/icons-react'
 import { usePotBalances } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
@@ -22,7 +22,16 @@ export default function Pots() {
 
   return (
     <>
-      <Title order={2} mb="md">{t('pots.title')}</Title>
+      <Group justify="space-between" mb="md">
+        <Title order={2}>{t('pots.title')}</Title>
+        {isMobile && (
+          <Tooltip label={t('nav.trends')}>
+            <ActionIcon component={Link} to="/trends" variant="subtle" aria-label={t('nav.trends')}>
+              <IconChartLine size={20} />
+            </ActionIcon>
+          </Tooltip>
+        )}
+      </Group>
       {isMobile && savingsPots.length > 0 && (
         <Group justify="space-between" mb="md" px="xs">
           <Text size="sm" c="dimmed">{t('pots.totalSavedLabel', { count: savingsPots.length })}</Text>

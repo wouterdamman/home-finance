@@ -1180,26 +1180,67 @@ func (s *Server) handleYearSummary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ── Category totals (per month, per category) ───────────────────
+// ── Trends (cross-year) ──────────────────────────────────────────
 
-func (s *Server) handleYearCategoryTotals(w http.ResponseWriter, r *http.Request) {
-	year, err := strconv.Atoi(chi.URLParam(r, "year"))
-	if err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", "invalid year")
-		return
-	}
+func (s *Server) handleTrendsYears(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	rows, _ := s.pool.Query(ctx, `
-		SELECT p.month, bl.category_id, c.name,
+	type yearRow struct {
+		Year              int   `json:"year"`
+		IncomeTotalCents  int64 `json:"incomeTotalCents"`
+		ExpenseTotalCents int64 `json:"expenseTotalCents"`
+		SurplusCents      int64 `json:"surplusCents"`
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT y.year,
+		  COALESCE((SELECT SUM(CASE WHEN isrc.is_itemized
+		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
+		    ELSE ie.amount_cents END)
+		  FROM income_entries ie
+		  JOIN periods p ON p.id=ie.period_id
+		  LEFT JOIN income_sources isrc ON isrc.id=ie.source_id
+		  WHERE p.year=y.year),0),
+		  COALESCE((SELECT SUM(CASE WHEN bl.tracks_transactions
+		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+		    ELSE bl.amount_cents END)
+		  FROM budget_lines bl
+		  JOIN periods p ON p.id=bl.period_id
+		  WHERE p.year=y.year),0)
+		FROM years y ORDER BY y.year`)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]yearRow, 0)
+	for rows.Next() {
+		var yr yearRow
+		if err := rows.Scan(&yr.Year, &yr.IncomeTotalCents, &yr.ExpenseTotalCents); err != nil {
+			continue
+		}
+		yr.SurplusCents = yr.IncomeTotalCents - yr.ExpenseTotalCents
+		out = append(out, yr)
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.year, p.month, bl.category_id, c.name,
 		  CASE WHEN bl.tracks_transactions
 		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
 		    ELSE bl.amount_cents END AS effective_cents
 		FROM budget_lines bl
 		JOIN periods p ON p.id = bl.period_id
 		JOIN categories c ON c.id = bl.category_id
-		WHERE p.year=$1
-		ORDER BY p.month`, year)
+		ORDER BY p.year, p.month`)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	defer rows.Close()
 
 	type catInfo struct {
@@ -1209,17 +1250,17 @@ func (s *Server) handleYearCategoryTotals(w http.ResponseWriter, r *http.Request
 	}
 	catOrder := make([]int64, 0)
 	cats := map[int64]*catInfo{}
-	monthValues := make([]map[int64]int64, 12)
-	for i := range monthValues {
-		monthValues[i] = map[int64]int64{}
-	}
+	type periodKey struct{ year, month int }
+	periodOrder := make([]periodKey, 0)
+	periodSeen := map[periodKey]bool{}
+	values := map[periodKey]map[int64]int64{}
 
 	for rows.Next() {
-		var month int
+		var year, month int
 		var catID int64
 		var name string
 		var cents int64
-		if err := rows.Scan(&month, &catID, &name, &cents); err != nil {
+		if err := rows.Scan(&year, &month, &catID, &name, &cents); err != nil {
 			continue
 		}
 		if _, ok := cats[catID]; !ok {
@@ -1227,31 +1268,43 @@ func (s *Server) handleYearCategoryTotals(w http.ResponseWriter, r *http.Request
 			catOrder = append(catOrder, catID)
 		}
 		cats[catID].total += cents
-		monthValues[month-1][catID] += cents
+		pk := periodKey{year, month}
+		if !periodSeen[pk] {
+			periodSeen[pk] = true
+			periodOrder = append(periodOrder, pk)
+			values[pk] = map[int64]int64{}
+		}
+		values[pk][catID] += cents
 	}
 	rows.Close()
 
 	sort.Slice(catOrder, func(i, j int) bool {
 		return cats[catOrder[i]].total > cats[catOrder[j]].total
 	})
-
 	categories := make([]catInfo, 0, len(catOrder))
 	for _, id := range catOrder {
 		categories = append(categories, *cats[id])
 	}
 
-	type monthTotals struct {
+	sort.Slice(periodOrder, func(i, j int) bool {
+		if periodOrder[i].year != periodOrder[j].year {
+			return periodOrder[i].year < periodOrder[j].year
+		}
+		return periodOrder[i].month < periodOrder[j].month
+	})
+
+	type entry struct {
+		Year   int             `json:"year"`
 		Month  int             `json:"month"`
 		Values map[int64]int64 `json:"values"`
 	}
-	months := make([]monthTotals, 12)
-	for i := range months {
-		months[i] = monthTotals{Month: i + 1, Values: monthValues[i]}
+	entries := make([]entry, 0, len(periodOrder))
+	for _, pk := range periodOrder {
+		entries = append(entries, entry{Year: pk.year, Month: pk.month, Values: values[pk]})
 	}
 
 	JSON(w, http.StatusOK, map[string]any{
-		"year":       year,
 		"categories": categories,
-		"months":     months,
+		"entries":    entries,
 	})
 }
