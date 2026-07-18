@@ -5,6 +5,7 @@ import { useTrendsMonthlyTotals } from '../../api/hooks/usePeriods'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicks } from '../../lib/chartAxis'
+import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
 
 const MONTHS_NL = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
@@ -20,6 +21,7 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
+  const { palette } = useChartPalette()
   const { data, isLoading } = useTrendsMonthlyTotals()
 
   if (isLoading) return <Skeleton h="100%" />
@@ -39,9 +41,9 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
 
   const markType = chartKind === 'bar' ? 'bar' : 'line'
   const series = [
-    { name: t('year.income'), color: 'teal.6', type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
-    { name: t('year.expenses'), color: 'red.6', type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
-    { name: t('year.surplus'), color: 'blue.6', type: 'line' as const },
+    { name: t('year.income'), color: palette.income, type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
+    { name: t('year.expenses'), color: palette.expenses, type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
+    { name: t('year.surplus'), color: palette.surplus, type: 'line' as const },
   ]
   const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)

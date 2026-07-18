@@ -5,14 +5,11 @@ import type { CategoryTotals } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicks } from '../../lib/chartAxis'
+import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
 
 const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-// Fixed slot-per-position color mapping for the (max 4) categories chosen in
-// this widget — never cycled, identity comes from position not a generated hue.
-const CATEGORY_COLORS = ['teal.6', 'blue.6', 'grape.6', 'orange.6']
 
 interface Props {
   categoryIds: number[]
@@ -25,6 +22,7 @@ export default function CategoryWidget({ categoryIds, chartKind, filter, catData
   const { i18n } = useTranslation()
   const months = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
+  const { palette } = useChartPalette()
   const Chart = chartKind === 'bar' ? BarChart : LineChart
 
   const selectedCategories = categoryIds
@@ -40,7 +38,7 @@ export default function CategoryWidget({ categoryIds, chartKind, filter, catData
     return row
   })
 
-  const series = selectedCategories.map((cat, idx) => ({ name: cat.name, color: CATEGORY_COLORS[idx] }))
+  const series = selectedCategories.map((cat, idx) => ({ name: cat.name, color: palette.categorical[idx] }))
   const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
 

@@ -21,7 +21,7 @@ export default function ChartLegend({ series }: { series: LegendSeries[] }) {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: `var(--mantine-color-${s.color.replace('.', '-')})`,
+              backgroundColor: s.color.includes('.') ? `var(--mantine-color-${s.color.replace('.', '-')})` : s.color,
               flexShrink: 0,
             }}
           />

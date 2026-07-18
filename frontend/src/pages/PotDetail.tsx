@@ -20,6 +20,7 @@ import { notifications } from '@mantine/notifications'
 import HeroStat from '../components/mobile/HeroStat'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
 import BottomSheet from '../components/mobile/BottomSheet'
+import { useChartPalette } from '../contexts/ChartPaletteContext'
 
 const ENTRY_TYPE_COLORS: Record<string, string> = {
   allocation: 'blue',
@@ -42,6 +43,7 @@ export default function PotDetail() {
   const { t, i18n } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
+  const { palette } = useChartPalette()
 
   const { data: pots, isLoading: potsLoading } = usePots()
   const { data: ledger, isLoading: ledgerLoading } = usePotLedger(potId)
@@ -123,7 +125,7 @@ export default function PotDetail() {
               h={160}
               data={chartData}
               dataKey="date"
-              series={[{ name: t('pots.runningBalance'), color: 'blue.6' }]}
+              series={[{ name: t('pots.runningBalance'), color: palette.surplus }]}
               curveType="linear"
               valueFormatter={(v) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(v)}
             />
@@ -230,7 +232,7 @@ export default function PotDetail() {
             h={220}
             data={chartData}
             dataKey="date"
-            series={[{ name: t('pots.runningBalance'), color: 'blue.6' }]}
+            series={[{ name: t('pots.runningBalance'), color: palette.surplus }]}
             curveType="linear"
             valueFormatter={(v) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(v)}
           />

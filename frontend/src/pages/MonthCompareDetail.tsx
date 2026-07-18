@@ -11,6 +11,7 @@ import type { YearSummary } from '../api/types'
 import { useTrendsCategoryTotals } from '../api/hooks/usePeriods'
 import { formatCents, formatCentsCompact } from '../lib/money'
 import { niceAxisTicks } from '../lib/chartAxis'
+import { useChartPalette } from '../contexts/ChartPaletteContext'
 import ChartLegend from '../components/trends/ChartLegend'
 import { MobileListRow } from '../components/mobile/MobileList'
 import EmptyState from '../components/EmptyState'
@@ -67,6 +68,7 @@ function SortableTh({ label, active, dir, align, onClick }: { label: string; act
 // scoped to just the periods being compared here.
 function TotalsTrendChart({ periodLabels, totalsRows, locale }: { periodLabels: string[]; totalsRows: { label: string; values: number[]; higherIsBad: boolean }[]; locale: string }) {
   const { t } = useTranslation()
+  const { palette } = useChartPalette()
   const income = totalsRows.find((r) => r.label === t('year.income'))?.values ?? []
   const expenses = totalsRows.find((r) => r.label === t('year.expenses'))?.values ?? []
   const surplus = totalsRows.find((r) => r.label === t('year.surplus'))?.values ?? []
@@ -77,9 +79,9 @@ function TotalsTrendChart({ periodLabels, totalsRows, locale }: { periodLabels: 
     [t('year.surplus')]: (surplus[i] ?? 0) / 100,
   }))
   const series = [
-    { name: t('year.income'), color: 'teal.6', type: 'bar' as const },
-    { name: t('year.expenses'), color: 'red.6', type: 'bar' as const },
-    { name: t('year.surplus'), color: 'blue.6', type: 'line' as const },
+    { name: t('year.income'), color: palette.income, type: 'bar' as const },
+    { name: t('year.expenses'), color: palette.expenses, type: 'bar' as const },
+    { name: t('year.surplus'), color: palette.surplus, type: 'line' as const },
   ]
   const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
@@ -251,8 +253,8 @@ export default function MonthCompareDetail() {
       {enoughPeriods && (
         <>
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-            <Table.ScrollContainer minWidth={360}>
-              <Paper withBorder p="md" h="100%">
+            <Paper withBorder p="md" h="100%" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Table.ScrollContainer minWidth={360}>
                 <Table>
                   <Table.Thead>
                     <Table.Tr>
@@ -271,8 +273,8 @@ export default function MonthCompareDetail() {
                     ))}
                   </Table.Tbody>
                 </Table>
-              </Paper>
-            </Table.ScrollContainer>
+              </Table.ScrollContainer>
+            </Paper>
 
             <TotalsTrendChart periodLabels={periodLabels} totalsRows={totalsRows} locale={locale} />
           </SimpleGrid>

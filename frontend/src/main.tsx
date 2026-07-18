@@ -12,6 +12,7 @@ import 'react-swipeable-list/dist/styles.css'
 import i18n from './i18n/index'
 import App from './App'
 import { getErrorMessage } from './api/client'
+import { ChartPaletteProvider } from './contexts/ChartPaletteContext'
 
 // Safety net: any mutation without its own onError still surfaces a
 // notification instead of failing silently (button just stops loading).
@@ -44,7 +45,9 @@ ReactDOM.createRoot(rootEl).render(
       <MantineProvider theme={theme} defaultColorScheme="auto">
         <ModalsProvider>
           <Notifications />
-          <App />
+          <ChartPaletteProvider>
+            <App />
+          </ChartPaletteProvider>
         </ModalsProvider>
       </MantineProvider>
     </QueryClientProvider>

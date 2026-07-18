@@ -25,6 +25,9 @@ import { useUpdateMe, useUploadAvatar, useUsers, useUpdateUserRole } from '../ap
 import { useAuditLog } from '../api/hooks/useAuditLog'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
+import type { PaletteId } from '../lib/chartPalette'
+import { CHART_PALETTES, PALETTE_IDS } from '../lib/chartPalette'
+import { useChartPalette } from '../contexts/ChartPaletteContext'
 import type { ImportReport } from '../api/types'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
@@ -209,9 +212,21 @@ export default function Settings() {
   )
 }
 
+function PaletteDots({ paletteId }: { paletteId: PaletteId }) {
+  const p = CHART_PALETTES[paletteId]
+  return (
+    <Group gap={4} justify="center" wrap="nowrap">
+      {[p.income, p.expenses, p.surplus].map((color, i) => (
+        <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: color.includes('.') ? `var(--mantine-color-${color.replace('.', '-')})` : color }} />
+      ))}
+    </Group>
+  )
+}
+
 function PreferencesTab() {
   const { t, i18n } = useTranslation()
   const { colorScheme, setColorScheme } = useMantineColorScheme()
+  const { paletteId, setPaletteId } = useChartPalette()
 
   return (
     <Stack gap="lg" maw={360}>
@@ -236,6 +251,24 @@ function PreferencesTab() {
           data={[{ value: 'nl', label: 'Nederlands' }, { value: 'en', label: 'English' }]}
           value={i18n.language.startsWith('nl') ? 'nl' : 'en'}
           onChange={(v) => v && i18n.changeLanguage(v)}
+        />
+      </Stack>
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>{t('settings.chartPalette')}</Text>
+        <SegmentedControl
+          value={paletteId}
+          onChange={(v) => setPaletteId(v as PaletteId)}
+          aria-label={t('settings.chartPalette')}
+          fullWidth
+          data={PALETTE_IDS.map((id) => ({
+            value: id,
+            label: (
+              <Stack gap={2} align="center">
+                <PaletteDots paletteId={id} />
+                <Text size="xs">{t(`settings.palette_${id}`)}</Text>
+              </Stack>
+            ),
+          }))}
         />
       </Stack>
     </Stack>

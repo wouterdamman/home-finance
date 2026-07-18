@@ -13,6 +13,7 @@ import PasswordModal from '../components/PasswordModal'
 import { getErrorMessage } from '../api/client'
 import { formatCents, formatCentsCompact } from '../lib/money'
 import { niceAxisTicks } from '../lib/chartAxis'
+import { useChartPalette } from '../contexts/ChartPaletteContext'
 import HeroStat from '../components/mobile/HeroStat'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
 
@@ -25,6 +26,7 @@ export default function YearDashboard() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const { palette } = useChartPalette()
   const { data, isLoading, error } = useYearSummary(y)
   const { data: years } = useYears()
   const { data: me } = useMe()
@@ -115,9 +117,9 @@ export default function YearDashboard() {
               valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
               yAxisProps={chartYAxisProps}
               series={[
-                { name: t('year.income'), color: 'teal.6', type: 'bar' },
-                { name: t('year.expenses'), color: 'red.6', type: 'bar' },
-                { name: t('year.surplus'), color: 'blue.6', type: 'line' },
+                { name: t('year.income'), color: palette.income, type: 'bar' },
+                { name: t('year.expenses'), color: palette.expenses, type: 'bar' },
+                { name: t('year.surplus'), color: palette.surplus, type: 'line' },
               ]}
             />
           </Paper>
@@ -239,9 +241,9 @@ export default function YearDashboard() {
             valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
             yAxisProps={chartYAxisProps}
             series={[
-              { name: t('year.income'), color: 'teal.6', type: 'bar' },
-              { name: t('year.expenses'), color: 'red.6', type: 'bar' },
-              { name: t('year.surplus'), color: 'blue.6', type: 'line' },
+              { name: t('year.income'), color: palette.income, type: 'bar' },
+              { name: t('year.expenses'), color: palette.expenses, type: 'bar' },
+              { name: t('year.surplus'), color: palette.surplus, type: 'line' },
             ]}
           />
         </Paper>
