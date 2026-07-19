@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/wouterdamman/home-finance/compare/v1.6.0...v1.7.0) (2026-07-19)
+
+
+### Features
+
+* **helm:** support Gateway API, ESO, external Postgres as default stack ([#46](https://github.com/wouterdamman/home-finance/issues/46)) ([7ee30de](https://github.com/wouterdamman/home-finance/commit/7ee30dea4bf2b46424b8667ad82cf87c78533882))
+
 ## [1.6.0](https://github.com/wouterdamman/home-finance/compare/v1.5.0...v1.6.0) (2026-07-18)
 
 
