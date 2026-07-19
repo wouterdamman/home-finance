@@ -17,8 +17,15 @@ func (s *Server) handleListYears(w http.ResponseWriter, r *http.Request) {
 	out := make([]int, 0)
 	for rows.Next() {
 		var y int
-		rows.Scan(&y)
+		if err := rows.Scan(&y); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		out = append(out, y)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -78,17 +80,29 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 	for _, month := range months {
 		var periodID *int64
 		var status *string
-		s.pool.QueryRow(ctx, `SELECT id, status FROM periods WHERE year=$1 AND month=$2`, year, month).Scan(&periodID, &status)
+		if err := s.pool.QueryRow(ctx, `SELECT id, status FROM periods WHERE year=$1 AND month=$2`, year, month).
+			Scan(&periodID, &status); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			Error(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
 
 		mt := monthTotal{Month: month, Status: status}
 		if periodID != nil {
-			mt.IncomeTotalCents, mt.ExpenseTotalCents = s.writeMonthSheet(ctx, f, headerStyle, year, month, *periodID)
+			var err error
+			mt.IncomeTotalCents, mt.ExpenseTotalCents, err = s.writeMonthSheet(ctx, f, headerStyle, year, month, *periodID)
+			if err != nil {
+				Error(w, http.StatusInternalServerError, "db_error", err.Error())
+				return
+			}
 		}
 		totals = append(totals, mt)
 	}
 
 	writeYearOverviewSheet(f, headerStyle, year, totals)
-	s.writePotBalancesSheet(ctx, f, headerStyle)
+	if err := s.writePotBalancesSheet(ctx, f, headerStyle); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 
 	f.DeleteSheet("Sheet1")
 	f.SetActiveSheet(0)
@@ -106,7 +120,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 // budget lines (effective amount — transaction sum for tracked lines,
 // otherwise the budgeted amount), and the underlying transactions for
 // tracked lines. Returns the income/expense totals for the year-overview sheet.
-func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerStyle int, year, month int, periodID int64) (incomeTotal, expenseTotal int64) {
+func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerStyle int, year, month int, periodID int64) (incomeTotal, expenseTotal int64, err error) {
 	sheetName := fmt.Sprintf("%d-%02d", year, month)
 	f.NewSheet(sheetName)
 	row := 1
@@ -124,17 +138,21 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row++
 
-	incRows, _ := s.pool.Query(ctx, `
+	incRows, err := s.pool.Query(ctx, `
 		SELECT COALESCE(src.name, ie.label, ''), ie.amount_cents, COALESCE(src.is_itemized,false),
 		  COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
 		FROM income_entries ie LEFT JOIN income_sources src ON src.id = ie.source_id
 		WHERE ie.period_id=$1 ORDER BY ie.sort_order, ie.id`, periodID)
+	if err != nil {
+		return 0, 0, err
+	}
 	for incRows.Next() {
 		var label string
 		var cents, txCents int64
 		var itemized bool
-		if incRows.Scan(&label, &cents, &itemized, &txCents) != nil {
-			continue
+		if err := incRows.Scan(&label, &cents, &itemized, &txCents); err != nil {
+			incRows.Close()
+			return 0, 0, err
 		}
 		effective := cents
 		if itemized {
@@ -146,6 +164,9 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		row++
 	}
 	incRows.Close()
+	if err := incRows.Err(); err != nil {
+		return 0, 0, err
+	}
 	f.SetCellValue(sheetName, cellRef("A", row), "Totaal inkomsten")
 	f.SetCellValue(sheetName, cellRef("B", row), float64(incomeTotal)/100)
 	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
@@ -166,17 +187,21 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	}
 	var trackedCats []trackedCat
 
-	blRows, _ := s.pool.Query(ctx, `
+	blRows, err := s.pool.Query(ctx, `
 		SELECT COALESCE(c.name, bl.label, ''), bl.amount_cents, bl.tracks_transactions,
 		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
 		FROM budget_lines bl LEFT JOIN categories c ON c.id = bl.category_id
 		WHERE bl.period_id=$1 ORDER BY bl.sort_order, bl.id`, periodID)
+	if err != nil {
+		return 0, 0, err
+	}
 	for blRows.Next() {
 		var label string
 		var amountCents, txCents int64
 		var tracks bool
-		if blRows.Scan(&label, &amountCents, &tracks, &txCents) != nil {
-			continue
+		if err := blRows.Scan(&label, &amountCents, &tracks, &txCents); err != nil {
+			blRows.Close()
+			return 0, 0, err
 		}
 		effective := amountCents
 		typeLabel := "Vast"
@@ -192,6 +217,9 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		row++
 	}
 	blRows.Close()
+	if err := blRows.Err(); err != nil {
+		return 0, 0, err
+	}
 	f.SetCellValue(sheetName, cellRef("A", row), "Totaal uitgaven")
 	f.SetCellValue(sheetName, cellRef("B", row), float64(expenseTotal)/100)
 	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
@@ -214,16 +242,20 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
 		row++
 
-		txRows, _ := s.pool.Query(ctx, `
+		txRows, err := s.pool.Query(ctx, `
 			SELECT COALESCE(c.name,''), t.description, t.amount_cents, t.tx_date
 			FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
 			WHERE t.period_id=$1 ORDER BY t.tx_date NULLS LAST, t.id`, periodID)
+		if err != nil {
+			return 0, 0, err
+		}
 		for txRows.Next() {
 			var catLabel, desc string
 			var cents int64
 			var txDate *time.Time
-			if txRows.Scan(&catLabel, &desc, &cents, &txDate) != nil {
-				continue
+			if err := txRows.Scan(&catLabel, &desc, &cents, &txDate); err != nil {
+				txRows.Close()
+				return 0, 0, err
 			}
 			date := ""
 			if txDate != nil {
@@ -236,12 +268,15 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 			row++
 		}
 		txRows.Close()
+		if err := txRows.Err(); err != nil {
+			return 0, 0, err
+		}
 	}
 
 	f.SetColWidth(sheetName, "A", "A", 28)
 	f.SetColWidth(sheetName, "B", "D", 16)
 
-	return incomeTotal, expenseTotal
+	return incomeTotal, expenseTotal, nil
 }
 
 func writeYearOverviewSheet(f *excelize.File, headerStyle int, year int, totals []monthTotal) {
@@ -284,7 +319,7 @@ func writeYearOverviewSheet(f *excelize.File, headerStyle int, year int, totals 
 	f.SetColWidth(sheetName, "B", "E", 14)
 }
 
-func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, headerStyle int) {
+func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, headerStyle int) error {
 	sheetName := "Potbalansen"
 	f.NewSheet(sheetName)
 	f.SetCellValue(sheetName, "A1", "Naam")
@@ -292,16 +327,20 @@ func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, he
 	f.SetCellValue(sheetName, "C1", "Saldo")
 	f.SetCellStyle(sheetName, "A1", "C1", headerStyle)
 
-	rows, _ := s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT p.name, p.kind, COALESCE(SUM(pl.amount_cents),0)
 		FROM pots p LEFT JOIN pot_ledger pl ON pl.pot_id=p.id
 		WHERE p.archived_at IS NULL GROUP BY p.id,p.name,p.kind,p.sort_order ORDER BY p.sort_order,p.id`)
+	if err != nil {
+		return err
+	}
 	row := 2
 	for rows.Next() {
 		var name, kind string
 		var balance int64
-		if rows.Scan(&name, &kind, &balance) != nil {
-			continue
+		if err := rows.Scan(&name, &kind, &balance); err != nil {
+			rows.Close()
+			return err
 		}
 		kindLabel := "Normaal"
 		if kind == "carryover" {
@@ -313,9 +352,13 @@ func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, he
 		row++
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
 	f.SetColWidth(sheetName, "A", "A", 24)
 	f.SetColWidth(sheetName, "B", "C", 16)
+	return nil
 }
 
 func cellRef(col string, row int) string {

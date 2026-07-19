@@ -75,7 +75,10 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	s.pool.Exec(ctx, `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, body.Year)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, body.Year); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 
 	if locked, _ := isYearLocked(ctx, s.pool, body.Year); locked {
 		Error(w, http.StatusConflict, "year_locked", "year is locked")
@@ -513,9 +516,18 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	tx.Exec(ctx, `DELETE FROM pot_ledger WHERE source_period_id=$1`, id)
-	tx.Exec(ctx, `DELETE FROM income_entries WHERE entry_type='carryover' AND source_period_id=$1`, id)
-	tx.Exec(ctx, `UPDATE periods SET status='open', closed_at=NULL WHERE id=$1`, id)
+	if _, err := tx.Exec(ctx, `DELETE FROM pot_ledger WHERE source_period_id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM income_entries WHERE entry_type='carryover' AND source_period_id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if _, err := tx.Exec(ctx, `UPDATE periods SET status='open', closed_at=NULL WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -645,9 +657,16 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var ts time.Time
-		rows.Scan(&ro.ID, &ts, &ro.UserEmail, &ro.Action, &ro.EntityType, &ro.EntityID, &ro.Details)
+		if err := rows.Scan(&ro.ID, &ts, &ro.UserEmail, &ro.Action, &ro.EntityType, &ro.EntityID, &ro.Details); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		ro.CreatedAt = ts.Format(time.RFC3339)
 		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -734,7 +753,10 @@ func (s *Server) handleDeleteIncomeEntry(w http.ResponseWriter, r *http.Request)
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `DELETE FROM income_entries WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM income_entries WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -825,7 +847,10 @@ func (s *Server) handleDeleteBudgetLine(w http.ResponseWriter, r *http.Request) 
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `DELETE FROM budget_lines WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM budget_lines WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -852,22 +877,34 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 		TxDate      *string `json:"txDate,omitempty"`
 	}
 	var rows pgx.Rows
+	var err error
 	if catID != nil {
-		rows, _ = s.pool.Query(r.Context(), `SELECT id,period_id,category_id,amount_cents,description,tx_date FROM transactions WHERE period_id=$1 AND category_id=$2 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID, *catID)
+		rows, err = s.pool.Query(r.Context(), `SELECT id,period_id,category_id,amount_cents,description,tx_date FROM transactions WHERE period_id=$1 AND category_id=$2 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID, *catID)
 	} else {
-		rows, _ = s.pool.Query(r.Context(), `SELECT id,period_id,category_id,amount_cents,description,tx_date FROM transactions WHERE period_id=$1 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID)
+		rows, err = s.pool.Query(r.Context(), `SELECT id,period_id,category_id,amount_cents,description,tx_date FROM transactions WHERE period_id=$1 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID)
+	}
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	defer rows.Close()
 	out := make([]txRow, 0)
 	for rows.Next() {
 		var tx txRow
 		var d *time.Time
-		rows.Scan(&tx.ID, &tx.PeriodID, &tx.CategoryID, &tx.AmountCents, &tx.Description, &d)
+		if err := rows.Scan(&tx.ID, &tx.PeriodID, &tx.CategoryID, &tx.AmountCents, &tx.Description, &d); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if d != nil {
 			ds := d.Format("2006-01-02")
 			tx.TxDate = &ds
 		}
 		out = append(out, tx)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -950,7 +987,10 @@ func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request)
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `DELETE FROM transactions WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM transactions WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1041,7 +1081,10 @@ func (s *Server) handleDeleteIncomeTransaction(w http.ResponseWriter, r *http.Re
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
 	}
-	s.pool.Exec(r.Context(), `DELETE FROM income_transactions WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM income_transactions WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1249,10 +1292,15 @@ func (s *Server) handleTrendsYears(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var yr yearRow
 		if err := rows.Scan(&yr.Year, &yr.IncomeTotalCents, &yr.ExpenseTotalCents); err != nil {
-			continue
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
 		}
 		yr.SurplusCents = yr.IncomeTotalCents - yr.ExpenseTotalCents
 		out = append(out, yr)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -1282,10 +1330,15 @@ func (s *Server) handleTrendsMonthlyTotals(w http.ResponseWriter, r *http.Reques
 	for rows.Next() {
 		var mt monthlyTotal
 		if err := rows.Scan(&mt.Year, &mt.Month, &mt.IncomeTotalCents, &mt.ExpenseTotalCents); err != nil {
-			continue
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
 		}
 		mt.SurplusCents = mt.IncomeTotalCents - mt.ExpenseTotalCents
 		out = append(out, mt)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -1326,7 +1379,9 @@ func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Reque
 		var name string
 		var cents int64
 		if err := rows.Scan(&year, &month, &catID, &name, &cents); err != nil {
-			continue
+			rows.Close()
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
 		}
 		if _, ok := cats[catID]; !ok {
 			cats[catID] = &catInfo{ID: catID, Name: name}
@@ -1342,6 +1397,10 @@ func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Reque
 		values[pk][catID] += cents
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 
 	sort.Slice(catOrder, func(i, j int) bool {
 		return cats[catOrder[i]].total > cats[catOrder[j]].total

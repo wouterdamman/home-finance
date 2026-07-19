@@ -27,12 +27,19 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa)
+		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if aa != nil {
 			ts := aa.Format(time.RFC3339)
 			ro.ArchivedAt = &ts
 		}
 		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -51,9 +58,12 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id int64
-	s.pool.QueryRow(r.Context(),
+	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id)
+		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id); err != nil {
+		Error(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder})
 }
 
@@ -74,7 +84,10 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate); err != nil {
+		Error(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -94,7 +107,10 @@ func (s *Server) handleReorderCategories(w http.ResponseWriter, r *http.Request)
 	}
 	defer tx.Rollback(ctx)
 	for i, cid := range body.IDs {
-		tx.Exec(ctx, `UPDATE categories SET sort_order=$2 WHERE id=$1`, cid, i)
+		if _, err := tx.Exec(ctx, `UPDATE categories SET sort_order=$2 WHERE id=$1`, cid, i); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -109,7 +125,10 @@ func (s *Server) handleArchiveCategory(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE categories SET archived_at=CASE WHEN archived_at IS NULL THEN now() ELSE NULL END WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET archived_at=CASE WHEN archived_at IS NULL THEN now() ELSE NULL END WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -135,12 +154,19 @@ func (s *Server) handleListIncomeSources(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa)
+		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if aa != nil {
 			ts := aa.Format(time.RFC3339)
 			ro.ArchivedAt = &ts
 		}
 		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -159,9 +185,12 @@ func (s *Server) handleCreateIncomeSource(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var id int64
-	s.pool.QueryRow(r.Context(),
+	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO income_sources (name,default_amount_cents,is_itemized,include_in_template,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id)
+		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id); err != nil {
+		Error(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder})
 }
 
@@ -183,7 +212,10 @@ func (s *Server) handleUpdateIncomeSource(w http.ResponseWriter, r *http.Request
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE income_sources SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,sort_order=$6 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE income_sources SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,sort_order=$6 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder); err != nil {
+		Error(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -193,7 +225,10 @@ func (s *Server) handleArchiveIncomeSource(w http.ResponseWriter, r *http.Reques
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE income_sources SET archived_at=CASE WHEN archived_at IS NULL THEN now() ELSE NULL END WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE income_sources SET archived_at=CASE WHEN archived_at IS NULL THEN now() ELSE NULL END WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -219,7 +254,10 @@ func (s *Server) handleListPots(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var aa, td *time.Time
-		rows.Scan(&ro.ID, &ro.Name, &ro.Kind, &ro.SortOrder, &ro.TargetCents, &td, &aa)
+		if err := rows.Scan(&ro.ID, &ro.Name, &ro.Kind, &ro.SortOrder, &ro.TargetCents, &td, &aa); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if aa != nil {
 			ts := aa.Format(time.RFC3339)
 			ro.ArchivedAt = &ts
@@ -229,6 +267,10 @@ func (s *Server) handleListPots(w http.ResponseWriter, r *http.Request) {
 			ro.TargetDate = &ds
 		}
 		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -257,12 +299,19 @@ func (s *Server) handleGetPotBalances(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var td *time.Time
-		rows.Scan(&ro.PotID, &ro.Name, &ro.Kind, &ro.BalanceCents, &ro.TargetCents, &td)
+		if err := rows.Scan(&ro.PotID, &ro.Name, &ro.Kind, &ro.BalanceCents, &ro.TargetCents, &td); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if td != nil {
 			ds := td.Format("2006-01-02")
 			ro.TargetDate = &ds
 		}
 		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -338,7 +387,10 @@ func (s *Server) handleArchivePot(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	s.pool.Exec(r.Context(), `UPDATE pots SET archived_at=CASE WHEN archived_at IS NULL THEN now() ELSE NULL END WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `UPDATE pots SET archived_at=CASE WHEN archived_at IS NULL THEN now() ELSE NULL END WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -349,14 +401,14 @@ func (s *Server) handleGetPotLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type row struct {
-		ID              int64   `json:"id"`
-		PeriodID        *int64  `json:"periodId,omitempty"`
-		SourcePeriodID  *int64  `json:"sourcePeriodId,omitempty"`
-		EntryType       string  `json:"entryType"`
-		AmountCents     int64   `json:"amountCents"`
-		RunningBalance  int64   `json:"runningBalance"`
-		Description     string  `json:"description"`
-		EntryDate       *string `json:"entryDate,omitempty"`
+		ID             int64   `json:"id"`
+		PeriodID       *int64  `json:"periodId,omitempty"`
+		SourcePeriodID *int64  `json:"sourcePeriodId,omitempty"`
+		EntryType      string  `json:"entryType"`
+		AmountCents    int64   `json:"amountCents"`
+		RunningBalance int64   `json:"runningBalance"`
+		Description    string  `json:"description"`
+		EntryDate      *string `json:"entryDate,omitempty"`
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT id, period_id, source_period_id, entry_type, amount_cents,
@@ -372,12 +424,19 @@ func (s *Server) handleGetPotLedger(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var ed *time.Time
-		rows.Scan(&ro.ID, &ro.PeriodID, &ro.SourcePeriodID, &ro.EntryType, &ro.AmountCents, &ro.RunningBalance, &ro.Description, &ed)
+		if err := rows.Scan(&ro.ID, &ro.PeriodID, &ro.SourcePeriodID, &ro.EntryType, &ro.AmountCents, &ro.RunningBalance, &ro.Description, &ed); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
 		if ed != nil {
 			ds := ed.Format("2006-01-02")
 			ro.EntryDate = &ds
 		}
 		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -439,7 +498,10 @@ func (s *Server) handleDeletePotEntry(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "cannot delete an automatically generated entry")
 		return
 	}
-	s.pool.Exec(r.Context(), `DELETE FROM pot_ledger WHERE id=$1`, id)
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM pot_ledger WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	s.auditLog(r.Context(), "pot.entry.delete", "pot", potID, map[string]any{"entryId": id, "entryType": entryType})
 	w.WriteHeader(http.StatusNoContent)
 }
