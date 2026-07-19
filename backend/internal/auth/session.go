@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -11,9 +12,18 @@ import (
 
 const sessionUserKey = "userID"
 
+// sessionCleanupInterval controls how often expired rows are purged from
+// the sessions table. scs's built-in cleanup goroutine only fires for
+// stores implementing its cleanup interface, which pgxStore doesn't, so
+// without this the table (indexed via sessions_expiry_idx, migration 0001)
+// grows one row per login forever.
+const sessionCleanupInterval = 1 * time.Hour
+
 func NewSessionManager(pool *pgxpool.Pool, secure bool) *scs.SessionManager {
 	sm := scs.New()
-	sm.Store = &pgxStore{pool: pool}
+	store := &pgxStore{pool: pool}
+	store.startCleanup(sessionCleanupInterval)
+	sm.Store = store
 	sm.Lifetime = 7 * 24 * time.Hour
 	sm.Cookie.HttpOnly = true
 	sm.Cookie.SameSite = http.SameSiteLaxMode
@@ -24,6 +34,21 @@ func NewSessionManager(pool *pgxpool.Pool, secure bool) *scs.SessionManager {
 
 type pgxStore struct {
 	pool *pgxpool.Pool
+}
+
+// startCleanup runs for the lifetime of the process — the server has a
+// single long-lived session manager, so there's no case where it needs to
+// be stopped before process exit.
+func (s *pgxStore) startCleanup(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if _, err := s.pool.Exec(context.Background(), `DELETE FROM sessions WHERE expiry < now()`); err != nil {
+				slog.Error("session cleanup", "err", err)
+			}
+		}
+	}()
 }
 
 func (s *pgxStore) Find(token string) ([]byte, bool, error) {
