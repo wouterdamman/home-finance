@@ -39,6 +39,38 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+    {{- if .Values.postgres.cnpg.enabled }}
+    # Bundled CNPG Cluster lives in this same namespace — derivable, no values needed.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+            cnpg.io/cluster: {{ .Values.postgres.cnpg.clusterName }}
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    {{- else if .Values.networkPolicy.cilium.dbEgress.namespaceLabel }}
+    # External/shared Postgres — location can't be derived, see dbEgress values.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.cilium.dbEgress.namespaceLabel }}
+            {{- range $k, $v := .Values.networkPolicy.cilium.dbEgress.podLabels }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.cilium.dbEgress.port | default 5432 | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- if .Values.oidc.issuerURL }}
+    # OIDC provider — hostname derived from oidc.issuerURL, no values needed.
+    - toFQDNs:
+        - matchName: {{ (urlParse .Values.oidc.issuerURL).hostname | quote }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- end }}
     {{- with .Values.networkPolicy.cilium.extraEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

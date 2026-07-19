@@ -77,10 +77,23 @@ httproutes:
 # On by default (this stack runs Cilium): a default-deny-friendly policy —
 # DNS egress, app-port ingress, and Prometheus scrape ingress, plus escape
 # hatches below. Set to false on a cluster without Cilium.
+#
+# DB and OIDC egress are handled automatically wherever the chart can derive
+# them: DB egress when postgres.cnpg.enabled=true (bundled Cluster, same
+# namespace, name known) and OIDC egress from oidc.issuerURL (via toFQDNs).
+# The only case requiring manual input is postgres.cnpg.enabled=false — an
+# external/shared Postgres whose location the chart can't know — fill in
+# dbEgress below then.
 networkPolicy:
   cilium:
     enabled: true
     prometheusNamespace: monitoring
+    # REQUIRED when postgres.cnpg.enabled=false (external DB) and
+    # networkPolicy.cilium.enabled=true — otherwise the app can't reach it.
+    dbEgress:
+      namespaceLabel: ""
+      podLabels: {}
+      port: 5432
     extraEgress: []
     extraIngress: []
 
