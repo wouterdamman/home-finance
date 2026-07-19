@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.3](https://github.com/wouterdamman/home-finance/compare/v1.7.2...v1.7.3) (2026-07-19)
+
+
+### Bug Fixes
+
+* **helm:** auto-derive DB and OIDC CiliumNetworkPolicy egress ([8a211e2](https://github.com/wouterdamman/home-finance/commit/8a211e21dd09ba60dff4b840550eff43eadca741))
+
 ## [1.7.2](https://github.com/wouterdamman/home-finance/compare/v1.7.1...v1.7.2) (2026-07-19)
 
 
