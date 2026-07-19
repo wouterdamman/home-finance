@@ -327,6 +327,36 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
+	var preYear, preMonth int
+	var preStatus string
+	if err := s.pool.QueryRow(ctx, `SELECT year, month, status FROM periods WHERE id=$1`, id).
+		Scan(&preYear, &preMonth, &preStatus); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "period not found")
+		return
+	}
+	if locked, err := isYearLocked(ctx, s.pool, preYear); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	} else if locked {
+		Error(w, http.StatusConflict, "year_locked", "year is locked")
+		return
+	}
+	nextMonth, nextYear := preMonth+1, preYear
+	if nextMonth > 12 {
+		nextMonth = 1
+		nextYear++
+	}
+	var nextStatus string
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM periods WHERE year=$1 AND month=$2`, nextYear, nextMonth).
+		Scan(&nextStatus); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if nextStatus == "closed" {
+		Error(w, http.StatusConflict, "next_period_closed", "cannot close: next period is already closed")
+		return
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", "could not start transaction")

@@ -271,3 +271,73 @@ func TestYearLockBlocksWritesAndUnlockRestores(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+// TestClosePeriodGuards covers the lifecycle guards handleClosePeriod is
+// missing relative to handleReopenPeriod: closing a period whose year is
+// locked, and closing a period whose successor is already closed (which
+// would otherwise insert a carryover into a next period whose frozen totals
+// never included it).
+func TestClosePeriodGuards(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+
+	t.Run("blocked when year is locked", func(t *testing.T) {
+		const year, month = 2096, 4
+		id := createTestPeriod(t, c, year, month)
+		defer func() {
+			c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", map[string]any{"password": "test"}).Body.Close()
+			c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/reopen", nil).Body.Close()
+			deleteTestPeriod(t, c, id)
+		}()
+
+		// Lock requires all periods in the year to be closed first.
+		resp := c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/close", nil)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("close period: want 204, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", map[string]any{"password": "test"})
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("lock year: want 204, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		// Simulate a leftover open period in an otherwise-locked year (the
+		// state the guard defends against — e.g. a lock/close race, or data
+		// predating the lock feature) by flipping status directly in the DB,
+		// bypassing the app-level guards that would normally prevent it.
+		if _, err := pool.Exec(context.Background(), `UPDATE periods SET status='open' WHERE id=$1`, id); err != nil {
+			t.Fatalf("simulate reopen: %v", err)
+		}
+
+		resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/close", nil)
+		if resp.StatusCode != http.StatusConflict {
+			t.Errorf("close while year locked: want 409, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+	})
+
+	t.Run("blocked when next period is already closed", func(t *testing.T) {
+		const year, month = 2096, 8
+		id := createTestPeriod(t, c, year, month)
+		nextID := createTestPeriod(t, c, year, month+1)
+		defer func() {
+			c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(nextID, 10)+"/reopen", nil).Body.Close()
+			deleteTestPeriod(t, c, nextID)
+			deleteTestPeriod(t, c, id)
+		}()
+
+		resp := c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(nextID, 10)+"/close", nil)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("close next period: want 204, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/close", nil)
+		if resp.StatusCode != http.StatusConflict {
+			t.Errorf("close with next period closed: want 409, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+	})
+}
