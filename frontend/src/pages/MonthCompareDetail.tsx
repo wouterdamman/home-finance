@@ -10,7 +10,7 @@ import { api } from '../api/client'
 import type { YearSummary } from '../api/types'
 import { useTrendsCategoryTotals } from '../api/hooks/usePeriods'
 import { formatCents, formatCentsCompact } from '../lib/money'
-import { niceAxisTicks } from '../lib/chartAxis'
+import { niceAxisTicksSigned } from '../lib/chartAxis'
 import { useChartPalette } from '../contexts/ChartPaletteContext'
 import ChartLegend from '../components/trends/ChartLegend'
 import { MobileListRow } from '../components/mobile/MobileList'
@@ -83,8 +83,8 @@ function TotalsTrendChart({ periodLabels, totalsRows, locale }: { periodLabels: 
     { name: t('year.expenses'), color: palette.expenses, type: 'bar' as const },
     { name: t('year.surplus'), color: palette.surplus, type: 'line' as const },
   ]
-  const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
-  const ticks = niceAxisTicks(maxValue)
+  const values = chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0))
+  const ticks = niceAxisTicksSigned(Math.min(...values, 0), Math.max(...values, 0))
   return (
     <Paper withBorder p="md">
       <div style={{ flexShrink: 0 }}>
@@ -96,7 +96,7 @@ function TotalsTrendChart({ periodLabels, totalsRows, locale }: { periodLabels: 
         dataKey="period"
         withLegend={false}
         valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
-        yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
+        yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [ticks[0], ticks[ticks.length - 1]] }}
         series={series}
       />
     </Paper>

@@ -12,7 +12,7 @@ import MoneyText from '../components/MoneyText'
 import PasswordModal from '../components/PasswordModal'
 import { getErrorMessage } from '../api/client'
 import { formatCents, formatCentsCompact } from '../lib/money'
-import { niceAxisTicks } from '../lib/chartAxis'
+import { niceAxisTicksSigned } from '../lib/chartAxis'
 import { useChartPalette } from '../contexts/ChartPaletteContext'
 import HeroStat from '../components/mobile/HeroStat'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
@@ -56,9 +56,11 @@ export default function YearDashboard() {
     [t('year.expenses')]: m.expenseTotalCents / 100,
     [t('year.surplus')]: m.surplusCents / 100,
   }))
-  const chartMaxValue = Math.max(...data.months.flatMap((m) => [m.incomeTotalCents, m.expenseTotalCents, m.surplusCents]), 0) / 100
-  const chartTicks = niceAxisTicks(chartMaxValue)
-  const chartYAxisProps = { tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks: chartTicks, domain: [0, chartTicks[chartTicks.length - 1]] }
+  const chartValues = data.months.flatMap((m) => [m.incomeTotalCents, m.expenseTotalCents, m.surplusCents])
+  const chartMaxValue = Math.max(...chartValues, 0) / 100
+  const chartMinValue = Math.min(...chartValues, 0) / 100
+  const chartTicks = niceAxisTicksSigned(chartMinValue, chartMaxValue)
+  const chartYAxisProps = { tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks: chartTicks, domain: [chartTicks[0], chartTicks[chartTicks.length - 1]] }
 
   const handleLock = (password: string) => {
     lockYear.mutate(password, {

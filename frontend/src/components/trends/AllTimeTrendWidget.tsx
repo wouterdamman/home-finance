@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useTrendsMonthlyTotals } from '../../api/hooks/usePeriods'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
-import { niceAxisTicks } from '../../lib/chartAxis'
+import { niceAxisTicksSigned } from '../../lib/chartAxis'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
 
@@ -45,8 +45,8 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
     { name: t('year.expenses'), color: palette.expenses, type: markType === 'bar' ? ('bar' as const) : ('line' as const) },
     { name: t('year.surplus'), color: palette.surplus, type: 'line' as const },
   ]
-  const maxValue = Math.max(...chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
-  const ticks = niceAxisTicks(maxValue)
+  const values = chartData.flatMap((row) => series.map((s) => Number(row[s.name]) || 0))
+  const ticks = niceAxisTicksSigned(Math.min(...values, 0), Math.max(...values, 0))
   // Recharts' own auto-thinning of x-axis labels picks an uneven subset once
   // labels don't all fit (e.g. dropping just "Nov" while keeping every other
   // month) — pick a fixed, even stride ourselves so it's always a clean
@@ -66,7 +66,7 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
           withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
           xAxisProps={{ interval: xInterval }}
-          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
+          yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [ticks[0], ticks[ticks.length - 1]] }}
           series={series}
         />
       </div>

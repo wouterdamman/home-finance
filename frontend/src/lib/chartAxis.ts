@@ -16,10 +16,24 @@ function niceNumber(value: number): number {
 }
 
 export function niceAxisTicks(maxValue: number, tickCount = 4): number[] {
-  if (!Number.isFinite(maxValue) || maxValue <= 0) return [0]
-  const step = niceNumber(maxValue / tickCount)
+  return niceAxisTicksSigned(0, maxValue, tickCount)
+}
+
+// Like niceAxisTicks, but also extends the axis below zero when minValue is
+// negative — a month where expenses exceed income (the surplus worth
+// seeing) would otherwise render flattened onto the baseline, since every
+// surplus chart previously passed a hardcoded domain of [0, max].
+export function niceAxisTicksSigned(minValue: number, maxValue: number, tickCount = 4): number[] {
+  const safeMax = Number.isFinite(maxValue) ? Math.max(maxValue, 0) : 0
+  const safeMin = Number.isFinite(minValue) ? Math.min(minValue, 0) : 0
+  if (safeMax === 0 && safeMin === 0) return [0]
+
+  const step = niceNumber((safeMax - safeMin) / tickCount)
+  if (step <= 0) return [0]
+
   const ticks: number[] = []
-  for (let v = 0; v <= maxValue + step / 2; v += step) {
+  const start = Math.floor(safeMin / step) * step
+  for (let v = start; v <= safeMax + step / 2; v += step) {
     ticks.push(Math.round(v * 100) / 100)
   }
   return ticks
