@@ -36,6 +36,10 @@ postgres:
 externalSecrets:
   enabled: false
 
+networkPolicy:
+  cilium:
+    enabled: false   # no Cilium on this cluster
+
 oidc:
   existingSecret: my-oidc-secret   # Secret you create by hand, key: clientSecret
 ```
@@ -53,12 +57,12 @@ kubectl create secret generic home-finance-secrets \
 CNPG enabled the chart uses the Cluster's own auto-generated `<clusterName>-app`
 Secret instead, and this key is ignored.)
 
-## Optional: Cilium network policy
+## Cilium network policy
 
-Off by default. `networkPolicy.cilium.enabled: true` renders a `CiliumNetworkPolicy`
+On by default (`networkPolicy.cilium.enabled: true`) — renders a `CiliumNetworkPolicy`
 (DNS egress, app-port + Prometheus-scrape ingress), with `extraEgress`/`extraIngress`
 escape hatches for anything else (e.g. an OIDC provider reachable only via a specific
-CIDR/entity).
+CIDR/entity). Set to `false` on a cluster without Cilium (classic mode).
 
 ## Required environment / admin bootstrap
 

@@ -69,12 +69,12 @@ httproutes:
       port: 80
 
 # --- Cilium network policy --------------------------------------------------
-# Off by default (most clusters don't run Cilium). Enable on a Cilium
-# cluster to get a default-deny-friendly policy: DNS egress, app-port
-# ingress, and Prometheus scrape ingress, plus escape hatches below.
+# On by default (this stack runs Cilium): a default-deny-friendly policy —
+# DNS egress, app-port ingress, and Prometheus scrape ingress, plus escape
+# hatches below. Set to false on a cluster without Cilium.
 networkPolicy:
   cilium:
-    enabled: false
+    enabled: true
     prometheusNamespace: monitoring
     extraEgress: []
     extraIngress: []
