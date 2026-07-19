@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/wouterdamman/home-finance/compare/v1.7.1...v1.7.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* **helm:** support imagePullSecrets for private image repositories ([a40420f](https://github.com/wouterdamman/home-finance/commit/a40420f37867ea2e0568d957b0d9e441377c4f61))
+
 ## [1.7.1](https://github.com/wouterdamman/home-finance/compare/v1.7.0...v1.7.1) (2026-07-19)
 
 
