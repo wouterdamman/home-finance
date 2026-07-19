@@ -3,6 +3,11 @@ image:
   tag: 1.7.0
   pullPolicy: IfNotPresent
 
+# Only needed if the image repository above is private. List of Secret
+# names (type kubernetes.io/dockerconfigjson) already present in the
+# release namespace, e.g. [{name: ghcr-pull-secret}].
+imagePullSecrets: []
+
 replicaCount: 1
 
 env:
