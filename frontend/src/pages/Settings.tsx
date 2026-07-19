@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, Avatar, useMantineColorScheme } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { useDisclosure, useMediaQuery } from '@mantine/hooks'
+import { useDebouncedValue, useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
@@ -1476,7 +1476,16 @@ function AuditLogTab() {
   const [from, setFrom] = useState<string | null>(null)
   const [to, setTo] = useState<string | null>(null)
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useAuditLog({ action, entityType, userEmail, from, to })
+  // Debounce the free-text filters so typing "period.close" doesn't fire a
+  // request per keystroke — exact-match filters can only hit on the final
+  // string anyway.
+  const [debouncedAction] = useDebouncedValue(action, 300)
+  const [debouncedEntityType] = useDebouncedValue(entityType, 300)
+  const [debouncedUserEmail] = useDebouncedValue(userEmail, 300)
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useAuditLog({
+    action: debouncedAction, entityType: debouncedEntityType, userEmail: debouncedUserEmail, from, to,
+  })
   const entries = data?.pages.flat() ?? []
 
   const entityLabel = (e: { entityType?: string; entityId?: number }) =>
