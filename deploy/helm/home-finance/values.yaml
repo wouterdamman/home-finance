@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/wouterdamman/home-finance
-  tag: 1.7.1
+  tag: 1.7.2
   pullPolicy: IfNotPresent
 
 # Only needed if the image repository above is private. List of Secret
