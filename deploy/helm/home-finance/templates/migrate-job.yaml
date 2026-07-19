@@ -25,7 +25,12 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgres.clusterName }}-app
+                  {{- if and .Values.postgres.cnpg.enabled (not .Values.externalSecrets.enabled) }}
+                  name: {{ .Values.postgres.cnpg.clusterName }}-app
                   key: uri
+                  {{- else }}
+                  name: {{ .Values.secrets.name }}
+                  key: DATABASE_URL
+                  {{- end }}
             - name: ENV
               value: {{ (index .Values.env "ENV") | default "production" | quote }}

@@ -12,39 +12,121 @@ env:
   # replicaCount > 1 and gives migrations a clear pass/fail before rollout.
   AUTO_MIGRATE: "false"
   PORT: "8080"
+  # ALLOWED_EMAILS: ""                  # comma-separated allowlist, empty = anyone the IdP authenticates
+  # INITIAL_ADMIN_EMAILS: "you@example.com"  # comma-separated, granted role=admin on first login
+
+# Name of the Secret the app reads DATABASE_URL / OIDC_CLIENT_SECRET from at
+# runtime. Populated either by externalSecrets.enabled (default) or by you
+# creating it by hand (classic mode) — deployment.yaml doesn't care which.
+secrets:
+  name: home-finance-secrets
+
+namespace:
+  # Render templates/namespace.yaml. Turn off if your GitOps tooling already
+  # creates/owns the namespace (e.g. ArgoCD `CreateNamespace=true` with no
+  # local Namespace manifest, or a parent chart).
+  manage: true
+
+# Extra labels merged onto the managed namespace, e.g. Gateway API's
+# namespace-referenceGrant-style opt-in labels. Empty by default.
+namespaceLabels: {}
 
 oidc:
   issuerURL: ""
   clientID: ""
   redirectURL: ""
+  # Only used when externalSecrets.enabled is false — point at a Secret you
+  # created yourself containing the OIDC client secret.
   existingSecret: ""
   clientSecretKey: clientSecret
 
+# --- Ingress: classic Kubernetes Ingress ------------------------------------
+# Off by default in favor of httproutes (Gateway API) below. Flip this to
+# true and clear httproutes to run without Gateway API.
 ingress:
-  enabled: true
+  enabled: false
   className: nginx
   host: finance.example.com
   tls:
     enabled: true
     secretName: home-finance-tls
 
-postgres:
-  clusterName: home-finance-pg
-  instances: 1
-  storageSize: 5Gi
-  imageName: ghcr.io/cloudnative-pg/postgresql:16
-  databaseName: homefinance
-  ownerName: homefinance
-  # Scheduled backups via CNPG barmanObjectStore. Disabled by default — fill
-  # in an S3-compatible bucket + credentials secret to enable. Without this,
-  # a lost PVC means the family's financial data is unrecoverable.
-  backup:
+# --- Gateway API HTTPRoute(s) — default routing mechanism ------------------
+# List of routes to create. Set to [] and enable `ingress` above to use
+# classic Ingress instead. Override `hostname` and `gateway.*` for your
+# cluster; these are placeholder/example values.
+httproutes:
+  - enabled: true
+    name: home-finance
+    hostname: finance.example.com
+    path: /
+    gateway:
+      name: app-gateway
+      namespace: kube-system
+      sectionName: app-https-listener
+    backend:
+      name: home-finance
+      port: 80
+
+# --- Cilium network policy --------------------------------------------------
+# Off by default (most clusters don't run Cilium). Enable on a Cilium
+# cluster to get a default-deny-friendly policy: DNS egress, app-port
+# ingress, and Prometheus scrape ingress, plus escape hatches below.
+networkPolicy:
+  cilium:
     enabled: false
-    schedule: "0 0 3 * * *" # daily at 03:00
-    retentionPolicy: "30d"
-    destinationPath: "s3://CHANGEME-bucket/home-finance-pg"
-    endpointURL: ""
-    existingSecret: "" # must provide ACCESS_KEY_ID / ACCESS_SECRET_KEY keys
+    prometheusNamespace: monitoring
+    extraEgress: []
+    extraIngress: []
+
+# --- Database ----------------------------------------------------------------
+# CNPG mode: cnpg.enabled false (default) means DATABASE_URL is expected to
+# come from the `secrets.name` Secret (see externalSecrets/oidc above) —
+# point it at any Postgres, including a shared/external CNPG cluster you
+# already run. Set cnpg.enabled true to have this chart provision its own
+# dedicated CNPG Cluster (classic/portable mode, no external DB required).
+postgres:
+  cnpg:
+    enabled: false
+    clusterName: home-finance-pg
+    instances: 1
+    storageSize: 5Gi
+    imageName: ghcr.io/cloudnative-pg/postgresql:16
+    databaseName: homefinance
+    ownerName: homefinance
+    # Scheduled backups via CNPG barmanObjectStore. Disabled by default — fill
+    # in an S3-compatible bucket + credentials secret to enable. Without this,
+    # a lost PVC means the family's financial data is unrecoverable. Only
+    # relevant when cnpg.enabled is true.
+    backup:
+      enabled: false
+      schedule: "0 0 3 * * *" # daily at 03:00
+      retentionPolicy: "30d"
+      destinationPath: "s3://CHANGEME-bucket/home-finance-pg"
+      endpointURL: ""
+      existingSecret: "" # must provide ACCESS_KEY_ID / ACCESS_SECRET_KEY keys
+
+# --- External Secrets Operator ----------------------------------------------
+# On by default: renders an ExternalSecret that builds the `secrets.name`
+# Secret (DATABASE_URL + OIDC_CLIENT_SECRET) from a SecretStore. Turn off
+# and hand-create the `secrets.name` Secret yourself for classic mode
+# (no ESO required) — see keys expected below.
+externalSecrets:
+  enabled: true
+  secretStoreRef: onepassword-connect
+  secretStoreKind: ClusterSecretStore
+  database:
+    # Remote item must expose properties: host, port, database, username, password
+    remoteKey: cnpg-shared-home-finance
+  oidc:
+    # Remote item must expose property: client_secret
+    remoteKey: home-finance-oidc
+
+# Classic-mode reference: if externalSecrets.enabled is false, create
+# `secrets.name` yourself with:
+#   kubectl create secret generic home-finance-secrets \
+#     --from-literal=DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=disable' \
+#     --from-literal=OIDC_CLIENT_SECRET='...'
 
 # Application-level S3-compatible object storage — separate from
 # postgres.backup above (different concern: app data, not DB backups).

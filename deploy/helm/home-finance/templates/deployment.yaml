@@ -24,8 +24,13 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgres.clusterName }}-app
+                  {{- if and .Values.postgres.cnpg.enabled (not .Values.externalSecrets.enabled) }}
+                  name: {{ .Values.postgres.cnpg.clusterName }}-app
                   key: uri
+                  {{- else }}
+                  name: {{ .Values.secrets.name }}
+                  key: DATABASE_URL
+                  {{- end }}
             - name: OIDC_ISSUER_URL
               value: {{ .Values.oidc.issuerURL | quote }}
             - name: OIDC_CLIENT_ID
@@ -35,8 +40,13 @@ spec:
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
+                  {{- if .Values.externalSecrets.enabled }}
+                  name: {{ .Values.secrets.name }}
+                  key: OIDC_CLIENT_SECRET
+                  {{- else }}
                   name: {{ .Values.oidc.existingSecret }}
                   key: {{ .Values.oidc.clientSecretKey }}
+                  {{- end }}
             {{- if .Values.s3.enabled }}
             - name: S3_ENDPOINT
               valueFrom:
