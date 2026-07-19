@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.1](https://github.com/wouterdamman/home-finance/compare/v1.7.0...v1.7.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **api:** stop swallowing Scan/Exec/rows.Err() across httpapi handlers ([e4847ba](https://github.com/wouterdamman/home-finance/commit/e4847ba8d44091bb7590251299e0ec12ae5d7fac))
+* **auth:** purge expired sessions on a ticker ([10f8934](https://github.com/wouterdamman/home-finance/commit/10f8934790a17b25f1be8b17e87000c10bf6bfee))
+* **import:** wrap XLSX import in one transaction ([2a8bb22](https://github.com/wouterdamman/home-finance/commit/2a8bb220573f1eaaf1fb6637fb9b1dc3f171fca2))
+* **periods:** reject close when year locked or next period closed ([36bfa94](https://github.com/wouterdamman/home-finance/commit/36bfa94134b3835bad964c45aadc815405f5d2f3))
+* **settings:** debounce audit-log filter inputs ([127927e](https://github.com/wouterdamman/home-finance/commit/127927ef2306fedfd6cfb810513896759bd44389))
+* **trends:** don't clip negative surplus to zero on charts ([69c89c9](https://github.com/wouterdamman/home-finance/commit/69c89c9c311e76e73d8a4235de883f2bd9813634))
+
 ## [1.7.0](https://github.com/wouterdamman/home-finance/compare/v1.6.0...v1.7.0) (2026-07-19)
 
 
