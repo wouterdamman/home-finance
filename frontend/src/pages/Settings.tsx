@@ -8,13 +8,14 @@ import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
   IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload, IconUpload,
-  IconUsers, IconUserCircle, IconApi, IconShieldCheck, IconHistory, IconAlertTriangle,
+  IconUsers, IconUserCircle, IconApi, IconShieldCheck, IconHistory, IconAlertTriangle, IconTrash,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import {
   useCategories, useCreateCategory, useUpdateCategory, useArchiveCategory,
+  useCategoryAliases, useCreateCategoryAlias, useDeleteCategoryAlias,
   useIncomeSources, useCreateIncomeSource, useUpdateIncomeSource, useArchiveIncomeSource,
   usePots, useCreatePot, useUpdatePot, useArchivePot,
 } from '../api/hooks/useSettings'
@@ -270,38 +271,86 @@ function CategoriesTab() {
   const [editAmount, setEditAmount] = useState<number | string>('')
   const [editItemized, setEditItemized] = useState(false)
   const [editTemplate, setEditTemplate] = useState(true)
+  const [editParentId, setEditParentId] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newItemized, setNewItemized] = useState(false)
   const [newTemplate, setNewTemplate] = useState(true)
+  const [newParentId, setNewParentId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortState<CategorySortKey>>({ key: 'name', dir: 'asc' })
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
 
-  const startEdit = (cat: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) => {
+  // Categories with a non-null parentId are themselves children — only
+  // top-level categories are valid parent options (2-level max, enforced
+  // again server-side).
+  const parentOptions = useMemo(
+    () => (data ?? []).filter(c => !c.parentId).map(c => ({ value: String(c.id), label: c.name })),
+    [data]
+  )
+  const childCounts = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const c of data ?? []) {
+      if (c.parentId) m.set(c.parentId, (m.get(c.parentId) ?? 0) + 1)
+    }
+    return m
+  }, [data])
+
+  const startEdit = (cat: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number }) => {
     setEditing(cat.id)
     setEditName(cat.name)
     setEditAmount(cat.defaultAmountCents / 100)
     setEditItemized(cat.isItemized)
     setEditTemplate(cat.includeInTemplate)
+    setEditParentId(cat.parentId ? String(cat.parentId) : null)
   }
 
   const saveEdit = () => {
     if (!editing) return
-    update.mutate({ id: editing, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate }, {
+    update.mutate({
+      id: editing, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized,
+      includeInTemplate: editTemplate, parentId: editParentId ? Number(editParentId) : null,
+    }, {
       onSuccess: () => setEditing(null)
     })
   }
 
   const rows = useMemo(() => {
     const filtered = (data ?? []).filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-    return filtered.sort((a, b) => {
+    const comparator = (a: typeof filtered[number], b: typeof filtered[number]) => {
       const c = sort.key === 'name' ? cmp(a.name, b.name)
         : sort.key === 'default' ? cmp(a.defaultAmountCents, b.defaultAmountCents)
         : sort.key === 'itemized' ? cmp(Number(a.isItemized), Number(b.isItemized))
         : cmp(Number(a.includeInTemplate), Number(b.includeInTemplate))
       return sort.dir === 'asc' ? c : -c
-    })
+    }
+    const sorted = [...filtered].sort(comparator)
+    const childrenByParent = new Map<number, typeof sorted>()
+    const topLevel: typeof sorted = []
+    for (const c of sorted) {
+      if (c.parentId) {
+        const arr = childrenByParent.get(c.parentId) ?? []
+        arr.push(c)
+        childrenByParent.set(c.parentId, arr)
+      } else {
+        topLevel.push(c)
+      }
+    }
+    // Children sort immediately after their parent so the hierarchy reads
+    // top-to-bottom; a child whose parent got filtered out by search still
+    // shows up, just without the grouping.
+    const ordered: typeof sorted = []
+    const seenParents = new Set<number>()
+    for (const c of topLevel) {
+      ordered.push(c)
+      seenParents.add(c.id)
+      const kids = childrenByParent.get(c.id)
+      if (kids) ordered.push(...kids)
+    }
+    for (const [pid, kids] of childrenByParent) {
+      if (!seenParents.has(pid)) ordered.push(...kids)
+    }
+    return ordered
   }, [data, search, sort])
 
   if (isMobile) {
@@ -334,7 +383,7 @@ function CategoriesTab() {
             {rows.map(cat => (
               <MobileListRow
                 key={cat.id}
-                title={<>{cat.name} {cat.archivedAt && <Badge size="xs" color="gray" ml="xs">{t('settings.archived')}</Badge>}</>}
+                title={<>{cat.parentId && '↳ '}{cat.name} {cat.archivedAt && <Badge size="xs" color="gray" ml="xs">{t('settings.archived')}</Badge>}</>}
                 subtitle={[cat.isItemized && t('settings.itemized'), cat.includeInTemplate && t('settings.template')].filter(Boolean).join(' · ')}
                 trailing={<Text size="sm">€ {(cat.defaultAmountCents / 100).toFixed(2)}</Text>}
                 chevron
@@ -351,6 +400,16 @@ function CategoriesTab() {
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
               <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
+              {!childCounts.get(editingCat.id) && (
+                <Select
+                  label={t('settings.parentCategory')}
+                  placeholder={t('settings.parentCategoryNone')}
+                  clearable
+                  data={parentOptions.filter(o => o.value !== String(editingCat.id))}
+                  value={editParentId}
+                  onChange={setEditParentId}
+                />
+              )}
               <Group grow>
                 <Button onClick={saveEdit} loading={update.isPending}>{t('common.save')}</Button>
                 <Button
@@ -371,9 +430,20 @@ function CategoriesTab() {
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
           <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Select
+            label={t('settings.parentCategory')}
+            placeholder={t('settings.parentCategoryNone')}
+            clearable
+            data={parentOptions}
+            value={newParentId}
+            onChange={setNewParentId}
+          />
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
-            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
+            create.mutate({
+              name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized,
+              includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), parentId: newParentId ? Number(newParentId) : null,
+            }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewParentId(null); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </BottomSheet>
@@ -415,7 +485,21 @@ function CategoriesTab() {
             <Table.Tr key={cat.id} opacity={cat.archivedAt ? 0.5 : 1}>
               {editing === cat.id
                 ? <>
-                    <Table.Td><TextInput size="xs" value={editName} onChange={e => setEditName(e.target.value)} /></Table.Td>
+                    <Table.Td>
+                      <Stack gap={4}>
+                        <TextInput size="xs" value={editName} onChange={e => setEditName(e.target.value)} />
+                        {!childCounts.get(cat.id) && (
+                          <Select
+                            size="xs"
+                            placeholder={t('settings.parentCategoryNone')}
+                            clearable
+                            data={parentOptions.filter(o => o.value !== String(cat.id))}
+                            value={editParentId}
+                            onChange={setEditParentId}
+                          />
+                        )}
+                      </Stack>
+                    </Table.Td>
                     <Table.Td><Group justify="flex-end"><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Group></Table.Td>
@@ -427,7 +511,7 @@ function CategoriesTab() {
                     </Table.Td>
                   </>
                 : <>
-                    <Table.Td>{cat.name} {cat.archivedAt && <Badge size="xs" color="gray">{t('settings.archived')}</Badge>}</Table.Td>
+                    <Table.Td>{cat.parentId && '↳ '}{cat.name} {cat.archivedAt && <Badge size="xs" color="gray">{t('settings.archived')}</Badge>}</Table.Td>
                     <Table.Td ta="right">€ {(cat.defaultAmountCents / 100).toFixed(2)}</Table.Td>
                     <Table.Td ta="center">{cat.isItemized ? '✓' : ''}</Table.Td>
                     <Table.Td ta="center">{cat.includeInTemplate ? '✓' : '—'}</Table.Td>
@@ -452,13 +536,85 @@ function CategoriesTab() {
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
           <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Select
+            label={t('settings.parentCategory')}
+            placeholder={t('settings.parentCategoryNone')}
+            clearable
+            data={parentOptions}
+            value={newParentId}
+            onChange={setNewParentId}
+          />
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
-            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
+            create.mutate({
+              name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized,
+              includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), parentId: newParentId ? Number(newParentId) : null,
+            }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewParentId(null); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </Stack>
       </Modal>
+
+      <CategoryAliasSection categories={data ?? []} />
+    </Stack>
+  )
+}
+
+function CategoryAliasSection({ categories }: { categories: { id: number; name: string; parentId?: number }[] }) {
+  const { t } = useTranslation()
+  const { data: aliases } = useCategoryAliases()
+  const createAlias = useCreateCategoryAlias()
+  const deleteAlias = useDeleteCategoryAlias()
+  const [aliasName, setAliasName] = useState('')
+  const [aliasParentId, setAliasParentId] = useState<string | null>(null)
+
+  const parentOptions = useMemo(
+    () => categories.filter(c => !c.parentId).map(c => ({ value: String(c.id), label: c.name })),
+    [categories]
+  )
+  const categoryName = (id: number) => categories.find(c => c.id === id)?.name ?? `#${id}`
+
+  return (
+    <Stack gap="sm" mt="lg">
+      <Divider label={t('settings.categoryAliases')} />
+      <Text size="sm" c="dimmed">{t('settings.categoryAliasesHint')}</Text>
+
+      {aliases?.length === 0 && <EmptyState message={t('settings.noAliases')} />}
+      {aliases?.map(a => (
+        <Group key={a.id} justify="space-between" wrap="nowrap">
+          <Text size="sm">{a.aliasName} → {categoryName(a.parentCategoryId)}</Text>
+          <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={() => deleteAlias.mutate(a.id)}>
+            <IconTrash size={16} />
+          </ActionIcon>
+        </Group>
+      ))}
+
+      <Group align="flex-end" wrap="wrap">
+        <TextInput
+          label={t('settings.aliasName')}
+          value={aliasName}
+          onChange={e => setAliasName(e.target.value)}
+          w={200}
+        />
+        <Select
+          label={t('settings.parentCategory')}
+          data={parentOptions}
+          value={aliasParentId}
+          onChange={setAliasParentId}
+          w={200}
+        />
+        <Button
+          disabled={!aliasName || !aliasParentId}
+          loading={createAlias.isPending}
+          onClick={() => {
+            createAlias.mutate({ aliasName, parentCategoryId: Number(aliasParentId) }, {
+              onSuccess: () => { setAliasName(''); setAliasParentId(null) }
+            })
+          }}
+        >
+          {t('common.add')}
+        </Button>
+      </Group>
     </Stack>
   )
 }

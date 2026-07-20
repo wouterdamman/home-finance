@@ -16,6 +16,13 @@ export interface Category {
   includeInTemplate: boolean
   sortOrder: number
   archivedAt?: string
+  parentId?: number
+}
+
+export interface CategoryAlias {
+  id: number
+  aliasName: string
+  parentCategoryId: number
 }
 
 export interface IncomeSource {
@@ -48,7 +55,7 @@ export function useCategories() {
 export function useCreateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
+    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number; parentId?: number | null }) =>
       api.post('/api/categories', body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
   })
@@ -57,9 +64,33 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number | null }) =>
       api.put(`/api/categories/${id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
+  })
+}
+
+export function useCategoryAliases() {
+  return useQuery<CategoryAlias[]>({
+    queryKey: ['category-aliases'],
+    queryFn: () => api.get<CategoryAlias[]>('/api/category-aliases'),
+  })
+}
+
+export function useCreateCategoryAlias() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { aliasName: string; parentCategoryId: number }) =>
+      api.post('/api/category-aliases', body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['category-aliases'] }); showSaved() },
+  })
+}
+
+export function useDeleteCategoryAlias() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/category-aliases/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['category-aliases'] }),
   })
 }
 

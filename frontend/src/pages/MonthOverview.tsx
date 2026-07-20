@@ -87,7 +87,10 @@ export default function MonthOverview() {
   const budgetLineLabel = (bl: typeof budgetLines[number]) =>
     bl.label ?? (bl.categoryId != null ? categoryById.get(bl.categoryId)?.name : undefined) ?? '—'
   const usedCategoryIds = new Set(budgetLines.map(bl => bl.categoryId).filter((id): id is number => id != null))
-  const availableCategories = (categories ?? []).filter(c => !c.archivedAt && !usedCategoryIds.has(c.id))
+  // Child categories never get their own budget_lines row — their
+  // transactions roll up into their parent's total (see category_rollup) —
+  // so they're not selectable here.
+  const availableCategories = (categories ?? []).filter(c => !c.archivedAt && !c.parentId && !usedCategoryIds.has(c.id))
 
   const handleAddBudgetLine = () => {
     if (!newCategoryId) return
