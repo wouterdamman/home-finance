@@ -148,3 +148,67 @@ func TestRunRollsBackOnFailure(t *testing.T) {
 		t.Errorf("period leaked after rollback: want 0, got %d", periodCount)
 	}
 }
+
+// TestRunResolvesCategoryAliasAsChild verifies the alias lookup added in
+// mapper.go: a Details-table header with no exact-name category match, but
+// a category_aliases row, should create a category with parent_id set
+// instead of a disconnected top-level one — and a second import month
+// reusing the same header should resolve to the same child category via
+// the ordinary exact-name path, not re-consult the alias table.
+func TestRunResolvesCategoryAliasAsChild(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	const year = 2094
+	const parentLabel = "ZTest Parent 2094"
+	const aliasName = "ZTest Alias 2094"
+
+	var parentID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1, 0, false, 0) RETURNING id`,
+		parentLabel).Scan(&parentID); err != nil {
+		t.Fatalf("seed parent category: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO category_aliases (alias_name, parent_category_id) VALUES ($1,$2)`, aliasName, parentID); err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM category_aliases WHERE alias_name=$1`, aliasName)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name IN ($1,$2)`, parentLabel, aliasName)
+	})
+
+	month1 := []SheetData{
+		{Year: year, Month: 1, Kind: "Overview", Lines: []BudgetLineRow{{Label: parentLabel, AmountCents: 50000}}},
+		{Year: year, Month: 1, Kind: "Details", Txs: []TxRow{{CategoryLabel: aliasName, AmountCents: 1500, Description: "alias tx"}}},
+	}
+	if _, err := Run(ctx, pool, month1, ImportOptions{Year: year}); err != nil {
+		t.Fatalf("Run (month 1): %v", err)
+	}
+
+	var childID int64
+	var childParentID *int64
+	if err := pool.QueryRow(ctx, `SELECT id, parent_id FROM categories WHERE name=$1`, aliasName).Scan(&childID, &childParentID); err != nil {
+		t.Fatalf("lookup child category: %v", err)
+	}
+	if childParentID == nil || *childParentID != parentID {
+		t.Fatalf("child parent_id: want %d, got %v", parentID, childParentID)
+	}
+
+	month2 := []SheetData{
+		{Year: year, Month: 2, Kind: "Overview", Lines: []BudgetLineRow{{Label: parentLabel, AmountCents: 50000}}},
+		{Year: year, Month: 2, Kind: "Details", Txs: []TxRow{{CategoryLabel: aliasName, AmountCents: 2000, Description: "alias tx month 2"}}},
+	}
+	if _, err := Run(ctx, pool, month2, ImportOptions{Year: year}); err != nil {
+		t.Fatalf("Run (month 2): %v", err)
+	}
+
+	var catCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM categories WHERE name=$1`, aliasName).Scan(&catCount); err != nil {
+		t.Fatalf("count child categories: %v", err)
+	}
+	if catCount != 1 {
+		t.Fatalf("expected exactly 1 category named %q after 2 import runs (alias table only consulted once), got %d", aliasName, catCount)
+	}
+}
