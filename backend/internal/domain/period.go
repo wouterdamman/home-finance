@@ -32,8 +32,12 @@ const EffectiveIncomeCentsSQL = `COALESCE(SUM(CASE WHEN isrc.is_itemized
 	ELSE ie.amount_cents END),0)`
 
 // EffectiveExpenseCentsSQL expects the query to alias budget_lines as "bl".
+// The category_rollup join folds a child category's transactions (see
+// migration 0011) into its parent's budget line total — a category with no
+// children degenerates to member_id = category_id, so this is a no-op for
+// every budget line that isn't a parent.
 const EffectiveExpenseCentsSQL = `COALESCE(SUM(CASE WHEN bl.tracks_transactions
-	THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+	THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0)
 	ELSE bl.amount_cents END),0)`
 
 // ValidateSplits checks that percentages sum to 100.00 (±0.01 epsilon).

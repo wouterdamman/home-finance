@@ -244,7 +244,7 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 	}
 	blRows, err := s.pool.Query(ctx, `
 		SELECT bl.id, bl.category_id, bl.label, bl.amount_cents, bl.tracks_transactions, bl.sort_order,
-		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0)
 		FROM budget_lines bl WHERE bl.period_id=$1 ORDER BY bl.sort_order,bl.id`, id)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -862,7 +862,10 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 	var rows pgx.Rows
 	var err error
 	if catID != nil {
-		rows, err = s.pool.Query(r.Context(), `SELECT id,period_id,category_id,amount_cents,description,tx_date FROM transactions WHERE period_id=$1 AND category_id=$2 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID, *catID)
+		// category_rollup so filtering by a parent category's id also returns
+		// its children's transactions — a budget line's "view transactions"
+		// drill-down should show everything that rolled into its total.
+		rows, err = s.pool.Query(r.Context(), `SELECT t.id,t.period_id,t.category_id,t.amount_cents,t.description,t.tx_date FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=$1 AND cr.category_id=$2 ORDER BY t.tx_date DESC NULLS LAST,t.id DESC`, periodID, *catID)
 	} else {
 		rows, err = s.pool.Query(r.Context(), `SELECT id,period_id,category_id,amount_cents,description,tx_date FROM transactions WHERE period_id=$1 ORDER BY tx_date DESC NULLS LAST,id DESC`, periodID)
 	}
@@ -1332,7 +1335,7 @@ func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Reque
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.year, p.month, bl.category_id, c.name,
 		  CASE WHEN bl.tracks_transactions
-		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+		    THEN COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0)
 		    ELSE bl.amount_cents END AS effective_cents
 		FROM budget_lines bl
 		JOIN periods p ON p.id = bl.period_id

@@ -189,7 +189,7 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 
 	blRows, err := s.pool.Query(ctx, `
 		SELECT COALESCE(c.name, bl.label, ''), bl.amount_cents, bl.tracks_transactions,
-		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.period_id=bl.period_id AND t.category_id=bl.category_id),0)
+		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0)
 		FROM budget_lines bl LEFT JOIN categories c ON c.id = bl.category_id
 		WHERE bl.period_id=$1 ORDER BY bl.sort_order, bl.id`, periodID)
 	if err != nil {
