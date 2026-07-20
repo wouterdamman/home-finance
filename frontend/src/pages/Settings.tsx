@@ -272,11 +272,13 @@ function CategoriesTab() {
   const [editItemized, setEditItemized] = useState(false)
   const [editTemplate, setEditTemplate] = useState(true)
   const [editParentId, setEditParentId] = useState<string | null>(null)
+  const [editAutofill, setEditAutofill] = useState(false)
   const [newName, setNewName] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newItemized, setNewItemized] = useState(false)
   const [newTemplate, setNewTemplate] = useState(true)
   const [newParentId, setNewParentId] = useState<string | null>(null)
+  const [newAutofill, setNewAutofill] = useState(false)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortState<CategorySortKey>>({ key: 'name', dir: 'asc' })
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
@@ -296,20 +298,21 @@ function CategoriesTab() {
     return m
   }, [data])
 
-  const startEdit = (cat: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number }) => {
+  const startEdit = (cat: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number; autofillActual?: boolean }) => {
     setEditing(cat.id)
     setEditName(cat.name)
     setEditAmount(cat.defaultAmountCents / 100)
     setEditItemized(cat.isItemized)
     setEditTemplate(cat.includeInTemplate)
     setEditParentId(cat.parentId ? String(cat.parentId) : null)
+    setEditAutofill(cat.autofillActual ?? false)
   }
 
   const saveEdit = () => {
     if (!editing) return
     update.mutate({
       id: editing, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized,
-      includeInTemplate: editTemplate, parentId: editParentId ? Number(editParentId) : null,
+      includeInTemplate: editTemplate, parentId: editParentId ? Number(editParentId) : null, autofillActual: editAutofill,
     }, {
       onSuccess: () => setEditing(null)
     })
@@ -400,6 +403,7 @@ function CategoriesTab() {
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
               <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
+              <Switch label={t('settings.autofillActual')} checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} />
               {!childCounts.get(editingCat.id) && (
                 <Select
                   label={t('settings.parentCategory')}
@@ -430,6 +434,7 @@ function CategoriesTab() {
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
           <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
           <Select
             label={t('settings.parentCategory')}
             placeholder={t('settings.parentCategoryNone')}
@@ -441,9 +446,9 @@ function CategoriesTab() {
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
             create.mutate({
               name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized,
-              includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), parentId: newParentId ? Number(newParentId) : null,
+              includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), parentId: newParentId ? Number(newParentId) : null, autofillActual: newAutofill,
             }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewParentId(null); closeAdd() }
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewParentId(null); setNewAutofill(false); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </BottomSheet>
@@ -503,6 +508,7 @@ function CategoriesTab() {
                     <Table.Td><Group justify="flex-end"><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Group></Table.Td>
+                    <Table.Td><Group justify="center"><Switch checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} /></Group></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" onClick={saveEdit}>OK</Button>
@@ -536,6 +542,7 @@ function CategoriesTab() {
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
           <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
           <Select
             label={t('settings.parentCategory')}
             placeholder={t('settings.parentCategoryNone')}
@@ -547,9 +554,9 @@ function CategoriesTab() {
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
             create.mutate({
               name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized,
-              includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), parentId: newParentId ? Number(newParentId) : null,
+              includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), parentId: newParentId ? Number(newParentId) : null, autofillActual: newAutofill,
             }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewParentId(null); closeAdd() }
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewParentId(null); setNewAutofill(false); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </Stack>

@@ -183,6 +183,8 @@
     "name": "Naam",
     "default": "Standaard",
     "itemized": "Gedetailleerd",
+    "autofillActual": "Automatisch invullen",
+    "autofillActualHint": "Vult het werkelijk uitgegeven bedrag bij een nieuwe maand alvast in met de standaardwaarde — voor vaste terugkerende kosten zoals huur of abonnementen",
     "type": "Type",
     "kind_normal": "Normaal",
     "kind_carryover": "Doorlopen",

@@ -183,6 +183,8 @@
     "name": "Name",
     "default": "Default",
     "itemized": "Itemized",
+    "autofillActual": "Autofill actual amount",
+    "autofillActualHint": "Pre-fills the actual spent amount with the category default when a new month is created — for fixed recurring costs like rent or subscriptions",
     "type": "Type",
     "kind_normal": "Normal",
     "kind_carryover": "Carryover",
