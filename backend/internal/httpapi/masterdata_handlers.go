@@ -19,8 +19,9 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 		SortOrder          int     `json:"sortOrder"`
 		ArchivedAt         *string `json:"archivedAt,omitempty"`
 		ParentID           *int64  `json:"parentId,omitempty"`
+		AutofillActual     bool    `json:"autofillActual"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at,parent_id FROM categories ORDER BY sort_order,id`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at,parent_id,autofill_actual FROM categories ORDER BY sort_order,id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -30,7 +31,7 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa, &ro.ParentID); err != nil {
+		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa, &ro.ParentID, &ro.AutofillActual); err != nil {
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
 		}
@@ -88,6 +89,7 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
 		ParentID           *int64 `json:"parentId"`
+		AutofillActual     bool   `json:"autofillActual"`
 	}
 	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
@@ -100,12 +102,12 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	if err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order,parent_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder, body.ParentID).Scan(&id); err != nil {
+		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order,parent_id,autofill_actual) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder, body.ParentID, body.AutofillActual).Scan(&id); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder, "parentId": body.ParentID})
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder, "parentId": body.ParentID, "autofillActual": body.AutofillActual})
 }
 
 func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +122,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		IsItemized         bool   `json:"isItemized"`
 		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		ParentID           *int64 `json:"parentId"`
+		AutofillActual     bool   `json:"autofillActual"`
 	}
 	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
@@ -130,7 +133,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,parent_id=$6 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.ParentID); err != nil {
+	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,parent_id=$6,autofill_actual=$7 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.ParentID, body.AutofillActual); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
