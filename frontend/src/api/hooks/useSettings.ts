@@ -17,6 +17,7 @@ export interface Category {
   sortOrder: number
   archivedAt?: string
   parentId?: number
+  autofillActual?: boolean
 }
 
 export interface CategoryAlias {
@@ -55,7 +56,7 @@ export function useCategories() {
 export function useCreateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number; parentId?: number | null }) =>
+    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number; parentId?: number | null; autofillActual?: boolean }) =>
       api.post('/api/categories', body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
   })
@@ -64,7 +65,7 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number | null }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number | null; autofillActual?: boolean }) =>
       api.put(`/api/categories/${id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
   })

@@ -50,6 +50,7 @@ export interface BudgetLine {
   tracksTransactions: boolean
   transactionsTotalCents: number
   effectiveCents: number
+  targetCents: number
   sortOrder: number
 }
 
