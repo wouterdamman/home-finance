@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.8.0](https://github.com/wouterdamman/home-finance/compare/v1.7.6...v1.8.0) (2026-07-20)
+
+
+### Features
+
+* **api:** CRUD endpoints for category_aliases ([f3eccd5](https://github.com/wouterdamman/home-finance/commit/f3eccd56204a3c063c4771ae08a67be6b2d91e4b))
+* **auth:** replace DELETE_PASSWORD PIN with Authentik step-up reauth ([aaeaa9e](https://github.com/wouterdamman/home-finance/commit/aaeaa9ecf1d7a2c0940467bf74efc292cc1f5610))
+* **categories:** parent/child invariants + import alias resolution ([4487521](https://github.com/wouterdamman/home-finance/commit/448752124d4d2f4f7198a37db1928dd89b9348e0))
+* **db:** add category parent_id, category_rollup view, category_aliases ([7c49aa8](https://github.com/wouterdamman/home-finance/commit/7c49aa8a36eb76923987bb9eca93868fa4f8a3eb))
+* **db:** fold child-category transactions into parent budget line totals ([4596f9e](https://github.com/wouterdamman/home-finance/commit/4596f9e479805d4ac4f1140b40bf6c30b80021fb))
+* **frontend:** category hierarchy UI + import alias management ([b2954a0](https://github.com/wouterdamman/home-finance/commit/b2954a0b39c656ea65382459b50d1e236c02082b))
+* **frontend:** pop up Authentik reauth instead of a PIN prompt ([05df7fd](https://github.com/wouterdamman/home-finance/commit/05df7fd5a2ec5d48dcf7677a5460febdef9c175a))
+* **month:** make a budget line's amount editable after creation ([d0e327c](https://github.com/wouterdamman/home-finance/commit/d0e327cec008313de116a4ee4a3aed633c9c6e57))
+
+
+### Bug Fixes
+
+* **import:** stop silently dropping sheets with non-canonical names ([567956f](https://github.com/wouterdamman/home-finance/commit/567956fb1d75cc1839af3c46d2eb346bb3f26dd5))
+
 ## [1.7.6](https://github.com/wouterdamman/home-finance/compare/v1.7.5...v1.7.6) (2026-07-20)
 
 
