@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.9.0](https://github.com/wouterdamman/home-finance/compare/v1.8.0...v1.9.0) (2026-07-20)
+
+
+### Features
+
+* **api:** categories.autofillActual field in list/create/update ([33a91e3](https://github.com/wouterdamman/home-finance/commit/33a91e34e91fafe0f6a99e4c1991cd195fe5834b))
+* **db:** add categories.autofill_actual + budget_lines.target_cents_at_close ([bf8f094](https://github.com/wouterdamman/home-finance/commit/bf8f094497cdd9733ae0824c703d5777db9071e5))
+* **frontend:** budgetLine.targetCents + category.autofillActual types ([b989f56](https://github.com/wouterdamman/home-finance/commit/b989f567c39db9713dc7ae0120c31191283006b9))
+* **month:** decouple actual spend from budget target ([9624e40](https://github.com/wouterdamman/home-finance/commit/9624e40d67248e0185aa5bad46a5b1c66b1de764))
+* **month:** show budget target vs actual spend separately ([a2c918a](https://github.com/wouterdamman/home-finance/commit/a2c918a81cda3210e3ed53c1dfd0e29dd77d478e))
+* **settings:** autofill-actual toggle for categories ([5a2d066](https://github.com/wouterdamman/home-finance/commit/5a2d066848dd73e6a686fdc7e065e0e70aed94c9))
+
+
+### Bug Fixes
+
+* **settings:** add missing column header for autofill-actual toggle ([158a9f8](https://github.com/wouterdamman/home-finance/commit/158a9f882c3aefd37a699b5bf7db93373f8794ae))
+
+
+### CI/CD
+
+* **release:** allow manually re-running the image build via workflow_dispatch ([7d178d4](https://github.com/wouterdamman/home-finance/commit/7d178d42bd8d632e74a1812ec10048fc871df9fa))
+
 ## [1.8.0](https://github.com/wouterdamman/home-finance/compare/v1.7.6...v1.8.0) (2026-07-20)
 
 
