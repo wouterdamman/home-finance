@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/wouterdamman/home-finance/compare/v1.7.3...v1.7.4) (2026-07-20)
+
+
+### Bug Fixes
+
+* **pwa:** exclude /auth/ from service worker navigation fallback ([b8654a7](https://github.com/wouterdamman/home-finance/commit/b8654a76f8f71faad71c082471a6bab1d6d1eddf))
+
 ## [1.7.3](https://github.com/wouterdamman/home-finance/compare/v1.7.2...v1.7.3) (2026-07-19)
 
 
