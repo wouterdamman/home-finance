@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.6](https://github.com/wouterdamman/home-finance/compare/v1.7.5...v1.7.6) (2026-07-20)
+
+
+### Bug Fixes
+
+* **release:** drop release-type input so release-please reads its config file ([4436d21](https://github.com/wouterdamman/home-finance/commit/4436d21215207741f1e5db0faff467aac4d346d1))
+* **release:** use generic extra-files updater to avoid rewriting values.yaml ([1b64e2e](https://github.com/wouterdamman/home-finance/commit/1b64e2eec7b9d4713a585364b76024e2ef687906))
+
 ## [1.7.5](https://github.com/wouterdamman/home-finance/compare/v1.7.4...v1.7.5) (2026-07-20)
 
 
