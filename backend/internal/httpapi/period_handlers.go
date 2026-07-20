@@ -768,6 +768,17 @@ func (s *Server) handleCreateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if body.CategoryID != nil {
+		var hasParent bool
+		if err := s.pool.QueryRow(r.Context(), `SELECT parent_id IS NOT NULL FROM categories WHERE id=$1`, *body.CategoryID).Scan(&hasParent); err != nil {
+			Error(w, http.StatusBadRequest, "bad_request", "invalid category")
+			return
+		}
+		if hasParent {
+			Error(w, http.StatusBadRequest, "bad_request", "cannot create a budget line for a child category; use its parent")
+			return
+		}
+	}
 	// tracksTransactions is never client-supplied — it always mirrors the
 	// category's is_itemized flag at creation time, so a month can never
 	// drift out of sync with its category's Settings-defined itemized state.

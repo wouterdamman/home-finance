@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -16,8 +18,9 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 		IncludeInTemplate  bool    `json:"includeInTemplate"`
 		SortOrder          int     `json:"sortOrder"`
 		ArchivedAt         *string `json:"archivedAt,omitempty"`
+		ParentID           *int64  `json:"parentId,omitempty"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at FROM categories ORDER BY sort_order,id`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at,parent_id FROM categories ORDER BY sort_order,id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -27,7 +30,7 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa); err != nil {
+		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa, &ro.ParentID); err != nil {
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
 		}
@@ -44,6 +47,39 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, out)
 }
 
+// validateCategoryParent enforces a 2-level-max category hierarchy at the
+// Go level (matching this repo's convention of no DB triggers/CHECKs for
+// cross-row invariants): a category can't be its own parent, can't be
+// parented under a category that is itself a child, and a category that
+// already has children can't be turned into a child. selfID is nil when
+// validating a brand-new category (which by construction has no children
+// yet, so only the self-parent and parent-has-parent checks apply).
+func (s *Server) validateCategoryParent(ctx context.Context, selfID *int64, parentID *int64) error {
+	if parentID == nil {
+		return nil
+	}
+	if selfID != nil && *parentID == *selfID {
+		return errors.New("a category cannot be its own parent")
+	}
+	var parentHasParent bool
+	if err := s.pool.QueryRow(ctx, `SELECT parent_id IS NOT NULL FROM categories WHERE id=$1`, *parentID).Scan(&parentHasParent); err != nil {
+		return errors.New("parent category not found")
+	}
+	if parentHasParent {
+		return errors.New("parent category is itself a child; only 2 levels are supported")
+	}
+	if selfID != nil {
+		var hasChildren bool
+		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM categories WHERE parent_id=$1)`, *selfID).Scan(&hasChildren); err != nil {
+			return err
+		}
+		if hasChildren {
+			return errors.New("category already has children and cannot become a child itself")
+		}
+	}
+	return nil
+}
+
 func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name               string `json:"name"`
@@ -51,20 +87,25 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		IsItemized         bool   `json:"isItemized"`
 		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
+		ParentID           *int64 `json:"parentId"`
 	}
 	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if err := s.validateCategoryParent(r.Context(), nil, body.ParentID); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	var id int64
 	if err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id); err != nil {
+		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order,parent_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder, body.ParentID).Scan(&id); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder})
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder, "parentId": body.ParentID})
 }
 
 func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
@@ -78,13 +119,18 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		DefaultAmountCents int64  `json:"defaultAmountCents"`
 		IsItemized         bool   `json:"isItemized"`
 		IncludeInTemplate  bool   `json:"includeInTemplate"`
+		ParentID           *int64 `json:"parentId"`
 	}
 	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate); err != nil {
+	if err := s.validateCategoryParent(r.Context(), &id, body.ParentID); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,parent_id=$6 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.ParentID); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}

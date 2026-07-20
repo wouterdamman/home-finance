@@ -179,10 +179,26 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 					if !errors.Is(err, pgx.ErrNoRows) {
 						return nil, fmt.Errorf("month %d: lookup category %q: %w", monthNum, tx.CategoryLabel, err)
 					}
-					if err := dbTx.QueryRow(ctx,
-						`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1, 0, true, $2) RETURNING id`,
-						tx.CategoryLabel, len(catIDs)).Scan(&id); err != nil {
-						return nil, fmt.Errorf("month %d: create category %q: %w", monthNum, tx.CategoryLabel, err)
+					// No exact-name match — check for a known alias (e.g.
+					// "Bunq" -> "Boodschappen") before falling back to
+					// creating a brand-new top-level category.
+					var parentID int64
+					aliasErr := dbTx.QueryRow(ctx, `SELECT parent_category_id FROM category_aliases WHERE alias_name=$1`, tx.CategoryLabel).Scan(&parentID)
+					switch {
+					case aliasErr == nil:
+						if err := dbTx.QueryRow(ctx,
+							`INSERT INTO categories (name, parent_id, default_amount_cents, is_itemized, sort_order) VALUES ($1, $2, 0, true, $3) RETURNING id`,
+							tx.CategoryLabel, parentID, len(catIDs)).Scan(&id); err != nil {
+							return nil, fmt.Errorf("month %d: create child category %q: %w", monthNum, tx.CategoryLabel, err)
+						}
+					case errors.Is(aliasErr, pgx.ErrNoRows):
+						if err := dbTx.QueryRow(ctx,
+							`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1, 0, true, $2) RETURNING id`,
+							tx.CategoryLabel, len(catIDs)).Scan(&id); err != nil {
+							return nil, fmt.Errorf("month %d: create category %q: %w", monthNum, tx.CategoryLabel, err)
+						}
+					default:
+						return nil, fmt.Errorf("month %d: lookup category alias %q: %w", monthNum, tx.CategoryLabel, aliasErr)
 					}
 				} else {
 					// Mark existing as itemized
