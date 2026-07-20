@@ -55,23 +55,8 @@ func (s *Server) handleLockYear(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid year")
 		return
 	}
-	var body struct {
-		Password string `json:"password"`
-	}
-	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+	if !s.requireFreshReauth(w, r) {
 		return
-	}
-	if s.cfg.DevFakeAuth {
-		if body.Password == "" {
-			Error(w, http.StatusForbidden, "forbidden", "password required")
-			return
-		}
-	} else {
-		if !checkPassword(s.cfg.DeletePassword, body.Password) {
-			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
-			return
-		}
 	}
 
 	ctx := r.Context()
@@ -102,23 +87,8 @@ func (s *Server) handleUnlockYear(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid year")
 		return
 	}
-	var body struct {
-		Password string `json:"password"`
-	}
-	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+	if !s.requireFreshReauth(w, r) {
 		return
-	}
-	if s.cfg.DevFakeAuth {
-		if body.Password == "" {
-			Error(w, http.StatusForbidden, "forbidden", "password required")
-			return
-		}
-	} else {
-		if !checkPassword(s.cfg.DeletePassword, body.Password) {
-			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
-			return
-		}
 	}
 
 	ctx := r.Context()

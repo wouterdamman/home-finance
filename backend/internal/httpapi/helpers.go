@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,13 +20,48 @@ import (
 // or malicious input before it corrupts surplus/allocation math.
 const maxAmountCents = 100_000_000
 
-// checkPassword compares body against the configured password using a
-// timing-safe comparison. Empty configured password always fails.
-func checkPassword(configured, supplied string) bool {
-	if configured == "" {
-		return false
+// reauthMaxAge is how long a step-up Authentik re-authentication (see
+// auth_handlers.go's handleAuthReauth/finishReauthCallback) stays valid for
+// destructive actions. Long enough that deleting a period and then also
+// locking the year in the same sitting doesn't force a second popup; short
+// enough that an unattended unlocked laptop isn't a standing risk.
+const reauthMaxAge = 5 * time.Minute
+
+// reauthIsFresh reports whether the session's last successful step-up
+// reauth is still within reauthMaxAge.
+func reauthIsFresh(sm sessionGetter, ctx context.Context) bool {
+	t, ok := sm.Get(ctx, "reauthAt").(time.Time)
+	return ok && time.Since(t) <= reauthMaxAge
+}
+
+// sessionGetter is the subset of *scs.SessionManager this file needs,
+// declared locally so reauthIsFresh doesn't have to import scs just for a
+// type name.
+type sessionGetter interface {
+	Get(ctx context.Context, key string) any
+}
+
+// reauthIsFresh reports whether the caller has completed a step-up reauth
+// recently enough to perform a destructive action. Bypassed under
+// DevFakeAuth, matching every other auth check in dev (no real Authentik
+// account to re-authenticate against there).
+func (s *Server) reauthIsFresh(r *http.Request) bool {
+	if s.cfg.DevFakeAuth {
+		return true
 	}
-	return subtle.ConstantTimeCompare([]byte(configured), []byte(supplied)) == 1
+	return reauthIsFresh(s.sm, r.Context())
+}
+
+// requireFreshReauth writes a 401 reauth_required response and returns
+// false if the caller hasn't completed a step-up reauth recently — the
+// frontend recognizes this error code and pops the Authentik reauth
+// confirmation window rather than treating it as "session expired."
+func (s *Server) requireFreshReauth(w http.ResponseWriter, r *http.Request) bool {
+	if s.reauthIsFresh(r) {
+		return true
+	}
+	Error(w, http.StatusUnauthorized, "reauth_required", "please confirm your identity again")
+	return false
 }
 
 // validateAmountCents rejects negative or unreasonably large amounts.

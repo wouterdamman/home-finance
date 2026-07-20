@@ -33,7 +33,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 		// every admin-gated route 403s.
 		s.ensureDevUser(context.Background())
 	}
-	passwordLimiter := newPasswordRateLimiter()
+	authFlowLimiter := newAuthFlowLimiter()
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
@@ -61,9 +61,12 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 	requireAuth := auth.Require(sm, cfg.DevFakeAuth)
 	requireAdmin := auth.RequireAdmin(pool)
 
+	r.With(requireAuth, authFlowLimiter.middleware).Get("/auth/reauth", s.handleAuthReauth)
+
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.RequireCSRF)
 		r.With(requireAuth).Get("/me", s.handleMe)
+		r.With(requireAuth).Get("/reauth-status", s.handleReauthStatus)
 		r.With(requireAuth).Patch("/me", s.handleUpdateMe)
 		r.With(requireAuth).Post("/me/avatar", s.handleUploadAvatar)
 		r.With(requireAuth).Get("/users/{id}/avatar", s.handleGetAvatar)
@@ -79,7 +82,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/periods/{id}/overview", s.handleGetPeriodOverview)
 			r.With(requireAdmin).Post("/periods/{id}/close", s.handleClosePeriod)
 			r.With(requireAdmin).Post("/periods/{id}/reopen", s.handleReopenPeriod)
-			r.With(requireAdmin, passwordLimiter.middleware).Delete("/periods/{id}", s.handleDeletePeriod)
+			r.With(requireAdmin).Delete("/periods/{id}", s.handleDeletePeriod)
 
 			// Audit log
 			r.With(requireAdmin).Get("/audit-log", s.handleListAuditLog)
@@ -136,14 +139,14 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/trends/years", s.handleTrendsYears)
 			r.Get("/trends/category-totals", s.handleTrendsCategoryTotals)
 			r.Get("/trends/monthly-totals", s.handleTrendsMonthlyTotals)
-			r.With(requireAdmin, passwordLimiter.middleware).Post("/years/{year}/lock", s.handleLockYear)
-			r.With(requireAdmin, passwordLimiter.middleware).Post("/years/{year}/unlock", s.handleUnlockYear)
+			r.With(requireAdmin).Post("/years/{year}/lock", s.handleLockYear)
+			r.With(requireAdmin).Post("/years/{year}/unlock", s.handleUnlockYear)
 
 			// Export
 			r.Get("/export/years/{year}", s.handleExportYear)
 
 			// Import
-			r.With(passwordLimiter.middleware).Post("/import/xlsx", s.handleImportXLSX)
+			r.With(requireAdmin).Post("/import/xlsx", s.handleImportXLSX)
 		})
 	})
 

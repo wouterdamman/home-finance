@@ -35,8 +35,8 @@ func NewProvider(ctx context.Context, issuerURL, clientID, clientSecret, redirec
 	}, nil
 }
 
-func (p *Provider) AuthCodeURL(state, nonce string) string {
-	return p.config.AuthCodeURL(state, oidc.Nonce(nonce))
+func (p *Provider) AuthCodeURL(state, nonce string, opts ...oauth2.AuthCodeOption) string {
+	return p.config.AuthCodeURL(state, append([]oauth2.AuthCodeOption{oidc.Nonce(nonce)}, opts...)...)
 }
 
 func (p *Provider) Exchange(ctx context.Context, code string) (*oidc.IDToken, error) {

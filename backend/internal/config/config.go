@@ -19,7 +19,6 @@ type Config struct {
 	AllowedEmails      []string `env:"ALLOWED_EMAILS" envSeparator:","`
 	InitialAdminEmails []string `env:"INITIAL_ADMIN_EMAILS" envSeparator:","`
 	StaticDir          string   `env:"STATIC_DIR"`
-	DeletePassword     string   `env:"DELETE_PASSWORD" envDefault:""`
 	SessionSecure      bool     `env:"SESSION_SECURE"  envDefault:"true"`
 
 	S3Endpoint  string `env:"S3_ENDPOINT"`

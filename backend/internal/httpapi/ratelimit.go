@@ -9,11 +9,11 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// passwordRateLimiter throttles per-IP attempts against password-protected
-// endpoints (year lock/unlock, period delete) so a brute-force script can't
-// hammer DELETE_PASSWORD. Self-hosted single-family app, so a simple
-// in-memory per-IP bucket is enough — no need for a shared store.
-type passwordRateLimiter struct {
+// authFlowLimiter throttles per-IP hits against auth-adjacent endpoints
+// that trigger an outbound redirect to Authentik (currently just
+// /auth/reauth). Self-hosted single-family app, so a simple in-memory
+// per-IP bucket is enough — no need for a shared store.
+type authFlowLimiter struct {
 	mu       sync.Mutex
 	limiters map[string]*visitor
 }
@@ -23,11 +23,11 @@ type visitor struct {
 	lastSeen time.Time
 }
 
-func newPasswordRateLimiter() *passwordRateLimiter {
-	return &passwordRateLimiter{limiters: make(map[string]*visitor)}
+func newAuthFlowLimiter() *authFlowLimiter {
+	return &authFlowLimiter{limiters: make(map[string]*visitor)}
 }
 
-func (rl *passwordRateLimiter) allow(key string) bool {
+func (rl *authFlowLimiter) allow(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -42,16 +42,17 @@ func (rl *passwordRateLimiter) allow(key string) bool {
 
 	v, ok := rl.limiters[key]
 	if !ok {
-		// 5 attempts per minute, burst 5 — enough for a mistyped password
-		// retried a couple of times, not enough for a brute-force script.
-		v = &visitor{limiter: rate.NewLimiter(rate.Every(12*time.Second), 5)}
+		// 10 attempts per minute, burst 10 — this endpoint is already
+		// requireAuth-gated and each hit just triggers an Authentik redirect,
+		// so this is light hygiene throttling, not a brute-force defense.
+		v = &visitor{limiter: rate.NewLimiter(rate.Every(6*time.Second), 10)}
 		rl.limiters[key] = v
 	}
 	v.lastSeen = time.Now()
 	return v.limiter.Allow()
 }
 
-func (rl *passwordRateLimiter) middleware(next http.Handler) http.Handler {
+func (rl *authFlowLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {

@@ -32,14 +32,7 @@ func (s *Server) handleImportXLSX(w http.ResponseWriter, r *http.Request) {
 	closeThrough, _ := strconv.Atoi(r.FormValue("closeThrough"))
 
 	if wipe || resetMaster {
-		password := r.FormValue("password")
-		if s.cfg.DevFakeAuth {
-			if password == "" {
-				Error(w, http.StatusForbidden, "forbidden", "password required")
-				return
-			}
-		} else if !checkPassword(s.cfg.DeletePassword, password) {
-			Error(w, http.StatusForbidden, "forbidden", "incorrect password")
+		if !s.requireFreshReauth(w, r) {
 			return
 		}
 	}

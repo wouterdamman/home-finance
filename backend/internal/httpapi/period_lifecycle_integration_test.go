@@ -118,7 +118,7 @@ func createTestPeriod(t *testing.T, c *apiClient, year, month int) int64 {
 
 func deleteTestPeriod(t *testing.T, c *apiClient, id int64) {
 	t.Helper()
-	resp := c.do(http.MethodDelete, "/api/periods/"+strconv.FormatInt(id, 10), map[string]any{"password": "test"})
+	resp := c.do(http.MethodDelete, "/api/periods/"+strconv.FormatInt(id, 10), nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("cleanup: delete period %d: want 204, got %d", id, resp.StatusCode)
 	}
@@ -212,7 +212,7 @@ func TestYearLockBlocksWritesAndUnlockRestores(t *testing.T) {
 	id := createTestPeriod(t, c, year, month)
 	defer func() {
 		// Best-effort cleanup: unlock, reopen, delete.
-		c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", map[string]any{"password": "test"}).Body.Close()
+		c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", nil).Body.Close()
 		c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/reopen", nil).Body.Close()
 		deleteTestPeriod(t, c, id)
 	}()
@@ -223,7 +223,7 @@ func TestYearLockBlocksWritesAndUnlockRestores(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", map[string]any{"password": "test"})
+	resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("lock year: want 204, got %d", resp.StatusCode)
 	}
@@ -246,14 +246,14 @@ func TestYearLockBlocksWritesAndUnlockRestores(t *testing.T) {
 	resp.Body.Close()
 
 	// Locking an already-locked year must be rejected, not silently accepted.
-	resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", map[string]any{"password": "test"})
+	resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", nil)
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("double lock: want 409, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	// Unlock, then reopen should succeed again.
-	resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", map[string]any{"password": "test"})
+	resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("unlock year: want 204, got %d", resp.StatusCode)
 	}
@@ -285,7 +285,7 @@ func TestClosePeriodGuards(t *testing.T) {
 		const year, month = 2096, 4
 		id := createTestPeriod(t, c, year, month)
 		defer func() {
-			c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", map[string]any{"password": "test"}).Body.Close()
+			c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/unlock", nil).Body.Close()
 			c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/reopen", nil).Body.Close()
 			deleteTestPeriod(t, c, id)
 		}()
@@ -297,7 +297,7 @@ func TestClosePeriodGuards(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", map[string]any{"password": "test"})
+		resp = c.do(http.MethodPost, "/api/years/"+strconv.FormatInt(year, 10)+"/lock", nil)
 		if resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("lock year: want 204, got %d", resp.StatusCode)
 		}
