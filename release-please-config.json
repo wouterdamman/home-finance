@@ -9,6 +9,24 @@
     { "type": "docs", "section": "Documentation", "hidden": true }
   ],
   "packages": {
-    ".": {}
+    ".": {
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "deploy/helm/home-finance/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/helm/home-finance/Chart.yaml",
+          "jsonpath": "$.appVersion"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/helm/home-finance/values.yaml",
+          "jsonpath": "$.image.tag"
+        }
+      ]
+    }
   }
 }

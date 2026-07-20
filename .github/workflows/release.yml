@@ -69,28 +69,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  helm-update:
-    name: Update Helm chart version
-    runs-on: ubuntu-latest
-    needs: [release-please, build-push]
-    if: needs.release-please.outputs.release_created == 'true'
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: Update chart versions
-        run: |
-          VERSION="${{ needs.release-please.outputs.version }}"
-          sed -i "s/^version:.*/version: ${VERSION}/" deploy/helm/home-finance/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/home-finance/Chart.yaml
-          sed -i "s/tag:.*/tag: ${VERSION}/" deploy/helm/home-finance/values.yaml
-
-      - name: Commit updated chart
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deploy/helm/home-finance/Chart.yaml deploy/helm/home-finance/values.yaml
-          git diff --staged --quiet || git commit -m "chore: bump helm chart to ${{ needs.release-please.outputs.version }}"
-          git push
