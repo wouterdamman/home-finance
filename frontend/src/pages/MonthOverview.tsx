@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Title, Text, Group, Button, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select, Menu,
+  NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select, Menu, Modal,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
-import { IconTrash, IconX, IconDotsVertical, IconPlus } from '@tabler/icons-react'
+import { IconTrash, IconX, IconDotsVertical, IconPlus, IconPencil } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
@@ -53,6 +53,8 @@ export default function MonthOverview() {
   const [newCategoryId, setNewCategoryId] = useState<string | null>(null)
   const [newBudgetAmount, setNewBudgetAmount] = useState<number | string>('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [editBudgetLineId, setEditBudgetLineId] = useState<number | null>(null)
+  const [editBudgetAmount, setEditBudgetAmount] = useState<number | string>('')
   const [incomeSheet, setIncomeSheet] = useState<'create' | number | null>(null)
   const [editIncomeAmount, setEditIncomeAmount] = useState<number | string>('')
   const [budgetSheetOpen, setBudgetSheetOpen] = useState(false)
@@ -128,6 +130,19 @@ export default function MonthOverview() {
       tracksTransactions: !bl.tracksTransactions, sortOrder: bl.sortOrder,
     }),
   })
+
+  const openEditBudgetAmount = (bl: { id: number; amountCents: number }) => {
+    setEditBudgetLineId(bl.id)
+    setEditBudgetAmount(bl.amountCents / 100)
+  }
+  const handleSaveBudgetAmount = () => {
+    const bl = budgetLines.find(b => b.id === editBudgetLineId)
+    if (!bl) return
+    updateBudgetLine.mutate({
+      id: bl.id, label: bl.label ?? null, amountCents: parseCents(editBudgetAmount),
+      tracksTransactions: bl.tracksTransactions, sortOrder: bl.sortOrder,
+    }, { onSuccess: () => setEditBudgetLineId(null) })
+  }
 
   const carryoverPot = (potsList ?? []).find(p => p.kind === 'carryover' && !p.archivedAt)
   const currentSplits = splitEdits ?? Object.fromEntries(splits.map(s => [s.potId, s.percentage]))
@@ -252,13 +267,21 @@ export default function MonthOverview() {
                     <Group gap={6} wrap="nowrap">
                       <MoneyText cents={bl.effectiveCents} fw={600} />
                       {!isClosed && (
-                        <ActionIcon
-                          size="sm"
-                          variant={bl.tracksTransactions ? 'filled' : 'subtle'}
-                          color={bl.tracksTransactions ? 'blue' : 'gray'}
-                          aria-label={t('month.toggleTracking')}
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleToggleTracking(bl) }}
-                        >≡</ActionIcon>
+                        <>
+                          <ActionIcon
+                            size="sm"
+                            variant="subtle"
+                            aria-label={t('common.edit')}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditBudgetAmount(bl) }}
+                          ><IconPencil size={14} /></ActionIcon>
+                          <ActionIcon
+                            size="sm"
+                            variant={bl.tracksTransactions ? 'filled' : 'subtle'}
+                            color={bl.tracksTransactions ? 'blue' : 'gray'}
+                            aria-label={t('month.toggleTracking')}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleToggleTracking(bl) }}
+                          >≡</ActionIcon>
+                        </>
                       )}
                     </Group>
                   }
@@ -402,6 +425,25 @@ export default function MonthOverview() {
             </Group>
           </Stack>
         </BottomSheet>
+
+        <Modal opened={editBudgetLineId !== null} onClose={() => setEditBudgetLineId(null)} title={t('month.editBudgetAmount')}>
+          <Stack gap="sm">
+            <NumberInput
+              label={t('common.amount')}
+              value={editBudgetAmount}
+              onChange={setEditBudgetAmount}
+              decimalSeparator=","
+              decimalScale={2}
+              prefix="€ "
+              hideControls
+              data-autofocus
+            />
+            <Group grow>
+              <Button onClick={handleSaveBudgetAmount} loading={updateBudgetLine.isPending}>{t('common.save')}</Button>
+              <Button variant="subtle" onClick={() => setEditBudgetLineId(null)}>{t('common.cancel')}</Button>
+            </Group>
+          </Stack>
+        </Modal>
 
         <ReauthConfirmModal
           opened={deleteOpen}
@@ -547,15 +589,24 @@ export default function MonthOverview() {
                   )}
                 </Table.Td>
                 {!isClosed && (
-                  <Table.Td w={32}>
-                    <ActionIcon
-                      size="xs"
-                      variant={bl.tracksTransactions ? 'filled' : 'subtle'}
-                      color={bl.tracksTransactions ? 'blue' : 'gray'}
-                      title={t('month.toggleTracking')}
-                      aria-label={t('month.toggleTracking')}
-                      onClick={() => handleToggleTracking(bl)}
-                    >≡</ActionIcon>
+                  <Table.Td w={60}>
+                    <Group gap={4} wrap="nowrap">
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        title={t('common.edit')}
+                        aria-label={t('common.edit')}
+                        onClick={() => openEditBudgetAmount(bl)}
+                      ><IconPencil size={14} /></ActionIcon>
+                      <ActionIcon
+                        size="xs"
+                        variant={bl.tracksTransactions ? 'filled' : 'subtle'}
+                        color={bl.tracksTransactions ? 'blue' : 'gray'}
+                        title={t('month.toggleTracking')}
+                        aria-label={t('month.toggleTracking')}
+                        onClick={() => handleToggleTracking(bl)}
+                      >≡</ActionIcon>
+                    </Group>
                   </Table.Td>
                 )}
               </Table.Tr>
@@ -711,6 +762,25 @@ export default function MonthOverview() {
         </Table>
         </Table.ScrollContainer>
       </Paper>
+      <Modal opened={editBudgetLineId !== null} onClose={() => setEditBudgetLineId(null)} title={t('month.editBudgetAmount')}>
+        <Stack gap="sm">
+          <NumberInput
+            label={t('common.amount')}
+            value={editBudgetAmount}
+            onChange={setEditBudgetAmount}
+            decimalSeparator=","
+            decimalScale={2}
+            prefix="€ "
+            hideControls
+            data-autofocus
+          />
+          <Group grow>
+            <Button onClick={handleSaveBudgetAmount} loading={updateBudgetLine.isPending}>{t('common.save')}</Button>
+            <Button variant="subtle" onClick={() => setEditBudgetLineId(null)}>{t('common.cancel')}</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       <ReauthConfirmModal
         opened={deleteOpen}
         onClose={() => setDeleteOpen(false)}

@@ -127,6 +127,7 @@
     "notCreated": "Month not created.",
     "backToYear": "Back to overview",
     "toggleTracking": "Toggle transaction tracking for this month",
+    "editBudgetAmount": "Edit budget amount",
     "toggleTrackingOnConfirm": "This category will be split into separate bookings (transactions tab) for this month. Continue?",
     "toggleTrackingOffConfirm": "This category will go back to a single fixed amount for this month (existing bookings stay but no longer count). Continue?",
     "delete": "Delete",

@@ -127,6 +127,7 @@
     "notCreated": "Maand niet aangemaakt.",
     "backToYear": "Terug naar overzicht",
     "toggleTracking": "Transacties bijhouden aan/uit voor deze maand",
+    "editBudgetAmount": "Budgetbedrag bewerken",
     "toggleTrackingOnConfirm": "Deze categorie wordt voor deze maand opgesplitst in losse boekingen (transacties-tab). Doorgaan?",
     "toggleTrackingOffConfirm": "Deze categorie wordt voor deze maand weer 1 vast bedrag (losse boekingen blijven bewaard maar tellen niet meer mee). Doorgaan?",
     "delete": "Verwijderen",
