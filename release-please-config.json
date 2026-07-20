@@ -12,19 +12,12 @@
     ".": {
       "extra-files": [
         {
-          "type": "yaml",
-          "path": "deploy/helm/home-finance/Chart.yaml",
-          "jsonpath": "$.version"
+          "type": "generic",
+          "path": "deploy/helm/home-finance/Chart.yaml"
         },
         {
-          "type": "yaml",
-          "path": "deploy/helm/home-finance/Chart.yaml",
-          "jsonpath": "$.appVersion"
-        },
-        {
-          "type": "yaml",
-          "path": "deploy/helm/home-finance/values.yaml",
-          "jsonpath": "$.image.tag"
+          "type": "generic",
+          "path": "deploy/helm/home-finance/values.yaml"
         }
       ]
     }
