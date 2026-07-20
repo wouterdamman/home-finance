@@ -10,7 +10,9 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-var sheetRe = regexp.MustCompile(`^(\d+)-(\d{2})-(Overview|Details)$`)
+var sheetRe = regexp.MustCompile(`(?i)^(\d+)[-\s]+(\d{2})[-\s]+(overview|details)$`)
+
+var sheetKindNormalize = map[string]string{"overview": "Overview", "details": "Details"}
 
 type SheetData struct {
 	Year    int
@@ -48,17 +50,19 @@ type TxRow struct {
 	Date string
 }
 
-func ParseXLSX(path string) ([]SheetData, error) {
+func ParseXLSX(path string) ([]SheetData, []string, error) {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("open xlsx: %w", err)
+		return nil, nil, fmt.Errorf("open xlsx: %w", err)
 	}
 	defer f.Close()
 
 	var sheets []SheetData
+	var skipped []string
 	for _, sheet := range f.GetSheetList() {
 		m := sheetRe.FindStringSubmatch(sheet)
 		if m == nil {
+			skipped = append(skipped, sheet)
 			continue
 		}
 		monthNum, _ := strconv.Atoi(m[1])
@@ -66,7 +70,7 @@ func ParseXLSX(path string) ([]SheetData, error) {
 		if year < 100 {
 			year += 2000
 		}
-		kind := m[3]
+		kind := sheetKindNormalize[strings.ToLower(m[3])]
 
 		sd := SheetData{Year: year, Month: monthNum, Kind: kind}
 		switch kind {
@@ -77,7 +81,7 @@ func ParseXLSX(path string) ([]SheetData, error) {
 		}
 		sheets = append(sheets, sd)
 	}
-	return sheets, nil
+	return sheets, skipped, nil
 }
 
 func cell(f *excelize.File, sheet, col string, row int) string {

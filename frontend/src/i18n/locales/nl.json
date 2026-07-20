@@ -244,7 +244,8 @@
     "month": "Maand",
     "income": "Inkomsten",
     "expense": "Uitgaven",
-    "surplus": "Surplus"
+    "surplus": "Surplus",
+    "skippedSheets": "Deze tabbladen in het bestand hadden geen herkende naam en zijn overgeslagen — check op typefouts of een verkeerd scheidingsteken:"
   },
   "common": {
     "save": "Opslaan",

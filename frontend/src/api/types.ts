@@ -189,6 +189,7 @@ export interface ImportReportMonth {
 
 export interface ImportReport {
   months: ImportReportMonth[]
+  skippedSheets?: string[]
 }
 
 export interface AuditLogEntry {

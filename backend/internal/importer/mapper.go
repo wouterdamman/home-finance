@@ -32,7 +32,8 @@ type ImportOptions struct {
 }
 
 type Report struct {
-	Months []MonthReport `json:"months"`
+	Months        []MonthReport `json:"months"`
+	SkippedSheets []string      `json:"skippedSheets,omitempty"`
 }
 
 type MonthReport struct {

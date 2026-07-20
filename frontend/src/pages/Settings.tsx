@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, Avatar, useMantineColorScheme } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, Avatar, Alert, useMantineColorScheme } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { useDebouncedValue, useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
@@ -8,7 +8,7 @@ import {
   IconX, IconSearch, IconPlus, IconChevronUp, IconChevronDown, IconArrowsSort,
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
   IconSun, IconMoon, IconDeviceDesktop, IconFileSpreadsheet, IconDownload, IconUpload,
-  IconUsers, IconUserCircle, IconApi, IconShieldCheck, IconHistory,
+  IconUsers, IconUserCircle, IconApi, IconShieldCheck, IconHistory, IconAlertTriangle,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
@@ -1221,7 +1221,11 @@ function ImportSection() {
       onSuccess: (data) => {
         setReport(data)
         closePw()
-        notifications.show({ color: 'green', message: t('export.importSuccess') })
+        if (data.skippedSheets?.length) {
+          notifications.show({ color: 'yellow', message: t('export.skippedSheets') + ' ' + data.skippedSheets.join(', ') })
+        } else {
+          notifications.show({ color: 'green', message: t('export.importSuccess') })
+        }
       },
       onError: (err: unknown) => {
         notifications.show({ color: 'red', title: t('common.error'), message: getErrorMessage(err, t('common.error')) })
@@ -1288,6 +1292,12 @@ function ImportSection() {
       >
         {t('export.importButton')}
       </Button>
+
+      {report?.skippedSheets && report.skippedSheets.length > 0 && (
+        <Alert color="yellow" icon={<IconAlertTriangle size={16} />} title={t('export.skippedSheets')}>
+          {report.skippedSheets.join(', ')}
+        </Alert>
+      )}
 
       {report && (
         <Table mt="sm">

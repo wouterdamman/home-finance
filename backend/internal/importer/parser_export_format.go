@@ -20,17 +20,19 @@ var exportSheetRe = regexp.MustCompile(`^(\d{4})-(\d{2})$`)
 // changes to consume either source. Pot splits are not present in the
 // export format, so periods parsed this way import without splits — a
 // close on such a period allocates nothing to pots (see mapper.go).
-func ParseXLSXExportFormat(path string) ([]SheetData, error) {
+func ParseXLSXExportFormat(path string) ([]SheetData, []string, error) {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("open xlsx: %w", err)
+		return nil, nil, fmt.Errorf("open xlsx: %w", err)
 	}
 	defer f.Close()
 
 	var sheets []SheetData
+	var skipped []string
 	for _, sheet := range f.GetSheetList() {
 		m := exportSheetRe.FindStringSubmatch(sheet)
 		if m == nil {
+			skipped = append(skipped, sheet)
 			continue
 		}
 		year, _ := strconv.Atoi(m[1])
@@ -47,7 +49,7 @@ func ParseXLSXExportFormat(path string) ([]SheetData, error) {
 			SheetData{Year: year, Month: month, Kind: "Details", Txs: txs},
 		)
 	}
-	return sheets, nil
+	return sheets, skipped, nil
 }
 
 func parseExportSheet(rows [][]string) ([]IncomeRow, []BudgetLineRow, []TxRow) {
@@ -110,10 +112,10 @@ func parseExportSheet(rows [][]string) ([]IncomeRow, []BudgetLineRow, []TxRow) {
 // DetectAndParse picks the legacy Fam_Finance parser or this app's own
 // export-format parser based on which sheet-naming pattern the workbook
 // uses, so callers don't need to know the format in advance.
-func DetectAndParse(path string) ([]SheetData, error) {
+func DetectAndParse(path string) ([]SheetData, []string, error) {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("open xlsx: %w", err)
+		return nil, nil, fmt.Errorf("open xlsx: %w", err)
 	}
 	sheetList := f.GetSheetList()
 	f.Close()
@@ -128,5 +130,5 @@ func DetectAndParse(path string) ([]SheetData, error) {
 			return ParseXLSXExportFormat(path)
 		}
 	}
-	return nil, fmt.Errorf("unrecognized workbook format: no legacy or export sheet names found")
+	return nil, nil, fmt.Errorf("unrecognized workbook format: no legacy or export sheet names found")
 }

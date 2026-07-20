@@ -244,7 +244,8 @@
     "month": "Month",
     "income": "Income",
     "expense": "Expenses",
-    "surplus": "Surplus"
+    "surplus": "Surplus",
+    "skippedSheets": "These sheets in the file didn't match a recognized name and were skipped — check for typos or a wrong separator:"
   },
   "common": {
     "save": "Save",

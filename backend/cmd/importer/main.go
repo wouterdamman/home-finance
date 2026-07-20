@@ -42,12 +42,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	sheets, err := importer.DetectAndParse(*xlsx)
+	sheets, skipped, err := importer.DetectAndParse(*xlsx)
 	if err != nil {
 		slog.Error("parse", "err", err)
 		os.Exit(1)
 	}
 	slog.Info("parsed", "sheets", len(sheets))
+	if len(skipped) > 0 {
+		slog.Warn("sheets skipped: name did not match any known format", "sheets", skipped)
+	}
 
 	report, err := importer.Run(ctx, pool, sheets, importer.ImportOptions{
 		Year:         *year,

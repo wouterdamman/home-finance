@@ -68,7 +68,7 @@ func (s *Server) handleImportXLSX(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sheets, err := importer.DetectAndParse(tmp.Name())
+	sheets, skipped, err := importer.DetectAndParse(tmp.Name())
 	if err != nil {
 		Error(w, http.StatusBadRequest, "parse_error", fmt.Sprintf("could not parse xlsx: %v", err))
 		return
@@ -85,6 +85,7 @@ func (s *Server) handleImportXLSX(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "import_error", err.Error())
 		return
 	}
+	report.SkippedSheets = skipped
 
 	s.auditLog(ctx, "import.xlsx", "year", int64(year), map[string]any{
 		"filename":     header.Filename,
