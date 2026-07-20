@@ -479,12 +479,13 @@ function CategoriesTab() {
               label={<Tooltip label={t('settings.templateHint')}><span>{t('settings.template')}</span></Tooltip>}
               sortKey="template" sort={sort} onSort={k => setSort(s => toggleSort(s, k))} ta="center"
             />
+            <Table.Th ta="center"><Tooltip label={t('settings.autofillActualHint')}><span>{t('settings.autofillActual')}</span></Tooltip></Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {rows.length === 0 && (
-            <Table.Tr><Table.Td colSpan={5}><EmptyState message={t('settings.noCategories')} /></Table.Td></Table.Tr>
+            <Table.Tr><Table.Td colSpan={6}><EmptyState message={t('settings.noCategories')} /></Table.Td></Table.Tr>
           )}
           {rows.map(cat => (
             <Table.Tr key={cat.id} opacity={cat.archivedAt ? 0.5 : 1}>
@@ -521,6 +522,7 @@ function CategoriesTab() {
                     <Table.Td ta="right">€ {(cat.defaultAmountCents / 100).toFixed(2)}</Table.Td>
                     <Table.Td ta="center">{cat.isItemized ? '✓' : ''}</Table.Td>
                     <Table.Td ta="center">{cat.includeInTemplate ? '✓' : '—'}</Table.Td>
+                    <Table.Td ta="center">{cat.autofillActual ? '✓' : ''}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" variant="subtle" onClick={() => startEdit(cat)}>{t('common.edit')}</Button>
