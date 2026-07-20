@@ -253,8 +253,8 @@ export default function MonthOverview() {
           <Text fw={600} size="sm">{t('month.expenses')}</Text>
           <MobileList>
             {budgetLines.map(bl => {
-              const budgeted = bl.tracksTransactions && bl.amountCents > 0
-              const pct = budgeted ? (bl.effectiveCents / bl.amountCents) * 100 : 0
+              const budgeted = bl.targetCents > 0
+              const pct = budgeted ? (bl.effectiveCents / bl.targetCents) * 100 : 0
               const progressColor = pct > 100 ? 'red' : pct >= 80 ? 'orange' : 'green'
               return (
                 <MobileListRow
@@ -268,12 +268,14 @@ export default function MonthOverview() {
                       <MoneyText cents={bl.effectiveCents} fw={600} />
                       {!isClosed && (
                         <>
-                          <ActionIcon
-                            size="sm"
-                            variant="subtle"
-                            aria-label={t('common.edit')}
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditBudgetAmount(bl) }}
-                          ><IconPencil size={14} /></ActionIcon>
+                          {!bl.tracksTransactions && (
+                            <ActionIcon
+                              size="sm"
+                              variant="subtle"
+                              aria-label={t('common.edit')}
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditBudgetAmount(bl) }}
+                            ><IconPencil size={14} /></ActionIcon>
+                          )}
                           <ActionIcon
                             size="sm"
                             variant={bl.tracksTransactions ? 'filled' : 'subtle'}
@@ -426,7 +428,7 @@ export default function MonthOverview() {
           </Stack>
         </BottomSheet>
 
-        <Modal opened={editBudgetLineId !== null} onClose={() => setEditBudgetLineId(null)} title={t('month.editBudgetAmount')}>
+        <Modal opened={editBudgetLineId !== null} onClose={() => setEditBudgetLineId(null)} title={t('month.editActualAmount')}>
           <Stack gap="sm">
             <NumberInput
               label={t('common.amount')}
@@ -563,8 +565,8 @@ export default function MonthOverview() {
         <Table>
           <Table.Tbody>
             {budgetLines.map(bl => {
-              const budgeted = bl.tracksTransactions && bl.amountCents > 0
-              const pct = budgeted ? (bl.effectiveCents / bl.amountCents) * 100 : 0
+              const budgeted = bl.targetCents > 0
+              const pct = budgeted ? (bl.effectiveCents / bl.targetCents) * 100 : 0
               const progressColor = pct > 100 ? 'red' : pct >= 80 ? 'orange' : 'green'
               return (
               <Table.Tr key={bl.id}>
@@ -576,14 +578,14 @@ export default function MonthOverview() {
                 </Table.Td>
                 <Table.Td ta="right">
                   <MoneyText cents={bl.effectiveCents} />
-                  {bl.tracksTransactions && bl.amountCents > 0 && (
-                    <Text size="xs" c="dimmed" span> / {(bl.amountCents / 100).toFixed(2)}</Text>
+                  {bl.targetCents > 0 && (
+                    <Text size="xs" c="dimmed" span> / {(bl.targetCents / 100).toFixed(2)}</Text>
                   )}
                   {budgeted && (
                     <Stack gap={2} mt={4} align="flex-end">
                       <Progress value={Math.min(pct, 100)} color={progressColor} size="sm" w="100%" />
                       <Text size="xs" c="dimmed">
-                        {pct.toFixed(0)}% — {t('month.remaining')}: <MoneyText cents={bl.amountCents - bl.effectiveCents} colored span size="xs" />
+                        {pct.toFixed(0)}% — {t('month.remaining')}: <MoneyText cents={bl.targetCents - bl.effectiveCents} colored span size="xs" />
                       </Text>
                     </Stack>
                   )}
@@ -591,13 +593,15 @@ export default function MonthOverview() {
                 {!isClosed && (
                   <Table.Td w={60}>
                     <Group gap={4} wrap="nowrap">
-                      <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        title={t('common.edit')}
-                        aria-label={t('common.edit')}
-                        onClick={() => openEditBudgetAmount(bl)}
-                      ><IconPencil size={14} /></ActionIcon>
+                      {!bl.tracksTransactions && (
+                        <ActionIcon
+                          size="xs"
+                          variant="subtle"
+                          title={t('common.edit')}
+                          aria-label={t('common.edit')}
+                          onClick={() => openEditBudgetAmount(bl)}
+                        ><IconPencil size={14} /></ActionIcon>
+                      )}
                       <ActionIcon
                         size="xs"
                         variant={bl.tracksTransactions ? 'filled' : 'subtle'}
@@ -762,7 +766,7 @@ export default function MonthOverview() {
         </Table>
         </Table.ScrollContainer>
       </Paper>
-      <Modal opened={editBudgetLineId !== null} onClose={() => setEditBudgetLineId(null)} title={t('month.editBudgetAmount')}>
+      <Modal opened={editBudgetLineId !== null} onClose={() => setEditBudgetLineId(null)} title={t('month.editActualAmount')}>
         <Stack gap="sm">
           <NumberInput
             label={t('common.amount')}
