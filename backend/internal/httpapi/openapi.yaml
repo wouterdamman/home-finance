@@ -87,7 +87,7 @@ paths:
     get:
       operationId: authCallback
       tags: [Auth]
-      summary: OIDC callback. Validates state/nonce, exchanges code, upserts user, establishes session.
+      summary: OIDC callback. Validates state/nonce, exchanges code, upserts user, establishes session. Also completes the /auth/reauth step-up flow (distinguished internally by which session-stored state the callback's state param matches) — on that path it verifies the returned identity matches the current session before granting a fresh reauthAt, instead of establishing a new session.
       security: []
       parameters:
         - name: state
@@ -109,6 +109,17 @@ paths:
           description: Email not in allowed list.
         "500":
           description: Claims decode or DB upsert error.
+
+  /auth/reauth:
+    get:
+      operationId: authReauth
+      tags: [Auth]
+      summary: Starts a step-up re-authentication popup (prompt=login) used to confirm identity before a destructive action. Requires an existing session. Rate-limited per IP.
+      responses:
+        "302":
+          description: Redirect to OIDC provider with prompt=login (prod), or an immediate self-closing confirmation page (dev fake auth).
+        "401":
+          description: Not logged in.
 
   /auth/logout:
     post:
@@ -132,6 +143,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
+
+  /api/reauth-status:
+    get:
+      operationId: getReauthStatus
+      tags: [Auth]
+      summary: Polled by the frontend while the /auth/reauth popup is open, to detect when step-up reauth completes and auto-close it.
+      responses:
+        "200":
+          description: Freshness of the current step-up reauth.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fresh:
+                    type: boolean
+                required: [fresh]
         "401":
           description: Not authenticated.
           content:
@@ -302,26 +330,20 @@ paths:
     delete:
       operationId: deletePeriod
       tags: [Periods]
-      summary: Deletes an open period after password confirmation. Rate-limited per IP.
+      summary: Deletes an open period after a fresh Authentik re-authentication.
       parameters:
         - $ref: "#/components/parameters/PeriodId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PasswordConfirmRequest"
       responses:
         "204":
           description: Period deleted.
         "400":
-          description: Invalid id or body.
+          description: Invalid id.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403":
-          description: Missing or incorrect password.
+        "401":
+          description: No fresh re-authentication on file; client should trigger the /auth/reauth popup and retry.
           content:
             application/json:
               schema:
@@ -334,12 +356,6 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Period is closed, or year is locked.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          description: Too many attempts.
           content:
             application/json:
               schema:
@@ -1214,38 +1230,26 @@ paths:
     post:
       operationId: lockYear
       tags: [Years]
-      summary: Locks a year after password confirmation, once all its periods are closed. Rate-limited per IP.
+      summary: Locks a year after a fresh Authentik re-authentication, once all its periods are closed.
       parameters:
         - $ref: "#/components/parameters/YearParam"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PasswordConfirmRequest"
       responses:
         "204":
           description: Year locked.
         "400":
-          description: Invalid year or body.
+          description: Invalid year.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403":
-          description: Missing or incorrect password.
+        "401":
+          description: No fresh re-authentication on file; client should trigger the /auth/reauth popup and retry.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Year already locked, or open periods still exist.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          description: Too many attempts.
           content:
             application/json:
               schema:
@@ -1261,32 +1265,20 @@ paths:
     post:
       operationId: unlockYear
       tags: [Years]
-      summary: Unlocks a year after password confirmation. Rate-limited per IP.
+      summary: Unlocks a year after a fresh Authentik re-authentication.
       parameters:
         - $ref: "#/components/parameters/YearParam"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PasswordConfirmRequest"
       responses:
         "204":
           description: Year unlocked.
         "400":
-          description: Invalid year or body.
+          description: Invalid year.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403":
-          description: Missing or incorrect password.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          description: Too many attempts.
+        "401":
+          description: No fresh re-authentication on file; client should trigger the /auth/reauth popup and retry.
           content:
             application/json:
               schema:
@@ -1360,13 +1352,6 @@ components:
         displayName:
           type: string
       required: [id, email, displayName]
-
-    PasswordConfirmRequest:
-      type: object
-      properties:
-        password:
-          type: string
-      required: [password]
 
     Period:
       type: object

@@ -98,8 +98,10 @@ cp .env.example .env
 make dev   # postgres + dex in docker, backend :8080, frontend :5173
 ```
 
-`DEV_FAKE_AUTH=true` is set in `.env` — OIDC is bypassed locally.
-`DELETE_PASSWORD=dev123` — any non-empty value accepted in dev mode.
+`DEV_FAKE_AUTH=true` is set in `.env` — OIDC is bypassed locally, including
+the step-up reauth popup used for destructive actions (delete period,
+lock/unlock year, import wipe/reset) — it's granted automatically, no
+Authentik round trip in dev.
 
 ## Testing
 

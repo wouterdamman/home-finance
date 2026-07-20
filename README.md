@@ -56,7 +56,6 @@ make import ARGS="--xlsx /path/to/Fam_Finance_2026.xlsx --year 2026 --wipe --clo
 | `PORT` | `8080` | HTTP listen port |
 | `AUTO_MIGRATE` | `false` | Run goose migrations on startup |
 | `DEV_FAKE_AUTH` | `false` | Skip OIDC, inject dev user |
-| `DELETE_PASSWORD` | — | PIN required to delete a period |
 | `OIDC_ISSUER_URL` | — | OIDC provider discovery URL |
 | `OIDC_CLIENT_ID` | — | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | — | OIDC client secret |
@@ -144,7 +143,6 @@ helm upgrade --install home-finance deploy/helm/home-finance \
   --set oidc.issuerURL=https://auth.example.com/application/o/home-finance/ \
   --set oidc.clientID=home-finance \
   --set ingress.host=finance.example.com \
-  --set-string env.DELETE_PASSWORD=changeme \
   --set env.INITIAL_ADMIN_EMAILS=you@example.com \
   --set oidc.existingSecret=home-finance-oidc
 
