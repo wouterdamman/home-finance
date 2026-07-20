@@ -121,7 +121,7 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 		src := *body.CopyFromPeriodID
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
-			SELECT $1,bl.category_id,bl.label,bl.amount_cents,COALESCE(c.is_itemized,false),bl.sort_order
+			SELECT $1,bl.category_id,bl.label,CASE WHEN COALESCE(c.autofill_actual,false) THEN COALESCE(c.default_amount_cents,0) ELSE 0 END,COALESCE(c.is_itemized,false),bl.sort_order
 			FROM budget_lines bl
 			LEFT JOIN categories c ON c.id = bl.category_id
 			WHERE bl.period_id=$2
@@ -241,11 +241,13 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 		TransactionsTotalCents int64   `json:"transactionsTotalCents"`
 		EffectiveCents         int64   `json:"effectiveCents"`
 		SortOrder              int     `json:"sortOrder"`
+		TargetCents            int64   `json:"targetCents"`
 	}
 	blRows, err := s.pool.Query(ctx, `
 		SELECT bl.id, bl.category_id, bl.label, bl.amount_cents, bl.tracks_transactions, bl.sort_order,
-		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0)
-		FROM budget_lines bl WHERE bl.period_id=$1 ORDER BY bl.sort_order,bl.id`, id)
+		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0),
+		  COALESCE(c.default_amount_cents,0), bl.target_cents_at_close
+		FROM budget_lines bl LEFT JOIN categories c ON c.id = bl.category_id WHERE bl.period_id=$1 ORDER BY bl.sort_order,bl.id`, id)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -254,10 +256,17 @@ func (s *Server) handleGetPeriodOverview(w http.ResponseWriter, r *http.Request)
 	var expenseTotal int64
 	for blRows.Next() {
 		var bl budgetLine
-		if err := blRows.Scan(&bl.ID, &bl.CategoryID, &bl.Label, &bl.AmountCents, &bl.TracksTransactions, &bl.SortOrder, &bl.TransactionsTotalCents); err != nil {
+		var defaultAmountCents int64
+		var targetCentsAtClose *int64
+		if err := blRows.Scan(&bl.ID, &bl.CategoryID, &bl.Label, &bl.AmountCents, &bl.TracksTransactions, &bl.SortOrder, &bl.TransactionsTotalCents, &defaultAmountCents, &targetCentsAtClose); err != nil {
 			blRows.Close()
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
+		}
+		if p.Status == "closed" && targetCentsAtClose != nil {
+			bl.TargetCents = *targetCentsAtClose
+		} else {
+			bl.TargetCents = defaultAmountCents
 		}
 		if bl.TracksTransactions {
 			bl.EffectiveCents = bl.TransactionsTotalCents
@@ -463,6 +472,10 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if _, err := tx.Exec(ctx, `UPDATE budget_lines SET target_cents_at_close = COALESCE((SELECT default_amount_cents FROM categories WHERE id = budget_lines.category_id), 0) WHERE period_id = $1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
 	if _, err := tx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, id); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -521,6 +534,10 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM income_entries WHERE entry_type='carryover' AND source_period_id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if _, err := tx.Exec(ctx, `UPDATE budget_lines SET target_cents_at_close = NULL WHERE period_id = $1`, id); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
