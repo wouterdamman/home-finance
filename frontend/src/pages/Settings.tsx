@@ -31,7 +31,7 @@ import { useChartPalette } from '../contexts/ChartPaletteContext'
 import type { ImportReport } from '../api/types'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
-import PasswordModal from '../components/PasswordModal'
+import ReauthConfirmModal from '../components/ReauthConfirmModal'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
 import BottomSheet from '../components/mobile/BottomSheet'
 
@@ -1208,7 +1208,7 @@ function ImportSection() {
   const [pwOpened, { open: openPw, close: closePw }] = useDisclosure(false)
   const [report, setReport] = useState<ImportReport | null>(null)
 
-  const runImport = (password?: string) => {
+  const runImport = () => {
     if (!file || !importYear) return
     importMutation.mutate({
       file,
@@ -1216,7 +1216,6 @@ function ImportSection() {
       wipe,
       resetMaster,
       closeThrough: Number(closeThrough) || 0,
-      password,
     }, {
       onSuccess: (data) => {
         setReport(data)
@@ -1324,14 +1323,14 @@ function ImportSection() {
         </Table>
       )}
 
-      <PasswordModal
+      <ReauthConfirmModal
         opened={pwOpened}
         onClose={closePw}
         title={t('export.confirmDestructive')}
         warningText={resetMaster ? t('export.resetMasterWarning') : t('export.wipeWarning')}
         confirmLabel={t('export.importButton')}
         loading={importMutation.isPending}
-        onConfirm={(password) => runImport(password)}
+        onConfirm={runImport}
       />
     </Stack>
   )

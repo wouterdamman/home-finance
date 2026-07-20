@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { useYearSummary, useCreatePeriod, useLockYear, useUnlockYear, useYears } from '../api/hooks/usePeriods'
 import { useMe } from '../api/hooks/useMe'
 import MoneyText from '../components/MoneyText'
-import PasswordModal from '../components/PasswordModal'
+import ReauthConfirmModal from '../components/ReauthConfirmModal'
 import { getErrorMessage } from '../api/client'
 import { formatCents, formatCentsCompact } from '../lib/money'
 import { niceAxisTicksSigned } from '../lib/chartAxis'
@@ -62,15 +62,15 @@ export default function YearDashboard() {
   const chartTicks = niceAxisTicksSigned(chartMinValue, chartMaxValue)
   const chartYAxisProps = { tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks: chartTicks, domain: [chartTicks[0], chartTicks[chartTicks.length - 1]] }
 
-  const handleLock = (password: string) => {
-    lockYear.mutate(password, {
+  const handleLock = () => {
+    lockYear.mutate(undefined, {
       onSuccess: () => setLockModalOpen(false),
       onError: (e: unknown) => notifications.show({ color: 'red', message: getErrorMessage(e, t('common.error')) }),
     })
   }
 
-  const handleUnlock = (password: string) => {
-    unlockYear.mutate(password, {
+  const handleUnlock = () => {
+    unlockYear.mutate(undefined, {
       onSuccess: () => setUnlockModalOpen(false),
       onError: (e: unknown) => notifications.show({ color: 'red', message: getErrorMessage(e, t('common.error')) }),
     })
@@ -168,7 +168,7 @@ export default function YearDashboard() {
           </Group>
         )}
 
-        <PasswordModal
+        <ReauthConfirmModal
           opened={lockModalOpen}
           onClose={() => setLockModalOpen(false)}
           title={t('year.lockTitle')}
@@ -179,7 +179,7 @@ export default function YearDashboard() {
           onConfirm={handleLock}
         />
 
-        <PasswordModal
+        <ReauthConfirmModal
           opened={unlockModalOpen}
           onClose={() => setUnlockModalOpen(false)}
           title={t('year.unlockTitle')}
@@ -322,7 +322,7 @@ export default function YearDashboard() {
       </Table>
       </Table.ScrollContainer>
 
-      <PasswordModal
+      <ReauthConfirmModal
         opened={lockModalOpen}
         onClose={() => setLockModalOpen(false)}
         title={t('year.lockTitle')}
@@ -333,7 +333,7 @@ export default function YearDashboard() {
         onConfirm={handleLock}
       />
 
-      <PasswordModal
+      <ReauthConfirmModal
         opened={unlockModalOpen}
         onClose={() => setUnlockModalOpen(false)}
         title={t('year.unlockTitle')}

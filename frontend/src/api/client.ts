@@ -2,6 +2,12 @@ const BASE = ''
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 401) {
+    const body = await res.json().catch(() => ({}))
+    if (body?.error?.code === 'reauth_required') {
+      // Still logged in, just needs a step-up confirmation — let the caller
+      // handle it (see useReauth), don't bounce to the full login page.
+      throw Object.assign(new Error(body?.error?.message ?? 'reauth required'), { status: 401, body })
+    }
     window.location.href = `/auth/login?return_to=${encodeURIComponent(window.location.pathname)}`
     throw new Error('unauthorized')
   }
@@ -34,8 +40,6 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  delete_body: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'DELETE', body: JSON.stringify(body) }),
   // No Content-Type header here — fetch sets the multipart boundary itself
   // when given a FormData body, and an explicit 'application/json' would break parsing.
   postForm: <T>(path: string, formData: FormData) =>

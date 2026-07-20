@@ -101,8 +101,7 @@ export function useClosePeriod(periodId: number, year: number, month: number) {
 export function useDeletePeriod(periodId: number, year: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (password: string) =>
-      api.delete_body(`/api/periods/${periodId}`, { password }),
+    mutationFn: () => api.delete(`/api/periods/${periodId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['year-summary', year] })
       qc.invalidateQueries({ queryKey: ['periods', year] })
@@ -137,7 +136,7 @@ export function useUpdateBudgetLine(periodId: number, year: number) {
 export function useLockYear(year: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (password: string) => api.post(`/api/years/${year}/lock`, { password }),
+    mutationFn: () => api.post(`/api/years/${year}/lock`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['year-summary', year] }),
   })
 }
@@ -145,7 +144,7 @@ export function useLockYear(year: number) {
 export function useUnlockYear(year: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (password: string) => api.post(`/api/years/${year}/unlock`, { password }),
+    mutationFn: () => api.post(`/api/years/${year}/unlock`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['year-summary', year] }),
   })
 }
@@ -170,7 +169,6 @@ export interface ImportXLSXInput {
   wipe: boolean
   resetMaster: boolean
   closeThrough: number
-  password?: string
 }
 
 export function useImportXLSX() {
@@ -183,7 +181,6 @@ export function useImportXLSX() {
       form.append('wipe', String(input.wipe))
       form.append('resetMaster', String(input.resetMaster))
       form.append('closeThrough', String(input.closeThrough))
-      if (input.password) form.append('password', input.password)
       return api.postForm<ImportReport>('/api/import/xlsx', form)
     },
     onSuccess: (_, vars) => {

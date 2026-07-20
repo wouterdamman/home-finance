@@ -15,7 +15,7 @@ import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/
 import { useReplaceSplits } from '../api/hooks/useSplits'
 import { useCategories, usePots } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
-import PasswordModal from '../components/PasswordModal'
+import ReauthConfirmModal from '../components/ReauthConfirmModal'
 import { parseToCents } from '../lib/money'
 import { getErrorMessage } from '../api/client'
 import HeroStat from '../components/mobile/HeroStat'
@@ -400,7 +400,7 @@ export default function MonthOverview() {
           </Stack>
         </BottomSheet>
 
-        <PasswordModal
+        <ReauthConfirmModal
           opened={deleteOpen}
           onClose={() => setDeleteOpen(false)}
           title={t('month.deleteTitle')}
@@ -708,7 +708,7 @@ export default function MonthOverview() {
         </Table>
         </Table.ScrollContainer>
       </Paper>
-      <PasswordModal
+      <ReauthConfirmModal
         opened={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         title={t('month.deleteTitle')}
@@ -721,8 +721,8 @@ export default function MonthOverview() {
     </Stack>
   )
 
-  function handleDelete(password: string) {
-    deletePeriod.mutate(password, {
+  function handleDelete() {
+    deletePeriod.mutate(undefined, {
       onSuccess: () => {
         setDeleteOpen(false)
         navigate(`/years/${y}`)
