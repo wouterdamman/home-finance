@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/wouterdamman/home-finance/compare/v1.7.4...v1.7.5) (2026-07-20)
+
+
+### Bug Fixes
+
+* **release:** bundle helm chart version bump into the release-please tag ([82cbe40](https://github.com/wouterdamman/home-finance/commit/82cbe40031f0b31abf7e22bde37117257a0c3741))
+
 ## [1.7.4](https://github.com/wouterdamman/home-finance/compare/v1.7.3...v1.7.4) (2026-07-20)
 
 
