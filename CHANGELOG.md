@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.5](https://github.com/wouterdamman/home-finance/compare/v1.10.4...v1.10.5) (2026-07-21)
+
+
+### Bug Fixes
+
+* **helm:** stop deleting+recreating the namespace on every ArgoCD sync ([edb26a6](https://github.com/wouterdamman/home-finance/commit/edb26a6059a0a111321056c0d3b528674ad69804))
+
 ## [1.10.2](https://github.com/wouterdamman/home-finance/compare/v1.10.1...v1.10.2) (2026-07-21)
 
 
