@@ -4,17 +4,20 @@ kind: Namespace
 metadata:
   name: {{ .Release.Namespace }}
   annotations:
-    # pre-install only (NOT pre-upgrade): runs before externalsecret.yaml/
-    # migrate-job.yaml's pre-install hooks so a plain `helm install` (without
-    # --create-namespace) still works. Must stay pre-install-only — with no
-    # explicit hook-delete-policy, Helm's default (before-hook-creation)
-    # would delete the *previous* Namespace before creating the new one on
-    # every upgrade, cascading to delete everything in it (PVCs included).
-    # Trade-off: namespaceLabels changes via values.yaml won't apply on
-    # `helm upgrade`, only on a fresh install — apply label changes with
-    # `kubectl label namespace` instead.
-    helm.sh/hook: pre-install
-    helm.sh/hook-weight: "-2"
+    # Deliberately NOT a helm.sh/hook. This app is deployed via ArgoCD, which
+    # applies Helm charts through `helm template` + its own sync engine, not
+    # `helm install`/`helm upgrade` — it has no install-vs-upgrade concept,
+    # so a "pre-install only" hook (the previous approach here) still runs as
+    # an ArgoCD PreSync hook on *every* sync. ArgoCD's hook lifecycle deletes
+    # and recreates hook resources each time (confirmed via
+    # argocd-application-controller logs: "waiting for deletion of hook
+    # /Namespace/home-finance" on every sync, even ones with no real changes)
+    # — for a Namespace that cascades to delete everything inside it,
+    # including PVCs, wiping avatar storage on every single deploy. Use
+    # ArgoCD's own sync-wave ordering instead: it orders resource application
+    # without any delete+recreate semantics, so the Namespace (and anything
+    # inside it) survives normal syncs.
+    argocd.argoproj.io/sync-wave: "-2"
   labels:
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/enforce-version: latest
