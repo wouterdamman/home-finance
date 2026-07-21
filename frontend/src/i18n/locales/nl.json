@@ -210,6 +210,7 @@
     "roleAdmin": "Admin",
     "roleUser": "Gebruiker",
     "uploadAvatar": "Profielfoto uploaden",
+    "avatarTooLarge": "Afbeelding is te groot (max 10MB)",
     "promote": "Maak admin",
     "demote": "Maak gebruiker",
     "email": "E-mail",

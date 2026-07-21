@@ -1501,6 +1501,8 @@ function ImportSection() {
   )
 }
 
+const MAX_AVATAR_UPLOAD_BYTES = 10 * 1024 * 1024 // must match backend maxAvatarUploadBytes
+
 function ProfileTab() {
   const { t } = useTranslation()
   const { data: me } = useMe()
@@ -1514,7 +1516,12 @@ function ProfileTab() {
   }, [me])
 
   const handleAvatarChange = (file: File | null) => {
-    if (file) uploadAvatar.mutate(file)
+    if (!file) return
+    if (file.size > MAX_AVATAR_UPLOAD_BYTES) {
+      notifications.show({ color: 'red', message: t('settings.avatarTooLarge') })
+      return
+    }
+    uploadAvatar.mutate(file)
   }
 
   return (
@@ -1526,7 +1533,7 @@ function ProfileTab() {
         <FileInput
           placeholder={t('settings.uploadAvatar')}
           leftSection={<IconUpload size={16} />}
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg"
           onChange={handleAvatarChange}
           loading={uploadAvatar.isPending}
           clearable
