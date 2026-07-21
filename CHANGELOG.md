@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.2](https://github.com/wouterdamman/home-finance/compare/v1.10.1...v1.10.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **auth:** register time.Time with gob so reauth session commits succeed ([b67f201](https://github.com/wouterdamman/home-finance/commit/b67f2016bdf576012fd00f52d40813ae516f78c4))
+
 ## [1.10.1](https://github.com/wouterdamman/home-finance/compare/v1.10.0...v1.10.1) (2026-07-21)
 
 
