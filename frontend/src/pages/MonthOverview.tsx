@@ -577,10 +577,12 @@ export default function MonthOverview() {
                   }
                 </Table.Td>
                 <Table.Td ta="right">
-                  <MoneyText cents={bl.effectiveCents} />
-                  {bl.targetCents > 0 && (
-                    <Text size="xs" c="dimmed" span> / {(bl.targetCents / 100).toFixed(2)}</Text>
-                  )}
+                  <Group gap={4} justify="flex-end" wrap="nowrap">
+                    <MoneyText cents={bl.effectiveCents} />
+                    {bl.targetCents > 0 && (
+                      <Text size="xs" c="dimmed" span>/ {(bl.targetCents / 100).toFixed(2)}</Text>
+                    )}
+                  </Group>
                   {budgeted && (
                     <Stack gap={2} mt={4} align="flex-end">
                       <Progress value={Math.min(pct, 100)} color={progressColor} size="sm" w="100%" />
