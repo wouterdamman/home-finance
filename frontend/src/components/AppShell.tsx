@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom'
-import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Tooltip, Stack } from '@mantine/core'
+import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Tooltip, Stack, Avatar } from '@mantine/core'
 import { IconWallet, IconLogout, IconPigMoney, IconSettings, IconCalendar, IconChevronLeft, IconChevronRight, IconPin, IconPinFilled, IconChartLine } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
@@ -68,6 +68,7 @@ export default function AppShell() {
           </Group>
           {user && (
             <Group gap={6} wrap="nowrap">
+              <Avatar src={user.avatarUrl ?? undefined} size={24} radius="xl">{user.displayName ? user.displayName[0].toUpperCase() : '?'}</Avatar>
               <Text size="xs" c="dimmed" visibleFrom="sm">{user.displayName || user.email}</Text>
               {/* Desktop logout lives in the sidebar (below); mobile has no
                   sidebar, so it stays here for those viewports. */}
