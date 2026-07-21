@@ -8,6 +8,10 @@ on:
       version:
         description: 'Version tag to build & push (e.g. 1.8.0) - use to retry a failed/cancelled build for an already-released version'
         required: true
+      cleanup_dry_run:
+        description: 'Preview package cleanup without deleting anything'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -76,3 +80,33 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  cleanup-old-packages:
+    name: Clean up old package versions
+    runs-on: ubuntu-latest
+    needs: [release-please, build-push]
+    # Same gate as build-push (only after an actual release, or a manual
+    # retry build) — a fresh version was just pushed above, so it's safe to
+    # prune old ones now. Multi-arch manifests (linux/amd64 + linux/arm64)
+    # push several untagged child digests per release on top of the 2 tags
+    # (version + latest) — those accumulate fast in GHCR if never cleaned.
+    if: |
+      always() &&
+      needs.build-push.result == 'success' &&
+      (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
+    steps:
+      # GITHUB_TOKEN can only delete package versions if the package's own
+      # "Manage Actions access" settings (Package -> Package settings, on
+      # github.com) grant this repository Admin — that's a one-time manual
+      # step outside this file, not something a workflow can grant itself.
+      # If this step 403s, go set that, or swap this token for a PAT with
+      # delete:packages scope stored as a repo secret instead.
+      - name: Delete old package versions
+        uses: smartsquaregmbh/delete-old-packages@v1.0.0
+        with:
+          user: wouterdamman
+          type: container
+          names: |
+            home-finance
+          keep: 4
+          dry-run: ${{ github.event.inputs.cleanup_dry_run == 'true' }}
