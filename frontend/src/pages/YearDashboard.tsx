@@ -92,7 +92,7 @@ export default function YearDashboard() {
           </ActionIcon>
         </Group>
 
-        <HeroStat label={t('year.surplus')} value={<MoneyText cents={data.yearSurplusCents} span fw={800} size="2.5rem" colored />} />
+        <HeroStat label={t('pots.balance')} value={<MoneyText cents={totalPotBalance} span fw={800} size="2.5rem" colored />} />
 
         <SimpleGrid cols={3}>
           <Stack gap={0} align="center">
@@ -104,8 +104,8 @@ export default function YearDashboard() {
             <MoneyText cents={data.yearExpenseTotalCents} fw={600} size="sm" />
           </Stack>
           <Stack gap={0} align="center">
-            <Text size="xs" c="dimmed">{t('pots.balance')}</Text>
-            <MoneyText cents={totalPotBalance} fw={600} size="sm" />
+            <Text size="xs" c="dimmed">{t('year.surplus')}</Text>
+            <MoneyText cents={data.yearSurplusCents} fw={600} size="sm" />
           </Stack>
         </SimpleGrid>
 
