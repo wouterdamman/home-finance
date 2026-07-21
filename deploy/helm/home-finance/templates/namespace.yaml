@@ -4,9 +4,16 @@ kind: Namespace
 metadata:
   name: {{ .Release.Namespace }}
   annotations:
-    # Runs before externalsecret.yaml/migrate-job.yaml's pre-install hooks so
-    # a plain `helm install` (without --create-namespace) still works.
-    helm.sh/hook: pre-install,pre-upgrade
+    # pre-install only (NOT pre-upgrade): runs before externalsecret.yaml/
+    # migrate-job.yaml's pre-install hooks so a plain `helm install` (without
+    # --create-namespace) still works. Must stay pre-install-only — with no
+    # explicit hook-delete-policy, Helm's default (before-hook-creation)
+    # would delete the *previous* Namespace before creating the new one on
+    # every upgrade, cascading to delete everything in it (PVCs included).
+    # Trade-off: namespaceLabels changes via values.yaml won't apply on
+    # `helm upgrade`, only on a fresh install — apply label changes with
+    # `kubectl label namespace` instead.
+    helm.sh/hook: pre-install
     helm.sh/hook-weight: "-2"
   labels:
     pod-security.kubernetes.io/enforce: baseline
