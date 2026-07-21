@@ -1,19 +1,21 @@
 package httpapi
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	_ "image/jpeg" // registers the jpeg decoder used by handleUploadAvatar's content sniff
+	_ "image/png"  // registers the png decoder used by handleUploadAvatar's content sniff
 	"io"
 	"net/http"
-
-	"github.com/minio/minio-go/v7"
 
 	"github.com/wouterdamman/home-finance/internal/auth"
 )
 
-const maxAvatarUploadBytes = 5 << 20 // 5MB — plenty for a profile photo
+const maxAvatarUploadBytes = 10 << 20 // 10MB — plenty for a profile photo
 
-func avatarURL(id int64, objectKey *string) *string {
-	if objectKey == nil || *objectKey == "" {
+func avatarURL(id int64, hasAvatar *string) *string {
+	if hasAvatar == nil || *hasAvatar == "" {
 		return nil
 	}
 	url := fmt.Sprintf("/api/users/%d/avatar", id)
@@ -28,16 +30,16 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	var email, displayName, role string
-	var avatarKey *string
+	var avatarContentType *string
 	if err := s.pool.QueryRow(r.Context(),
-		`SELECT id, email, display_name, role, avatar_object_key FROM users WHERE id = $1`, uid).
-		Scan(&id, &email, &displayName, &role, &avatarKey); err != nil {
+		`SELECT id, email, display_name, role, avatar_content_type FROM users WHERE id = $1`, uid).
+		Scan(&id, &email, &displayName, &role, &avatarContentType); err != nil {
 		Error(w, http.StatusUnauthorized, "unauthorized", "user not found")
 		return
 	}
 	JSON(w, http.StatusOK, map[string]any{
 		"id": id, "email": email, "displayName": displayName, "role": role,
-		"avatarUrl": avatarURL(id, avatarKey),
+		"avatarUrl": avatarURL(id, avatarContentType),
 	})
 }
 
@@ -67,10 +69,6 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 		return
 	}
-	if s.s3 == nil {
-		Error(w, http.StatusServiceUnavailable, "s3_not_configured", "object storage is not configured")
-		return
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarUploadBytes)
 	if err := r.ParseMultipartForm(maxAvatarUploadBytes); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", "file too large or malformed upload")
@@ -84,23 +82,44 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	contentType := header.Header.Get("Content-Type")
-	if contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/webp" {
-		Error(w, http.StatusBadRequest, "bad_request", "only png, jpeg or webp images are allowed")
+	if contentType != "image/png" && contentType != "image/jpeg" {
+		Error(w, http.StatusBadRequest, "bad_request", "only png or jpeg images are allowed")
 		return
 	}
 
-	objectKey := fmt.Sprintf("home-finance/%d", uid)
 	ctx := r.Context()
-	if _, err := s.s3.PutObject(ctx, s.cfg.S3Bucket, objectKey, file, header.Size, minio.PutObjectOptions{ContentType: contentType}); err != nil {
-		Error(w, http.StatusInternalServerError, "s3_error", err.Error())
+	data, err := io.ReadAll(file)
+	if err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", "failed to read upload")
 		return
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET avatar_object_key=$2 WHERE id=$1`, uid, objectKey); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+
+	// The declared Content-Type above is client-supplied and easily spoofed
+	// (e.g. a script or executable uploaded with a fake "image/png" header).
+	// Decode the actual bytes and derive the stored content type from what
+	// the file really is, so nothing but a genuinely valid jpeg/png is ever
+	// persisted or served back to a browser.
+	_, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", "file is not a valid image")
+		return
+	}
+	switch format {
+	case "jpeg":
+		contentType = "image/jpeg"
+	case "png":
+		contentType = "image/png"
+	default:
+		Error(w, http.StatusBadRequest, "bad_request", "only png or jpeg images are allowed")
+		return
+	}
+
+	if err := s.avatarStorage.Put(ctx, uid, contentType, data); err != nil {
+		Error(w, http.StatusInternalServerError, "storage_error", err.Error())
 		return
 	}
 	s.auditLog(ctx, "user.avatar_upload", "user", uid, nil)
-	JSON(w, http.StatusOK, map[string]any{"avatarUrl": avatarURL(uid, &objectKey)})
+	JSON(w, http.StatusOK, map[string]any{"avatarUrl": avatarURL(uid, &contentType)})
 }
 
 // handleGetAvatar streams the avatar through the app rather than exposing
@@ -113,29 +132,14 @@ func (s *Server) handleGetAvatar(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	if s.s3 == nil {
-		Error(w, http.StatusNotFound, "not_found", "no avatar")
-		return
-	}
-	var objectKey *string
-	if err := s.pool.QueryRow(r.Context(), `SELECT avatar_object_key FROM users WHERE id=$1`, id).Scan(&objectKey); err != nil || objectKey == nil {
-		Error(w, http.StatusNotFound, "not_found", "no avatar")
-		return
-	}
-	obj, err := s.s3.GetObject(r.Context(), s.cfg.S3Bucket, *objectKey, minio.GetObjectOptions{})
+	contentType, data, err := s.avatarStorage.Get(r.Context(), id)
 	if err != nil {
 		Error(w, http.StatusNotFound, "not_found", "no avatar")
 		return
 	}
-	defer obj.Close()
-	stat, err := obj.Stat()
-	if err != nil {
-		Error(w, http.StatusNotFound, "not_found", "no avatar")
-		return
-	}
-	w.Header().Set("Content-Type", stat.ContentType)
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=300")
-	io.Copy(w, obj)
+	w.Write(data)
 }
 
 // ── Admin: user management ──────────────────────────────────────────
@@ -148,7 +152,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		Role        string  `json:"role"`
 		AvatarURL   *string `json:"avatarUrl,omitempty"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id, email, display_name, role, avatar_object_key FROM users ORDER BY email`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id, email, display_name, role, avatar_content_type FROM users ORDER BY email`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -157,12 +161,12 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	out := make([]row, 0)
 	for rows.Next() {
 		var ro row
-		var avatarKey *string
-		if err := rows.Scan(&ro.ID, &ro.Email, &ro.DisplayName, &ro.Role, &avatarKey); err != nil {
+		var avatarContentType *string
+		if err := rows.Scan(&ro.ID, &ro.Email, &ro.DisplayName, &ro.Role, &avatarContentType); err != nil {
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
 		}
-		ro.AvatarURL = avatarURL(ro.ID, avatarKey)
+		ro.AvatarURL = avatarURL(ro.ID, avatarContentType)
 		out = append(out, ro)
 	}
 	JSON(w, http.StatusOK, out)
