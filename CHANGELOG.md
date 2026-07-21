@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.10.0](https://github.com/wouterdamman/home-finance/compare/v1.9.0...v1.10.0) (2026-07-21)
+
+
+### Features
+
+* **avatar:** add optional filesystem storage backend ([6b30f9c](https://github.com/wouterdamman/home-finance/commit/6b30f9c7b6b6a572d34753fe0affc03eafba00ee))
+* **avatar:** add pluggable storage interface + Postgres-bytea backend ([1101abd](https://github.com/wouterdamman/home-finance/commit/1101abde301026a77aa6acaf8b13eaf7c027a1cf))
+* **avatar:** switch upload/get/list handlers to pluggable storage ([9858098](https://github.com/wouterdamman/home-finance/commit/9858098687899103e59f6fa0ee2438ca76736e8f))
+* **avatar:** wire pluggable storage into server config ([4c64c00](https://github.com/wouterdamman/home-finance/commit/4c64c00351a6a531d44de497503fc52c0f772afe))
+* **db:** add avatar_data/avatar_content_type columns for bytea avatar storage ([d3740e7](https://github.com/wouterdamman/home-finance/commit/d3740e74057be1182fcefa739b9d46edbe000f51))
+* **helm:** optional PersistentVolume-backed avatar storage ([3b531b2](https://github.com/wouterdamman/home-finance/commit/3b531b2553a972b9445d3fdd8c7d53cd9b6c9160))
+
+
+### Bug Fixes
+
+* **header:** show avatar next to user name ([fbf74be](https://github.com/wouterdamman/home-finance/commit/fbf74be565f816259e06cb0f6fac3037626a144f))
+* **import:** register year in years table on period creation ([e905aea](https://github.com/wouterdamman/home-finance/commit/e905aeae0bcfbacb9bd61617c05b15a16acbff2c))
+* **mobile:** prevent SwipeableList crash on falsy conditional children ([c21249e](https://github.com/wouterdamman/home-finance/commit/c21249e74266ac4a2f8f918362b1fb66e80a037d))
+* **settings:** match avatar upload accept/size limit to backend ([6722092](https://github.com/wouterdamman/home-finance/commit/6722092174a79dabd2e5585d7a67f4c69ad655ef))
+
 ## [1.9.0](https://github.com/wouterdamman/home-finance/compare/v1.8.0...v1.9.0) (2026-07-20)
 
 
