@@ -146,12 +146,11 @@ externalSecrets:
 #     --from-literal=DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=disable' \
 #     --from-literal=OIDC_CLIENT_SECRET='...'
 
-# Application-level S3-compatible object storage — separate from
-# postgres.backup above (different concern: app data, not DB backups).
-# Used for avatar upload and, if auditExport.interval is set, periodic
-# audit-log export. Any provider (Hetzner, Backblaze, AWS, MinIO, ...).
-# Disabled by default; both features degrade gracefully (avatar upload
-# 503s, export loop never starts) when this is off.
+# Application-level S3-compatible object storage — separate from postgres.backup
+# above (different concern: app data, not DB backups). Used for periodic audit-log
+# export when auditExport.interval is set. Disabled by default; that feature
+# degrades gracefully (export loop never starts) when this is off. (Avatar photos
+# use avatarStorage below instead, not this.)
 s3:
   enabled: false
   bucket: ""
@@ -163,6 +162,17 @@ s3:
   endpointKey: ENDPOINT
   accessKeyIdKey: ACCESS_KEY_ID
   secretAccessKeyKey: SECRET_ACCESS_KEY
+
+# Avatar photo storage. Default: stored as bytea rows directly in
+# Postgres — zero extra infra, fine for small profile photos. Set
+# filesystem.enabled=true to instead store avatar files on a mounted
+# PersistentVolume (e.g. to keep the users table lean at larger scale).
+avatarStorage:
+  filesystem:
+    enabled: false
+    storageClassName: ""
+    size: 1Gi
+    mountPath: /data/avatars
 
 auditExport:
   # Go duration string, e.g. "10s", "5m", "1h", "12h". Empty disables the
