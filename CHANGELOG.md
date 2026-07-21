@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.10.1](https://github.com/wouterdamman/home-finance/compare/v1.10.0...v1.10.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **helm:** orphan ExternalSecret's target Secret to survive upgrade churn ([bd02dd7](https://github.com/wouterdamman/home-finance/commit/bd02dd752e7bb1873dc337205d284f3601b9f859))
+* **helm:** set fsGroup on pod so PV-backed avatar storage is writable ([fe3f02b](https://github.com/wouterdamman/home-finance/commit/fe3f02b778e086edc04fc0ac3df30d20254bfe26))
+* **helm:** stop namespace pre-upgrade hook from wiping the namespace ([581fba0](https://github.com/wouterdamman/home-finance/commit/581fba0997769c6f2a61800f5d5f2286f8340989))
+
+
+### CI/CD
+
+* **release:** prune old GHCR package versions after each release, keep last 4 ([cc50431](https://github.com/wouterdamman/home-finance/commit/cc504310de1a35452ad0c784c2d52ce7a7e4546d))
+
 ## [1.10.0](https://github.com/wouterdamman/home-finance/compare/v1.9.0...v1.10.0) (2026-07-21)
 
 
