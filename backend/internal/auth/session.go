@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/gob"
 	"log/slog"
 	"net/http"
 	"time"
@@ -9,6 +10,16 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// scs's default GobCodec stores session data as map[string]interface{},
+// gob-encoded. Any concrete type kept in that interface — beyond gob's
+// built-in string/int/etc. — must be registered or encoding fails at
+// Commit time with "gob: type not registered for interface: time.Time".
+// reauthAt (see auth_handlers.go) is the only time.Time value put in the
+// session, so this was silently breaking every reauth completion.
+func init() {
+	gob.Register(time.Time{})
+}
 
 const sessionUserKey = "userID"
 
