@@ -24,13 +24,16 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
-        // /auth/login and /auth/callback are server-handled OIDC redirects, not SPA
+        // /auth/login and /auth/callback are server-handled OIDC redirects, and
+        // /api/docs + /api/openapi.yaml are server-rendered pages opened via
+        // window.open (a full-page navigation, not a fetch/XHR) — none are SPA
         // routes. Without this, Workbox's default NavigationRoute serves the cached
-        // index.html for every navigation (matched against pathname+search) — the
-        // login redirect never reaches the backend, React Router 404s on the
-        // unknown path, and login is broken for anyone whose browser already has
-        // the service worker installed from a prior visit.
-        navigateFallbackDenylist: [/^\/auth\//],
+        // index.html for every navigation (matched against pathname+search) before
+        // it ever reaches the runtimeCaching rule below, so these paths 404 in
+        // React Router instead of hitting the backend — same failure mode that
+        // broke login for anyone whose browser already had the service worker
+        // installed from a prior visit.
+        navigateFallbackDenylist: [/^\/auth\//, /^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,
