@@ -211,6 +211,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 		}
 
 		// Create period
+		if _, err := dbTx.Exec(ctx, `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, opts.Year); err != nil {
+			return nil, fmt.Errorf("month %d: register year: %w", monthNum, err)
+		}
 		var periodID int64
 		if err := dbTx.QueryRow(ctx,
 			`INSERT INTO periods (year, month)
@@ -381,6 +384,9 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, potIDs map[stri
 			if nextMonth > 12 {
 				nextMonth = 1
 				nextYear++
+			}
+			if _, err := dbTx.Exec(ctx, `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, nextYear); err != nil {
+				return err
 			}
 			var nextPeriodID int64
 			if err := dbTx.QueryRow(ctx,
