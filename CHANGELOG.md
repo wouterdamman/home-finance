@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.0](https://github.com/wouterdamman/home-finance/compare/v1.10.5...v1.11.0) (2026-07-21)
+
+
+### Features
+
+* **api:** add hard-delete for income sources ([e86e7d9](https://github.com/wouterdamman/home-finance/commit/e86e7d91d634246374f0e2515a5727a48ee5ee42))
+* **mobile:** lead year overview with balance, not surplus ([ffc9225](https://github.com/wouterdamman/home-finance/commit/ffc9225676e7bb3a3de8be7452701e0d79eeb634))
+
+
+### Bug Fixes
+
+* **pwa:** exclude /api/ from service worker navigation fallback ([536c3fc](https://github.com/wouterdamman/home-finance/commit/536c3fc768c310f0367a02199632932642d0fc20))
+* **ui:** show budget-line actual/target amount inline ([0a579f5](https://github.com/wouterdamman/home-finance/commit/0a579f59bedfc67109b1cebc06f71c5ca535c968))
+
 ## [1.10.5](https://github.com/wouterdamman/home-finance/compare/v1.10.4...v1.10.5) (2026-07-21)
 
 
