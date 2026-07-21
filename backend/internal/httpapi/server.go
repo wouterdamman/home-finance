@@ -133,6 +133,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Post("/income-sources", s.handleCreateIncomeSource)
 			r.With(requireAdmin).Put("/income-sources/{id}", s.handleUpdateIncomeSource)
 			r.With(requireAdmin).Post("/income-sources/{id}/archive", s.handleArchiveIncomeSource)
+			r.With(requireAdmin).Delete("/income-sources/{id}", s.handleDeleteIncomeSource)
 
 			// Pots
 			r.Get("/pots/balances", s.handleGetPotBalances)

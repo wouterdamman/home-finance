@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ── Categories ───────────────────────────────────────────────────
@@ -278,6 +280,25 @@ func (s *Server) handleArchiveIncomeSource(w http.ResponseWriter, r *http.Reques
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteIncomeSource(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM income_sources WHERE id=$1`, id); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation {
+			Error(w, http.StatusConflict, "in_use", "income source has entries or transactions and cannot be deleted; archive it instead")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	s.auditLog(r.Context(), "income_source.delete", "income_source", id, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

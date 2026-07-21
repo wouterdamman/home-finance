@@ -997,6 +997,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteIncomeSource
+      tags: [IncomeSources]
+      summary: Permanently deletes an income source. Fails if it has any income entries or itemized transactions — archive it instead.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Income source deleted.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Income source is referenced by income entries or transactions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/income-sources/{id}/archive:
     post:

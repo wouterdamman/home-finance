@@ -17,6 +17,7 @@ import (
 )
 
 const pgUniqueViolation = "23505"
+const pgForeignKeyViolation = "23503"
 
 // ── Periods ──────────────────────────────────────────────────────
 
