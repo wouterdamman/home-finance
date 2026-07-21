@@ -2,6 +2,7 @@ import { Paper, Group, Stack, Text, Box } from '@mantine/core'
 import { IconChevronRight } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
 import { SwipeableList, SwipeableListItem, TrailingActions, SwipeAction, Type as SwipeListType } from 'react-swipeable-list'
+import { Children } from 'react'
 import type { ReactNode } from 'react'
 
 interface SwipeActionConfig {
@@ -91,7 +92,7 @@ export default function MobileList({ children }: MobileListProps) {
   return (
     <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
       <SwipeableList type={SwipeListType.IOS} fullSwipe={false}>
-        {children}
+        {Children.toArray(children)}
       </SwipeableList>
     </Paper>
   )
