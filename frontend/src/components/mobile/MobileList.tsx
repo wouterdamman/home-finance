@@ -33,12 +33,14 @@ export function MobileListRow({
     <Group
       wrap="nowrap"
       justify="space-between"
+      align="flex-start"
       py="sm"
       px="md"
-      gap="sm"
+      gap="md"
       {...linkProps}
       onClick={disabled ? undefined : onClick}
       style={{
+        width: '100%',
         textDecoration: 'none',
         color: 'inherit',
         cursor: tappable && !disabled ? 'pointer' : undefined,
@@ -53,8 +55,8 @@ export function MobileListRow({
           {subtitle && <Text component="div" size="xs" c="dimmed" truncate>{subtitle}</Text>}
         </Stack>
       </Group>
-      <Group wrap="nowrap" gap={4}>
-        {trailing}
+      <Group wrap="nowrap" gap={4} style={{ flexShrink: 0 }}>
+        {trailing && <Box ta="right" style={{ minWidth: 64 }}>{trailing}</Box>}
         {chevron && tappable && <IconChevronRight size={16} opacity={0.4} />}
       </Group>
     </Group>

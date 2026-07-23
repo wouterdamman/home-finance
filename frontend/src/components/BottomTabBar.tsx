@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { Group, Stack, Text } from '@mantine/core'
-import { IconHome, IconReceipt2, IconPigMoney, IconSettings } from '@tabler/icons-react'
+import { IconHome, IconReceipt2, IconChartLine, IconPigMoney, IconSettings } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useCurrentYear } from '../api/hooks/useCurrentYear'
 
@@ -30,8 +30,15 @@ export default function BottomTabBar() {
       key: 'log',
       label: t('nav.log'),
       icon: IconReceipt2,
-      to: `/months/${now.getFullYear()}/${now.getMonth() + 1}/transactions`,
-      isActive: (p) => p.endsWith('/transactions'),
+      to: `/months/${now.getFullYear()}/${now.getMonth() + 1}`,
+      isActive: (p) => p === `/months/${now.getFullYear()}/${now.getMonth() + 1}`,
+    },
+    {
+      key: 'trends',
+      label: t('nav.trends'),
+      icon: IconChartLine,
+      to: '/trends',
+      isActive: (p) => p.startsWith('/trends'),
     },
     {
       key: 'pots',
@@ -49,8 +56,8 @@ export default function BottomTabBar() {
     },
   ]
 
-  // "Log" and "Home" both match /months/*, so let the more specific
-  // /transactions suffix win when both would otherwise claim active state.
+  // "Log" and "Home" both match /months/*, so let the exact current-month
+  // overview path win when both would otherwise claim active state.
   const activeKey = tabs.find((tab) => tab.key === 'log' && tab.isActive(location.pathname))?.key
     ?? tabs.find((tab) => tab.key !== 'log' && tab.isActive(location.pathname))?.key
 
