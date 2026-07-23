@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.2](https://github.com/wouterdamman/home-finance/compare/v1.13.1...v1.13.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* **income:** link ad-hoc income entries to an income source ([c36e3cc](https://github.com/wouterdamman/home-finance/commit/c36e3cc824ef590a4c272d8387551c981f4e20e5))
+* **periods:** apply category/income template when closing a period ([b17753c](https://github.com/wouterdamman/home-finance/commit/b17753c6175cf30b07469062468ac744663965d7))
+
 ## [1.13.1](https://github.com/wouterdamman/home-finance/compare/v1.13.0...v1.13.1) (2026-07-23)
 
 
