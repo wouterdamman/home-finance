@@ -341,3 +341,165 @@ func TestClosePeriodGuards(t *testing.T) {
 		resp.Body.Close()
 	})
 }
+
+func TestCreatePeriodCopiesItemizedIncomeTransactions(t *testing.T) {
+	srv, _ := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+
+	// Create an itemized income source with includeInTemplate: true.
+	resp := c.do(http.MethodPost, "/api/income-sources", map[string]any{
+		"name":              "Test Itemized Source XYZ",
+		"defaultAmountCents": 0,
+		"isItemized":        true,
+		"includeInTemplate": true,
+		"sortOrder":         999,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create income source: want 201, got %d", resp.StatusCode)
+	}
+	var sourceResp struct {
+		ID int64 `json:"id"`
+	}
+	c.decode(resp, &sourceResp)
+	sourceID := sourceResp.ID
+	t.Cleanup(func() {
+		c.do(http.MethodDelete, "/api/income-sources/"+strconv.FormatInt(sourceID, 10), nil).Body.Close()
+	})
+
+	// Create a second income source with includeInTemplate: false for negative testing.
+	resp = c.do(http.MethodPost, "/api/income-sources", map[string]any{
+		"name":              "Non-Template Itemized Source",
+		"defaultAmountCents": 0,
+		"isItemized":        true,
+		"includeInTemplate": false,
+		"sortOrder":         998,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create non-template source: want 201, got %d", resp.StatusCode)
+	}
+	var sourceResp2 struct {
+		ID int64 `json:"id"`
+	}
+	c.decode(resp, &sourceResp2)
+	nonTemplateSourceID := sourceResp2.ID
+	t.Cleanup(func() {
+		c.do(http.MethodDelete, "/api/income-sources/"+strconv.FormatInt(nonTemplateSourceID, 10), nil).Body.Close()
+	})
+
+	// Create period A (year 2097, month 1) with copyFromPeriodId=0 (empty start).
+	periodAID := createTestPeriod(t, c, 2097, 1)
+	t.Cleanup(func() {
+		deleteTestPeriod(t, c, periodAID)
+	})
+
+	// Add two income transactions to period A.
+	tx1Date := "2097-01-01"
+	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(periodAID, 10)+"/income-transactions", map[string]any{
+		"sourceId":    sourceID,
+		"amountCents": 10000,
+		"description": "Line One",
+		"txDate":      tx1Date,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create income transaction 1: want 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	tx2Date := "2097-01-01"
+	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(periodAID, 10)+"/income-transactions", map[string]any{
+		"sourceId":    sourceID,
+		"amountCents": 20000,
+		"description": "Line Two",
+		"txDate":      tx2Date,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create income transaction 2: want 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Also add a transaction for the non-template source to period A.
+	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(periodAID, 10)+"/income-transactions", map[string]any{
+		"sourceId":    nonTemplateSourceID,
+		"amountCents": 5000,
+		"description": "Should Not Copy",
+		"txDate":      tx1Date,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create income transaction (non-template): want 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create period B (year 2097, month 2) copying from period A.
+	resp = c.do(http.MethodPost, "/api/periods", map[string]any{
+		"year":             2097,
+		"month":            2,
+		"copyFromPeriodId": periodAID,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create period B: want 201, got %d", resp.StatusCode)
+	}
+	var periodBResp struct {
+		ID int64 `json:"id"`
+	}
+	c.decode(resp, &periodBResp)
+	periodBID := periodBResp.ID
+	t.Cleanup(func() {
+		deleteTestPeriod(t, c, periodBID)
+	})
+
+	// Fetch income transactions for period B, filtered by the template source.
+	resp = c.do(http.MethodGet, "/api/periods/"+strconv.FormatInt(periodBID, 10)+"/income-transactions?sourceId="+strconv.FormatInt(sourceID, 10), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list income transactions: want 200, got %d", resp.StatusCode)
+	}
+	type txRow struct {
+		ID          int64   `json:"id"`
+		PeriodID    int64   `json:"periodId"`
+		SourceID    int64   `json:"sourceId"`
+		AmountCents int64   `json:"amountCents"`
+		Description string  `json:"description"`
+		TxDate      *string `json:"txDate"`
+	}
+	var txRows []txRow
+	c.decode(resp, &txRows)
+
+	// Verify: exactly 2 transactions from the template source in period B.
+	if len(txRows) != 2 {
+		t.Errorf("transaction count: want 2, got %d", len(txRows))
+	}
+
+	// Build a map of descriptions to amounts to verify both transactions copied.
+	txMap := make(map[string]int64)
+	for _, tx := range txRows {
+		if tx.PeriodID != periodBID {
+			t.Errorf("periodId: want %d, got %d", periodBID, tx.PeriodID)
+		}
+		if tx.SourceID != sourceID {
+			t.Errorf("sourceId: want %d, got %d", sourceID, tx.SourceID)
+		}
+		// Verify txDate was updated to period B's month (2097-02-01), not kept as 2097-01-01.
+		expectedDate := "2097-02-01"
+		if tx.TxDate == nil || *tx.TxDate != expectedDate {
+			t.Errorf("txDate: want %s, got %v", expectedDate, tx.TxDate)
+		}
+		txMap[tx.Description] = tx.AmountCents
+	}
+
+	if amt, ok := txMap["Line One"]; !ok || amt != 10000 {
+		t.Errorf("Line One: want 10000, got %v", amt)
+	}
+	if amt, ok := txMap["Line Two"]; !ok || amt != 20000 {
+		t.Errorf("Line Two: want 20000, got %v", amt)
+	}
+
+	// Negative test: verify no transactions from non-template source appear in period B.
+	resp = c.do(http.MethodGet, "/api/periods/"+strconv.FormatInt(periodBID, 10)+"/income-transactions?sourceId="+strconv.FormatInt(nonTemplateSourceID, 10), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list non-template transactions: want 200, got %d", resp.StatusCode)
+	}
+	var nonTemplateTxRows []txRow
+	c.decode(resp, &nonTemplateTxRows)
+	if len(nonTemplateTxRows) != 0 {
+		t.Errorf("non-template transaction count: want 0, got %d", len(nonTemplateTxRows))
+	}
+}

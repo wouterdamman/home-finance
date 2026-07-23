@@ -145,6 +145,16 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusInternalServerError, "db_error", "failed to copy income entries")
 			return
 		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO income_transactions (period_id,source_id,amount_cents,description,tx_date)
+			SELECT $1,it.source_id,it.amount_cents,it.description,make_date($3,$4,1)
+			FROM income_transactions it
+			WHERE it.period_id=$2
+			AND it.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true AND is_itemized=true)`,
+			id, src, body.Year, body.Month); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", "failed to copy income transactions")
+			return
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", "commit failed")
