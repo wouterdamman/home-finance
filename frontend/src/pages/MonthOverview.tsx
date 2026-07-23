@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Title, Text, Group, Button, Badge, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, Paper, TextInput, Progress, Select, Menu, Modal,
+  NumberInput, ActionIcon, Stack, Paper, Progress, Select, Menu, Modal,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
@@ -13,7 +13,7 @@ import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useU
 import { useMe } from '../api/hooks/useMe'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
-import { useCategories, usePots } from '../api/hooks/useSettings'
+import { useCategories, usePots, useIncomeSources } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import ReauthConfirmModal from '../components/ReauthConfirmModal'
 import { parseToCents } from '../lib/money'
@@ -89,7 +89,7 @@ export default function MonthOverview() {
   const { data: me } = useMe()
   const isAdmin = me?.role === 'admin'
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
-  const [newLabel, setNewLabel] = useState('')
+  const [newIncomeSourceId, setNewIncomeSourceId] = useState<string | null>(null)
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newCategoryId, setNewCategoryId] = useState<string | null>(null)
   const [newBudgetAmount, setNewBudgetAmount] = useState<number | string>('')
@@ -113,6 +113,7 @@ export default function MonthOverview() {
   const deleteIncome = useDeleteIncome(periodId ?? 0)
   const replaceSplits = useReplaceSplits(periodId ?? 0)
   const { data: categories } = useCategories()
+  const { data: incomeSources } = useIncomeSources()
   const { data: potsList } = usePots()
   const [newSplitPotId, setNewSplitPotId] = useState<string | null>(null)
 
@@ -137,6 +138,9 @@ export default function MonthOverview() {
   // transactions roll up into their parent's total (see category_rollup) —
   // so they're not selectable here.
   const availableCategories = (categories ?? []).filter(c => !c.archivedAt && !c.parentId && !usedCategoryIds.has(c.id))
+  const usedIncomeSourceIds = new Set(incomes.filter(inc => inc.entryType === 'normal').map(inc => inc.sourceId).filter((id): id is number => id != null))
+  const availableIncomeSources = (incomeSources ?? []).filter(s => !usedIncomeSourceIds.has(s.id))
+  const incomeSourceById = new Map((incomeSources ?? []).map(s => [s.id, s] as const))
 
   const handleAddBudgetLine = () => {
     if (!newCategoryId) return
@@ -241,8 +245,10 @@ export default function MonthOverview() {
     }
 
     const handleCreateIncome = () => {
-      createIncome.mutate({ label: newLabel, amountCents: parseCents(newAmount), notes: '', sortOrder: incomes.length }, {
-        onSuccess: () => { setNewLabel(''); setNewAmount(''); setIncomeSheet(null) }
+      if (!newIncomeSourceId) return
+      const source = incomeSourceById.get(Number(newIncomeSourceId))
+      createIncome.mutate({ sourceId: Number(newIncomeSourceId), label: source?.name, amountCents: parseCents(newAmount), notes: '', sortOrder: incomes.length }, {
+        onSuccess: () => { setNewIncomeSourceId(null); setNewAmount(''); setIncomeSheet(null) }
       })
     }
 
@@ -291,7 +297,7 @@ export default function MonthOverview() {
               <MobileListRow
                 title={t('month.addIncome')}
                 leftSection={<IconPlus size={16} />}
-                onClick={() => { setNewLabel(''); setNewAmount(''); setIncomeSheet('create') }}
+                onClick={() => { setNewIncomeSourceId(null); setNewAmount(''); setIncomeSheet('create') }}
               />
             )}
           </MobileList>
@@ -387,9 +393,17 @@ export default function MonthOverview() {
         <BottomSheet opened={incomeSheet !== null} onClose={() => setIncomeSheet(null)} title={incomeSheet === 'create' ? t('month.addIncome') : t('common.edit')}>
           {incomeSheet === 'create' ? (
             <>
-              <TextInput label={t('common.description')} value={newLabel} onChange={e => setNewLabel(e.target.value)} />
+              <Select
+                label={t('settings.incomeSources')}
+                placeholder={t('month.addIncome')}
+                data={availableIncomeSources.map(s => ({ value: String(s.id), label: s.name }))}
+                value={newIncomeSourceId}
+                onChange={setNewIncomeSourceId}
+                searchable
+                clearable
+              />
               <NumberInput label={t('common.amount')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls placeholder="0,00" />
-              <Button disabled={!newLabel} loading={createIncome.isPending} onClick={handleCreateIncome}>{t('common.add')}</Button>
+              <Button disabled={!newIncomeSourceId} loading={createIncome.isPending} onClick={handleCreateIncome}>{t('common.add')}</Button>
             </>
           ) : editingIncome && (
             <>
@@ -596,15 +610,24 @@ export default function MonthOverview() {
             {!isClosed && (
               <Table.Tr>
                 <Table.Td>
-                  <TextInput size="xs" placeholder={t('common.description')} value={newLabel} onChange={e => setNewLabel(e.target.value)} />
+                  <Select
+                    size="xs"
+                    placeholder={t('settings.incomeSources')}
+                    data={availableIncomeSources.map(s => ({ value: String(s.id), label: s.name }))}
+                    value={newIncomeSourceId}
+                    onChange={setNewIncomeSourceId}
+                    searchable
+                    clearable
+                  />
                 </Table.Td>
                 <Table.Td>
                   <NumberInput size="xs" value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls placeholder="0,00" />
                 </Table.Td>
                 <Table.Td>
-                  <Button size="xs" aria-label={t('common.add')} disabled={!newLabel} loading={createIncome.isPending} onClick={() => {
-                    createIncome.mutate({ label: newLabel, amountCents: parseCents(newAmount), notes: '', sortOrder: incomes.length }, {
-                      onSuccess: () => { setNewLabel(''); setNewAmount('') }
+                  <Button size="xs" aria-label={t('common.add')} disabled={!newIncomeSourceId} loading={createIncome.isPending} onClick={() => {
+                    const source = incomeSourceById.get(Number(newIncomeSourceId))
+                    createIncome.mutate({ sourceId: Number(newIncomeSourceId), label: source?.name, amountCents: parseCents(newAmount), notes: '', sortOrder: incomes.length }, {
+                      onSuccess: () => { setNewIncomeSourceId(null); setNewAmount('') }
                     })
                   }}>+</Button>
                 </Table.Td>
