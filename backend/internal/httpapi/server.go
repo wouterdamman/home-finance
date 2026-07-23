@@ -122,6 +122,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Put("/categories/order", s.handleReorderCategories)
 			r.With(requireAdmin).Put("/categories/{id}", s.handleUpdateCategory)
 			r.With(requireAdmin).Post("/categories/{id}/archive", s.handleArchiveCategory)
+			r.Get("/categories/{id}/transaction-descriptions", s.handleListCategoryTransactionDescriptions)
 
 			// Category aliases (import Details-table header -> parent category)
 			r.Get("/category-aliases", s.handleListCategoryAliases)
@@ -134,6 +135,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Put("/income-sources/{id}", s.handleUpdateIncomeSource)
 			r.With(requireAdmin).Post("/income-sources/{id}/archive", s.handleArchiveIncomeSource)
 			r.With(requireAdmin).Delete("/income-sources/{id}", s.handleDeleteIncomeSource)
+			r.Get("/income-sources/{id}/transaction-descriptions", s.handleListIncomeSourceTransactionDescriptions)
 
 			// Pots
 			r.Get("/pots/balances", s.handleGetPotBalances)

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
-  NumberInput, ActionIcon, Stack, TextInput, Button,
+  NumberInput, ActionIcon, Stack, Button, Autocomplete,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
@@ -12,6 +12,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useIncomeTransactions, useCreateIncomeTransaction, useDeleteIncomeTransaction } from '../api/hooks/useIncomeTransactions'
+import { useIncomeSourceDescriptionSuggestions } from '../api/hooks/useDescriptionSuggestions'
 import { useIncomeSources } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -92,6 +93,7 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data: txs, isLoading } = useIncomeTransactions(periodId, sourceId)
+  const { data: descSuggestions } = useIncomeSourceDescriptionSuggestions(sourceId)
   const createTx = useCreateIncomeTransaction(periodId)
   const deleteTx = useDeleteIncomeTransaction(periodId)
 
@@ -100,6 +102,8 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const [txDate, setTxDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
   const [dateSheetOpen, setDateSheetOpen] = useState(false)
   const amountRef = useRef<HTMLInputElement>(null)
+
+  const descriptionData = (descSuggestions ?? []).map(s => s.description)
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))
@@ -123,10 +127,11 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
               <Button variant="light" size="sm" onClick={() => setDateSheetOpen(true)}>
                 {dayjs(txDate).format('DD-MM')}
               </Button>
-              <TextInput
+              <Autocomplete
                 placeholder={t('common.description')}
                 value={desc}
-                onChange={e => setDesc(e.target.value)}
+                onChange={setDesc}
+                data={descriptionData}
                 onKeyDown={e => { if (e.key === 'Enter') amountRef.current?.focus() }}
                 style={{ flex: 1 }}
               />
@@ -196,10 +201,11 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
             label={t('common.date')}
             w={140}
           />
-          <TextInput
+          <Autocomplete
             label={t('common.description')}
             value={desc}
-            onChange={e => setDesc(e.target.value)}
+            onChange={setDesc}
+            data={descriptionData}
             onKeyDown={e => { if (e.key === 'Enter') amountRef.current?.focus() }}
             flex={1}
           />

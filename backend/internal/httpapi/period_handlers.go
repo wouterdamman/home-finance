@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -20,6 +21,77 @@ const pgUniqueViolation = "23505"
 const pgForeignKeyViolation = "23503"
 
 // ── Periods ──────────────────────────────────────────────────────
+
+// querier is a common interface for both *pgxpool.Pool and pgx.Tx
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
+}
+
+// findTemplateSourcePeriod finds the most recent period with data that can be used as a template.
+// It excludes the destination period (excludeID) to avoid selecting a pre-created empty next period as its own source.
+func findTemplateSourcePeriod(ctx context.Context, q querier, year, month, excludeID int64) (int64, bool) {
+	var srcID int64
+	err := q.QueryRow(ctx, `
+		SELECT id FROM periods
+		WHERE id != $1
+		AND (year < $2 OR (year = $2 AND month < $3))
+		AND (
+			EXISTS (SELECT 1 FROM income_entries WHERE period_id=periods.id AND entry_type='normal')
+			OR EXISTS (SELECT 1 FROM budget_lines WHERE period_id=periods.id)
+		)
+		ORDER BY year DESC, month DESC LIMIT 1`,
+		excludeID, year, month).Scan(&srcID)
+	if err == nil {
+		return srcID, true
+	}
+	return 0, false
+}
+
+// copyPeriodTemplate copies budget lines, pot splits, income entries, and income transactions
+// from a source period to a destination period, respecting template-only flags.
+func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID, srcPeriodID int64, destYear, destMonth int) error {
+	// Copy budget lines (respecting include_in_template flag on categories)
+	if _, err := q.Exec(ctx, `
+		INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
+		SELECT $1,bl.category_id,bl.label,CASE WHEN COALESCE(c.autofill_actual,false) THEN COALESCE(c.default_amount_cents,0) ELSE 0 END,COALESCE(c.is_itemized,false),bl.sort_order
+		FROM budget_lines bl
+		LEFT JOIN categories c ON c.id = bl.category_id
+		WHERE bl.period_id=$2
+		AND (bl.category_id IS NULL OR bl.category_id IN (SELECT id FROM categories WHERE include_in_template=true))`,
+		destPeriodID, srcPeriodID); err != nil {
+		return err
+	}
+
+	// Copy pot splits
+	if _, err := q.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, destPeriodID, srcPeriodID); err != nil {
+		return err
+	}
+
+	// Copy normal income entries (respecting include_in_template flag on income sources)
+	if _, err := q.Exec(ctx, `
+		INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
+		SELECT $1,ie.source_id,ie.label,ie.amount_cents,'normal',ie.notes,ie.sort_order
+		FROM income_entries ie
+		WHERE ie.period_id=$2 AND ie.entry_type='normal'
+		AND (ie.source_id IS NULL OR ie.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true))`,
+		destPeriodID, srcPeriodID); err != nil {
+		return err
+	}
+
+	// Copy itemized income transactions (for sources marked as itemized and include_in_template)
+	if _, err := q.Exec(ctx, `
+		INSERT INTO income_transactions (period_id,source_id,amount_cents,description,tx_date)
+		SELECT $1,it.source_id,it.amount_cents,it.description,make_date($3,$4,1)
+		FROM income_transactions it
+		WHERE it.period_id=$2
+		AND it.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true AND is_itemized=true)`,
+		destPeriodID, srcPeriodID, destYear, destMonth); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func (s *Server) handleListPeriods(w http.ResponseWriter, r *http.Request) {
 	year, err := strconv.Atoi(r.URL.Query().Get("year"))
@@ -87,16 +159,7 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.CopyFromPeriodID == nil {
-		var srcID int64
-		if err2 := s.pool.QueryRow(ctx, `
-			SELECT id FROM periods
-			WHERE (year < $1 OR (year = $1 AND month < $2))
-			AND (
-				EXISTS (SELECT 1 FROM income_entries WHERE period_id=periods.id AND entry_type='normal')
-				OR EXISTS (SELECT 1 FROM budget_lines WHERE period_id=periods.id)
-			)
-			ORDER BY year DESC, month DESC LIMIT 1`,
-			body.Year, body.Month).Scan(&srcID); err2 == nil {
+		if srcID, found := findTemplateSourcePeriod(ctx, s.pool, int64(body.Year), int64(body.Month), 0); found {
 			body.CopyFromPeriodID = &srcID
 		}
 	}
@@ -120,39 +183,8 @@ func (s *Server) handleCreatePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.CopyFromPeriodID != nil {
 		src := *body.CopyFromPeriodID
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO budget_lines (period_id,category_id,label,amount_cents,tracks_transactions,sort_order)
-			SELECT $1,bl.category_id,bl.label,CASE WHEN COALESCE(c.autofill_actual,false) THEN COALESCE(c.default_amount_cents,0) ELSE 0 END,COALESCE(c.is_itemized,false),bl.sort_order
-			FROM budget_lines bl
-			LEFT JOIN categories c ON c.id = bl.category_id
-			WHERE bl.period_id=$2
-			AND (bl.category_id IS NULL OR bl.category_id IN (SELECT id FROM categories WHERE include_in_template=true))`,
-			id, src); err != nil {
-			Error(w, http.StatusInternalServerError, "db_error", "failed to copy budget lines")
-			return
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, id, src); err != nil {
-			Error(w, http.StatusInternalServerError, "db_error", "failed to copy pot splits")
-			return
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
-			SELECT $1,ie.source_id,ie.label,ie.amount_cents,'normal',ie.notes,ie.sort_order
-			FROM income_entries ie
-			WHERE ie.period_id=$2 AND ie.entry_type='normal'
-			AND (ie.source_id IS NULL OR ie.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true))`,
-			id, src); err != nil {
-			Error(w, http.StatusInternalServerError, "db_error", "failed to copy income entries")
-			return
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO income_transactions (period_id,source_id,amount_cents,description,tx_date)
-			SELECT $1,it.source_id,it.amount_cents,it.description,make_date($3,$4,1)
-			FROM income_transactions it
-			WHERE it.period_id=$2
-			AND it.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true AND is_itemized=true)`,
-			id, src, body.Year, body.Month); err != nil {
-			Error(w, http.StatusInternalServerError, "db_error", "failed to copy income transactions")
+		if err := s.copyPeriodTemplate(ctx, tx, id, src, body.Year, body.Month); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
 		}
 	}
@@ -465,6 +497,22 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 				Error(w, http.StatusInternalServerError, "db_error", err.Error())
 				return
 			}
+
+			// Template copy: only if next period has no budget_lines yet (idempotency)
+			var hasBudgetLines bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM budget_lines WHERE period_id=$1)`, nextPeriodID).Scan(&hasBudgetLines); err != nil {
+				Error(w, http.StatusInternalServerError, "db_error", err.Error())
+				return
+			}
+			if !hasBudgetLines {
+				if srcID, found := findTemplateSourcePeriod(ctx, tx, int64(nextYear), int64(nextMonth), nextPeriodID); found {
+					if err := s.copyPeriodTemplate(ctx, tx, nextPeriodID, srcID, nextYear, nextMonth); err != nil {
+						Error(w, http.StatusInternalServerError, "db_error", err.Error())
+						return
+					}
+				}
+			}
+
 			if _, err := tx.Exec(ctx, `INSERT INTO pot_ledger (pot_id,period_id,source_period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,'carryover_out',$4,'Carryover out',$5)`,
 				a.PotID, nextPeriodID, id, -a.AmountCents, today); err != nil {
 				Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -1111,6 +1159,104 @@ func (s *Server) handleDeleteIncomeTransaction(w http.ResponseWriter, r *http.Re
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListCategoryTransactionDescriptions(w http.ResponseWriter, r *http.Request) {
+	categoryID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	limit := 15
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	type descRow struct {
+		Description string `json:"description"`
+		LastUsed    string `json:"lastUsed"`
+		Count       int    `json:"count"`
+	}
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT description, MAX(tx_date) AS last_used, COUNT(*) AS cnt
+		FROM transactions
+		WHERE category_id=$1 AND description <> ''
+		GROUP BY description
+		ORDER BY last_used DESC NULLS LAST, cnt DESC
+		LIMIT $2`, categoryID, limit)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]descRow, 0)
+	for rows.Next() {
+		var dr descRow
+		var lastUsed *time.Time
+		if err := rows.Scan(&dr.Description, &lastUsed, &dr.Count); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
+		if lastUsed != nil {
+			dr.LastUsed = lastUsed.Format(time.RFC3339)
+		}
+		out = append(out, dr)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleListIncomeSourceTransactionDescriptions(w http.ResponseWriter, r *http.Request) {
+	sourceID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	limit := 15
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	type descRow struct {
+		Description string `json:"description"`
+		LastUsed    string `json:"lastUsed"`
+		Count       int    `json:"count"`
+	}
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT description, MAX(tx_date) AS last_used, COUNT(*) AS cnt
+		FROM income_transactions
+		WHERE source_id=$1 AND description <> ''
+		GROUP BY description
+		ORDER BY last_used DESC NULLS LAST, cnt DESC
+		LIMIT $2`, sourceID, limit)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]descRow, 0)
+	for rows.Next() {
+		var dr descRow
+		var lastUsed *time.Time
+		if err := rows.Scan(&dr.Description, &lastUsed, &dr.Count); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
+		if lastUsed != nil {
+			dr.LastUsed = lastUsed.Format(time.RFC3339)
+		}
+		out = append(out, dr)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, out)
 }
 
 // ── Splits ───────────────────────────────────────────────────────
