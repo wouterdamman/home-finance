@@ -6,7 +6,7 @@ import {
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
-import { IconTrash, IconX, IconDotsVertical, IconPlus, IconPencil } from '@tabler/icons-react'
+import { IconTrash, IconX, IconDotsVertical, IconPlus, IconPencil, IconArrowsSort } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
 import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
@@ -27,6 +27,47 @@ const MONTH_EN = ['','January','February','March','April','May','June','July','A
 
 function parseCents(v: number | string): number {
   return parseToCents(String(v)) ?? 0
+}
+
+type SortMode = 'default' | 'name-asc' | 'name-desc' | 'amount-asc' | 'amount-desc'
+
+function sortByMode<T>(items: T[], mode: SortMode, nameOf: (item: T) => string, amountOf: (item: T) => number): T[] {
+  if (mode === 'default') return items
+  const copy = [...items]
+  copy.sort((a, b) => {
+    if (mode === 'name-asc') return nameOf(a).localeCompare(nameOf(b))
+    if (mode === 'name-desc') return nameOf(b).localeCompare(nameOf(a))
+    if (mode === 'amount-asc') return amountOf(a) - amountOf(b)
+    return amountOf(b) - amountOf(a)
+  })
+  return copy
+}
+
+function SortControl({ mode, onChange }: { mode: SortMode; onChange: (mode: SortMode) => void }) {
+  const { t } = useTranslation()
+  const options: { value: SortMode; label: string }[] = [
+    { value: 'default', label: t('month.sortDefault') },
+    { value: 'name-asc', label: t('month.sortNameAsc') },
+    { value: 'name-desc', label: t('month.sortNameDesc') },
+    { value: 'amount-asc', label: t('month.sortAmountAsc') },
+    { value: 'amount-desc', label: t('month.sortAmountDesc') },
+  ]
+  return (
+    <Menu position="bottom-end">
+      <Menu.Target>
+        <ActionIcon variant="subtle" color={mode === 'default' ? 'gray' : 'blue'} aria-label={t('common.sortBy')} title={t('common.sortBy')}>
+          <IconArrowsSort size={16} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {options.map(o => (
+          <Menu.Item key={o.value} onClick={() => onChange(o.value)} fw={mode === o.value ? 700 : 400}>
+            {o.label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  )
 }
 
 export default function MonthOverview() {
@@ -58,6 +99,9 @@ export default function MonthOverview() {
   const [incomeSheet, setIncomeSheet] = useState<'create' | number | null>(null)
   const [editIncomeAmount, setEditIncomeAmount] = useState<number | string>('')
   const [budgetSheetOpen, setBudgetSheetOpen] = useState(false)
+  const [incomeSort, setIncomeSort] = useState<SortMode>('default')
+  const [expenseSort, setExpenseSort] = useState<SortMode>('default')
+  const [splitSort, setSplitSort] = useState<SortMode>('default')
 
   const closePeriod = useClosePeriod(periodId ?? 0, y, m)
   const reopenPeriod = useReopenPeriod(periodId ?? 0, y, m)
@@ -152,6 +196,11 @@ export default function MonthOverview() {
     ? [...baseSplitPotIds, carryoverPot.id]
     : baseSplitPotIds
   const availablePotsToAdd = (potsList ?? []).filter(p => !p.archivedAt && p.kind !== 'carryover' && !splitPotIds.includes(p.id))
+  const potSplitName = (potId: number) => splits.find(s => s.potId === potId)?.potName ?? potNameById.get(potId) ?? '—'
+  const potSplitAmount = (potId: number) => splits.find(s => s.potId === potId)?.projectedCents ?? 0
+  const sortedIncomes = sortByMode(incomes, incomeSort, inc => inc.label ?? t('month.unknownSource', { id: inc.sourceId }), inc => inc.effectiveCents)
+  const sortedBudgetLines = sortByMode(budgetLines, expenseSort, budgetLineLabel, bl => bl.effectiveCents)
+  const sortedSplitPotIds = sortByMode(splitPotIds, splitSort, potSplitName, potSplitAmount)
   const nonCarryoverTotal = carryoverPot
     ? Object.entries(currentSplits).reduce((sum, [potId, pct]) => Number(potId) === carryoverPot.id ? sum : sum + (Number(pct) || 0), 0)
     : 0
@@ -222,9 +271,12 @@ export default function MonthOverview() {
         <HeroStat label={t('month.surplusLabel')} value={<MoneyText cents={surplusCents} span fw={800} size="2.5rem" colored />} />
 
         <Stack gap="xs">
-          <Text fw={600} size="sm">{t('month.income')}</Text>
+          <Group justify="space-between">
+            <Text fw={600} size="sm">{t('month.income')}</Text>
+            <SortControl mode={incomeSort} onChange={setIncomeSort} />
+          </Group>
           <MobileList>
-            {incomes.map(inc => (
+            {sortedIncomes.map(inc => (
               <MobileListRow
                 key={inc.id}
                 title={inc.label ?? t('month.unknownSource', { id: inc.sourceId })}
@@ -250,9 +302,12 @@ export default function MonthOverview() {
         </Stack>
 
         <Stack gap="xs">
-          <Text fw={600} size="sm">{t('month.expenses')}</Text>
+          <Group justify="space-between">
+            <Text fw={600} size="sm">{t('month.expenses')}</Text>
+            <SortControl mode={expenseSort} onChange={setExpenseSort} />
+          </Group>
           <MobileList>
-            {budgetLines.map(bl => {
+            {sortedBudgetLines.map(bl => {
               const budgeted = bl.targetCents > 0
               const pct = budgeted ? (bl.effectiveCents / bl.targetCents) * 100 : 0
               const progressColor = pct > 100 ? 'red' : pct >= 80 ? 'orange' : 'green'
@@ -303,14 +358,17 @@ export default function MonthOverview() {
         <Stack gap="xs">
           <Group justify="space-between">
             <Text fw={600} size="sm">{t('month.splitSection')}</Text>
-            {!isClosed && !splitEdits && (
-              <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
-                {t('month.adjust')}
-              </Button>
-            )}
+            <Group gap="xs">
+              <SortControl mode={splitSort} onChange={setSplitSort} />
+              {!isClosed && !splitEdits && (
+                <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
+                  {t('month.adjust')}
+                </Button>
+              )}
+            </Group>
           </Group>
           <MobileList>
-            {splitPotIds.map(potId => {
+            {sortedSplitPotIds.map(potId => {
               const sp = splits.find(s => s.potId === potId)
               const name = sp?.potName ?? potNameById.get(potId) ?? '—'
               const isCarryoverRow = !!carryoverPot && potId === carryoverPot.id
@@ -489,11 +547,14 @@ export default function MonthOverview() {
 
       {/* Incomes */}
       <Paper shadow="xs" p="md" withBorder>
-        <Title order={4} mb="sm">{t('month.income')}</Title>
+        <Group justify="space-between" mb="sm">
+          <Title order={4}>{t('month.income')}</Title>
+          <SortControl mode={incomeSort} onChange={setIncomeSort} />
+        </Group>
         <Table.ScrollContainer minWidth={420}>
         <Table>
           <Table.Tbody>
-            {incomes.map(inc => (
+            {sortedIncomes.map(inc => (
               <Table.Tr key={inc.id}>
                 <Table.Td>
                   {inc.isItemized
@@ -560,11 +621,14 @@ export default function MonthOverview() {
 
       {/* Budget lines */}
       <Paper shadow="xs" p="md" withBorder>
-        <Title order={4} mb="sm">{t('month.expenses')}</Title>
+        <Group justify="space-between" mb="sm">
+          <Title order={4}>{t('month.expenses')}</Title>
+          <SortControl mode={expenseSort} onChange={setExpenseSort} />
+        </Group>
         <Table.ScrollContainer minWidth={420}>
         <Table>
           <Table.Tbody>
-            {budgetLines.map(bl => {
+            {sortedBudgetLines.map(bl => {
               const budgeted = bl.targetCents > 0
               const pct = budgeted ? (bl.effectiveCents / bl.targetCents) * 100 : 0
               const progressColor = pct > 100 ? 'red' : pct >= 80 ? 'orange' : 'green'
@@ -680,16 +744,19 @@ export default function MonthOverview() {
       <Paper shadow="xs" p="md" withBorder>
         <Group justify="space-between" mb="sm">
           <Title order={4}>{t('month.splitSection')}</Title>
-          {!isClosed && (
-            splitEdits
-              ? <Group gap="xs">
-                  <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
-                  <Button size="xs" variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
-                </Group>
-              : <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
-                  {t('month.adjust')}
-                </Button>
-          )}
+          <Group gap="xs">
+            <SortControl mode={splitSort} onChange={setSplitSort} />
+            {!isClosed && (
+              splitEdits
+                ? <Group gap="xs">
+                    <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
+                    <Button size="xs" variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
+                  </Group>
+                : <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
+                    {t('month.adjust')}
+                  </Button>
+            )}
+          </Group>
         </Group>
         {carryoverOverAllocated && (
           <Text size="xs" c="red" mb="sm">{t('month.splitOverAllocated')}</Text>
@@ -705,7 +772,7 @@ export default function MonthOverview() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {splitPotIds.map(potId => {
+            {sortedSplitPotIds.map(potId => {
               const sp = splits.find(s => s.potId === potId)
               const name = sp?.potName ?? potNameById.get(potId) ?? '—'
               const isCarryoverRow = !!carryoverPot && potId === carryoverPot.id
