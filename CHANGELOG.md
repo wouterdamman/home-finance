@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/wouterdamman/home-finance/compare/v1.13.0...v1.13.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **ui:** improve mobile list row alignment, add Trends to bottom nav ([10adf58](https://github.com/wouterdamman/home-finance/commit/10adf588c8c00786a29fdcf2c467a5721508ab10))
+
 ## [1.13.0](https://github.com/wouterdamman/home-finance/compare/v1.12.0...v1.13.0) (2026-07-23)
 
 
