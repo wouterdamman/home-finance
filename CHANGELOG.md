@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0](https://github.com/wouterdamman/home-finance/compare/v1.12.0...v1.13.0) (2026-07-23)
+
+
+### Features
+
+* **ui:** sort income, expenses, and pot splits within a month ([8f5d039](https://github.com/wouterdamman/home-finance/commit/8f5d03999097d4c2fd706c91b7a1916c11d0f25c))
+
+
+### Bug Fixes
+
+* **deps:** pin fast-uri to patched version ([9514d65](https://github.com/wouterdamman/home-finance/commit/9514d65cf7a6314c74d5d3399e64be65dd5131c2))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.3 ([13042e6](https://github.com/wouterdamman/home-finance/commit/13042e67cc097bd9795338af3b4cf04a98c68aba))
+
 ## [1.12.0](https://github.com/wouterdamman/home-finance/compare/v1.11.0...v1.12.0) (2026-07-23)
 
 
