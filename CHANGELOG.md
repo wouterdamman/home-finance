@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/wouterdamman/home-finance/compare/v1.11.0...v1.12.0) (2026-07-23)
+
+
+### Features
+
+* **api:** carry itemized income-transaction line items into new periods ([bdee6ab](https://github.com/wouterdamman/home-finance/commit/bdee6ab146861505a6dc2a7408fa49a92965325d))
+
 ## [1.11.0](https://github.com/wouterdamman/home-finance/compare/v1.10.5...v1.11.0) (2026-07-21)
 
 
