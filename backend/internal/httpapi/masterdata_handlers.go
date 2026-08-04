@@ -102,6 +102,10 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if body.IsItemized && body.AutofillActual {
+		Error(w, http.StatusBadRequest, "bad_request", "autofillActual and isItemized cannot both be enabled")
+		return
+	}
 	var id int64
 	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order,parent_id,autofill_actual) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
@@ -133,6 +137,10 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.validateCategoryParent(r.Context(), &id, body.ParentID); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if body.IsItemized && body.AutofillActual {
+		Error(w, http.StatusBadRequest, "bad_request", "autofillActual and isItemized cannot both be enabled")
 		return
 	}
 	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,parent_id=$6,autofill_actual=$7 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.ParentID, body.AutofillActual); err != nil {

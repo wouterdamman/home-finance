@@ -401,9 +401,13 @@ function CategoriesTab() {
             <>
               <TextInput label={t('settings.name')} value={editName} onChange={e => setEditName(e.target.value)} />
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
-              <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
+              <Switch label={t('settings.itemized')} checked={editItemized} disabled={editAutofill} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
-              <Switch label={t('settings.autofillActual')} checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} />
+              <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!editItemized}>
+                <span>
+                  <Switch label={t('settings.autofillActual')} checked={editAutofill} disabled={editItemized} onChange={e => setEditAutofill(e.target.checked)} />
+                </span>
+              </Tooltip>
               {!childCounts.get(editingCat.id) && (
                 <Select
                   label={t('settings.parentCategory')}
@@ -432,9 +436,13 @@ function CategoriesTab() {
         <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
-          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
+          <Switch label={t('settings.itemized')} checked={newItemized} disabled={newAutofill} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
-          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
+          <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!newItemized}>
+            <span>
+              <Switch label={t('settings.autofillActual')} checked={newAutofill} disabled={newItemized} onChange={e => setNewAutofill(e.target.checked)} />
+            </span>
+          </Tooltip>
           <Select
             label={t('settings.parentCategory')}
             placeholder={t('settings.parentCategoryNone')}
@@ -507,9 +515,17 @@ function CategoriesTab() {
                       </Stack>
                     </Table.Td>
                     <Table.Td><Group justify="flex-end"><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Group></Table.Td>
-                    <Table.Td><Group justify="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
+                    <Table.Td><Group justify="center"><Switch checked={editItemized} disabled={editAutofill} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Group></Table.Td>
-                    <Table.Td><Group justify="center"><Switch checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} /></Group></Table.Td>
+                    <Table.Td>
+                      <Group justify="center">
+                        <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!editItemized}>
+                          <span>
+                            <Switch checked={editAutofill} disabled={editItemized} onChange={e => setEditAutofill(e.target.checked)} />
+                          </span>
+                        </Tooltip>
+                      </Group>
+                    </Table.Td>
                     <Table.Td>
                       <Group gap="xs">
                         <Button size="xs" onClick={saveEdit}>OK</Button>
@@ -542,9 +558,13 @@ function CategoriesTab() {
         <Stack gap="sm">
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
-          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
+          <Switch label={t('settings.itemized')} checked={newItemized} disabled={newAutofill} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
-          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
+          <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!newItemized}>
+            <span>
+              <Switch label={t('settings.autofillActual')} checked={newAutofill} disabled={newItemized} onChange={e => setNewAutofill(e.target.checked)} />
+            </span>
+          </Tooltip>
           <Select
             label={t('settings.parentCategory')}
             placeholder={t('settings.parentCategoryNone')}

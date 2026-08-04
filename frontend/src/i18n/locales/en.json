@@ -190,6 +190,7 @@
     "itemized": "Itemized",
     "autofillActual": "Autofill actual amount",
     "autofillActualHint": "Pre-fills the actual spent amount with the category default when a new month is created — for fixed recurring costs like rent or subscriptions",
+    "autofillItemizedConflict": "Can't combine with Itemized — an itemized category always shows the sum of its transactions, so the default would never be visible",
     "type": "Type",
     "kind_normal": "Normal",
     "kind_carryover": "Carryover",

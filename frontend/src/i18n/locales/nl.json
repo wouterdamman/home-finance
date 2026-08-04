@@ -190,6 +190,7 @@
     "itemized": "Gedetailleerd",
     "autofillActual": "Automatisch invullen",
     "autofillActualHint": "Vult het werkelijk uitgegeven bedrag bij een nieuwe maand alvast in met de standaardwaarde — voor vaste terugkerende kosten zoals huur of abonnementen",
+    "autofillItemizedConflict": "Niet te combineren met Uitgesplitst — een uitgesplitste categorie toont altijd de som van de transacties, dus de standaardwaarde zou nooit zichtbaar worden",
     "type": "Type",
     "kind_normal": "Normaal",
     "kind_carryover": "Doorlopen",
