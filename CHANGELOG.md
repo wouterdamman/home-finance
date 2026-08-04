@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.14.0](https://github.com/wouterdamman/home-finance/compare/v1.13.2...v1.14.0) (2026-08-04)
+
+
+### Features
+
+* **settings:** curated description presets per category/income source ([8c497f2](https://github.com/wouterdamman/home-finance/commit/8c497f23a94cddbca6c8b14e563540f3bee770af))
+
+
+### Bug Fixes
+
+* **categories:** make autofillActual and isItemized mutually exclusive ([70ba3e3](https://github.com/wouterdamman/home-finance/commit/70ba3e328514b12e3202b651e65fe62e1c210dcc))
+* **deps:** update dependency typescript to v7 ([#56](https://github.com/wouterdamman/home-finance/issues/56)) ([4a99b63](https://github.com/wouterdamman/home-finance/commit/4a99b634702b99872a404c16c4c4f3ec1a203bc6))
+
 ## [1.13.2](https://github.com/wouterdamman/home-finance/compare/v1.13.1...v1.13.2) (2026-07-23)
 
 
