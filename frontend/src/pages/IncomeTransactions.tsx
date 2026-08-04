@@ -12,7 +12,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useIncomeTransactions, useCreateIncomeTransaction, useDeleteIncomeTransaction } from '../api/hooks/useIncomeTransactions'
-import { useIncomeSourceDescriptionSuggestions } from '../api/hooks/useDescriptionSuggestions'
+import { useIncomeSourceDescriptionSuggestions, useIncomeSourceDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
 import { useIncomeSources } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -94,6 +94,7 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data: txs, isLoading } = useIncomeTransactions(periodId, sourceId)
   const { data: descSuggestions } = useIncomeSourceDescriptionSuggestions(sourceId)
+  const { data: descPresets } = useIncomeSourceDescriptionPresets(sourceId)
   const createTx = useCreateIncomeTransaction(periodId)
   const deleteTx = useDeleteIncomeTransaction(periodId)
 
@@ -103,7 +104,11 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const [dateSheetOpen, setDateSheetOpen] = useState(false)
   const amountRef = useRef<HTMLInputElement>(null)
 
-  const descriptionData = (descSuggestions ?? []).map(s => s.description)
+  const presetDescriptions = (descPresets ?? []).map(p => p.description)
+  const descriptionData = [
+    ...presetDescriptions,
+    ...(descSuggestions ?? []).map(s => s.description).filter(d => !presetDescriptions.includes(d)),
+  ]
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))

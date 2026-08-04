@@ -123,6 +123,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Put("/categories/{id}", s.handleUpdateCategory)
 			r.With(requireAdmin).Post("/categories/{id}/archive", s.handleArchiveCategory)
 			r.Get("/categories/{id}/transaction-descriptions", s.handleListCategoryTransactionDescriptions)
+			r.Get("/categories/{id}/description-presets", s.handleListCategoryDescriptionPresets)
+			r.With(requireAdmin).Post("/categories/{id}/description-presets", s.handleCreateCategoryDescriptionPreset)
+			r.With(requireAdmin).Delete("/category-description-presets/{id}", s.handleDeleteCategoryDescriptionPreset)
 
 			// Category aliases (import Details-table header -> parent category)
 			r.Get("/category-aliases", s.handleListCategoryAliases)
@@ -136,6 +139,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Post("/income-sources/{id}/archive", s.handleArchiveIncomeSource)
 			r.With(requireAdmin).Delete("/income-sources/{id}", s.handleDeleteIncomeSource)
 			r.Get("/income-sources/{id}/transaction-descriptions", s.handleListIncomeSourceTransactionDescriptions)
+			r.Get("/income-sources/{id}/description-presets", s.handleListIncomeSourceDescriptionPresets)
+			r.With(requireAdmin).Post("/income-sources/{id}/description-presets", s.handleCreateIncomeSourceDescriptionPreset)
+			r.With(requireAdmin).Delete("/income-source-description-presets/{id}", s.handleDeleteIncomeSourceDescriptionPreset)
 
 			// Pots
 			r.Get("/pots/balances", s.handleGetPotBalances)

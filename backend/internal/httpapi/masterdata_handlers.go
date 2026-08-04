@@ -583,3 +583,164 @@ func (s *Server) handleDeletePotEntry(w http.ResponseWriter, r *http.Request) {
 	s.auditLog(r.Context(), "pot.entry.delete", "pot", potID, map[string]any{"entryId": id, "entryType": entryType})
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ── Description presets ─────────────────────────────────────────
+//
+// Curated description suggestions per category/income source (e.g.
+// "Jumbo"/"Bakker Joost" for Boodschappen), managed in Settings — distinct
+// from the auto-derived transaction-description suggestions above, which
+// come from typed history and can accumulate typos/one-offs over time.
+
+type descriptionPresetRow struct {
+	ID          int64  `json:"id"`
+	Description string `json:"description"`
+	SortOrder   int    `json:"sortOrder"`
+}
+
+func (s *Server) handleListCategoryDescriptionPresets(w http.ResponseWriter, r *http.Request) {
+	categoryID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	rows, err := s.pool.Query(r.Context(), `SELECT id,description,sort_order FROM category_description_presets WHERE category_id=$1 ORDER BY sort_order,id`, categoryID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]descriptionPresetRow, 0)
+	for rows.Next() {
+		var ro descriptionPresetRow
+		if err := rows.Scan(&ro.ID, &ro.Description, &ro.SortOrder); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
+		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleCreateCategoryDescriptionPreset(w http.ResponseWriter, r *http.Request) {
+	categoryID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		Description string `json:"description"`
+		SortOrder   int    `json:"sortOrder"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if body.Description == "" {
+		Error(w, http.StatusBadRequest, "bad_request", "description is required")
+		return
+	}
+	var id int64
+	if err := s.pool.QueryRow(r.Context(),
+		`INSERT INTO category_description_presets (category_id,description,sort_order) VALUES ($1,$2,$3) RETURNING id`,
+		categoryID, body.Description, body.SortOrder).Scan(&id); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+			Error(w, http.StatusConflict, "conflict", "this description already has a preset for this category")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, descriptionPresetRow{ID: id, Description: body.Description, SortOrder: body.SortOrder})
+}
+
+func (s *Server) handleDeleteCategoryDescriptionPreset(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM category_description_presets WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListIncomeSourceDescriptionPresets(w http.ResponseWriter, r *http.Request) {
+	sourceID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	rows, err := s.pool.Query(r.Context(), `SELECT id,description,sort_order FROM income_source_description_presets WHERE income_source_id=$1 ORDER BY sort_order,id`, sourceID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := make([]descriptionPresetRow, 0)
+	for rows.Next() {
+		var ro descriptionPresetRow
+		if err := rows.Scan(&ro.ID, &ro.Description, &ro.SortOrder); err != nil {
+			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			return
+		}
+		out = append(out, ro)
+	}
+	if err := rows.Err(); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleCreateIncomeSourceDescriptionPreset(w http.ResponseWriter, r *http.Request) {
+	sourceID, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		Description string `json:"description"`
+		SortOrder   int    `json:"sortOrder"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if body.Description == "" {
+		Error(w, http.StatusBadRequest, "bad_request", "description is required")
+		return
+	}
+	var id int64
+	if err := s.pool.QueryRow(r.Context(),
+		`INSERT INTO income_source_description_presets (income_source_id,description,sort_order) VALUES ($1,$2,$3) RETURNING id`,
+		sourceID, body.Description, body.SortOrder).Scan(&id); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+			Error(w, http.StatusConflict, "conflict", "this description already has a preset for this income source")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, descriptionPresetRow{ID: id, Description: body.Description, SortOrder: body.SortOrder})
+}
+
+func (s *Server) handleDeleteIncomeSourceDescriptionPreset(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `DELETE FROM income_source_description_presets WHERE id=$1`, id); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

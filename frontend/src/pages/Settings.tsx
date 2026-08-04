@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, Avatar, Alert, useMantineColorScheme } from '@mantine/core'
+import { Title, Tabs, Table, Button, Group, TextInput, NumberInput, Switch, Stack, Badge, Select, MultiSelect, Tooltip, Text, Modal, Menu, ActionIcon, SegmentedControl, Divider, FileInput, Avatar, Alert, useMantineColorScheme, Popover, Pill } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { useDebouncedValue, useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
@@ -19,6 +19,10 @@ import {
   useIncomeSources, useCreateIncomeSource, useUpdateIncomeSource, useArchiveIncomeSource,
   usePots, useCreatePot, useUpdatePot, useArchivePot,
 } from '../api/hooks/useSettings'
+import {
+  useCategoryDescriptionPresets, useCreateCategoryDescriptionPreset, useDeleteCategoryDescriptionPreset,
+  useIncomeSourceDescriptionPresets, useCreateIncomeSourceDescriptionPreset, useDeleteIncomeSourceDescriptionPreset,
+} from '../api/hooks/useDescriptionSuggestions'
 import { useYears, useCreateYear, useImportXLSX } from '../api/hooks/usePeriods'
 import { useCurrentYear } from '../api/hooks/useCurrentYear'
 import { useMe } from '../api/hooks/useMe'
@@ -257,6 +261,78 @@ function PreferencesTab() {
   )
 }
 
+interface DescriptionPresetLike { id: number; description: string }
+
+// Shared curated-suggestions manager, popover-anchored so it can sit next to
+// a category/income-source row's other actions without needing its own
+// page or growing the edit form. Presentational only — data/mutations come
+// from the category- or income-source-specific hooks via the wrappers below.
+function PresetsPopover({ presets, onAdd, onRemove, adding }: {
+  presets: DescriptionPresetLike[]
+  onAdd: (description: string) => void
+  onRemove: (id: number) => void
+  adding: boolean
+}) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+  const submit = () => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    onAdd(trimmed)
+    setValue('')
+  }
+  return (
+    <Popover width={260} withArrow position="bottom-end" shadow="md">
+      <Popover.Target>
+        <ActionIcon variant="subtle" size="sm" aria-label={t('settings.manageSuggestions')}>
+          <IconTags size={14} />
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="xs">
+          <Text size="xs" fw={600}>{t('settings.suggestions')}</Text>
+          {presets.length === 0
+            ? <Text size="xs" c="dimmed">{t('settings.noSuggestions')}</Text>
+            : (
+              <Group gap={4}>
+                {presets.map(p => (
+                  <Pill key={p.id} withRemoveButton onRemove={() => onRemove(p.id)}>{p.description}</Pill>
+                ))}
+              </Group>
+            )}
+          <Group gap={4} wrap="nowrap">
+            <TextInput
+              size="xs"
+              placeholder={t('settings.addSuggestion')}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submit() }}
+              style={{ flex: 1 }}
+            />
+            <ActionIcon size="sm" variant="filled" loading={adding} disabled={!value.trim()} onClick={submit} aria-label={t('common.add')}>
+              <IconPlus size={12} />
+            </ActionIcon>
+          </Group>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
+
+function CategoryPresetsButton({ categoryId }: { categoryId: number }) {
+  const { data } = useCategoryDescriptionPresets(categoryId)
+  const create = useCreateCategoryDescriptionPreset(categoryId)
+  const del = useDeleteCategoryDescriptionPreset(categoryId)
+  return <PresetsPopover presets={data ?? []} onAdd={d => create.mutate(d)} onRemove={id => del.mutate(id)} adding={create.isPending} />
+}
+
+function IncomeSourcePresetsButton({ sourceId }: { sourceId: number }) {
+  const { data } = useIncomeSourceDescriptionPresets(sourceId)
+  const create = useCreateIncomeSourceDescriptionPreset(sourceId)
+  const del = useDeleteIncomeSourceDescriptionPreset(sourceId)
+  return <PresetsPopover presets={data ?? []} onAdd={d => create.mutate(d)} onRemove={id => del.mutate(id)} adding={create.isPending} />
+}
+
 type CategorySortKey = 'name' | 'default' | 'itemized' | 'template'
 
 function CategoriesTab() {
@@ -408,6 +484,10 @@ function CategoriesTab() {
                   <Switch label={t('settings.autofillActual')} checked={editAutofill} disabled={editItemized} onChange={e => setEditAutofill(e.target.checked)} />
                 </span>
               </Tooltip>
+              <Group justify="space-between">
+                <Text size="sm">{t('settings.suggestions')}</Text>
+                <CategoryPresetsButton categoryId={editingCat.id} />
+              </Group>
               {!childCounts.get(editingCat.id) && (
                 <Select
                   label={t('settings.parentCategory')}
@@ -541,6 +621,7 @@ function CategoriesTab() {
                     <Table.Td ta="center">{cat.autofillActual ? '✓' : ''}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
+                        <CategoryPresetsButton categoryId={cat.id} />
                         <Button size="xs" variant="subtle" onClick={() => startEdit(cat)}>{t('common.edit')}</Button>
                         <Button size="xs" variant="subtle" color={cat.archivedAt ? 'green' : 'red'} onClick={() => archive.mutate(cat.id)}>
                           {cat.archivedAt ? t('settings.restore') : t('common.archive')}
@@ -736,6 +817,10 @@ function SourcesTab() {
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
               <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
+              <Group justify="space-between">
+                <Text size="sm">{t('settings.suggestions')}</Text>
+                <IncomeSourcePresetsButton sourceId={editingSrc.id} />
+              </Group>
               <Group grow>
                 <Button
                   onClick={() => update.mutate({ id: editingSrc.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: editingSrc.sortOrder }, { onSuccess: () => setEditing(null) })}
@@ -823,6 +908,7 @@ function SourcesTab() {
                     <Table.Td ta="center">{src.includeInTemplate ? '✓' : '—'}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
+                        <IncomeSourcePresetsButton sourceId={src.id} />
                         <Button size="xs" variant="subtle" onClick={() => startEdit(src)}>{t('common.edit')}</Button>
                         <Button size="xs" variant="subtle" color={src.archivedAt ? 'green' : 'red'} onClick={() => archive.mutate(src.id)}>
                           {src.archivedAt ? t('settings.restore') : t('common.archive')}
