@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.0](https://github.com/wouterdamman/home-finance/compare/v1.14.0...v1.15.0) (2026-08-05)
+
+
+### Features
+
+* **migrate-avatars:** add tool to copy filesystem avatars into Postgres ([e249317](https://github.com/wouterdamman/home-finance/commit/e249317c369bc8f4d3a2c2548c239d8a18e8fe04))
+
+
+### Bug Fixes
+
+* **avatars:** remove filesystem PVC backend, Postgres-only now ([5db5c36](https://github.com/wouterdamman/home-finance/commit/5db5c361c5bfc534464817b2036b61b37c65aba5))
+* **frontend:** description autocomplete only shows curated presets ([6087be1](https://github.com/wouterdamman/home-finance/commit/6087be1418f37e91eb7a258acc140852e6a9197d))
+* **helm:** use Recreate rollout strategy to avoid RWO volume race ([89f5ea9](https://github.com/wouterdamman/home-finance/commit/89f5ea9200f05b87ec9e439d29613285463087b2))
+
 ## [1.14.0](https://github.com/wouterdamman/home-finance/compare/v1.13.2...v1.14.0) (2026-08-04)
 
 
