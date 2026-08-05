@@ -12,7 +12,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
-import { useCategoryDescriptionSuggestions, useCategoryDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
+import { useCategoryDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
 import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -93,7 +93,6 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   const { data: txs, isLoading } = useTransactions(periodId, categoryId)
-  const { data: descSuggestions } = useCategoryDescriptionSuggestions(categoryId)
   const { data: descPresets } = useCategoryDescriptionPresets(categoryId)
   const createTx = useCreateTransaction(periodId)
   const deleteTx = useDeleteTransaction(periodId)
@@ -104,11 +103,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const [dateSheetOpen, setDateSheetOpen] = useState(false)
   const amountRef = useRef<HTMLInputElement>(null)
 
-  const presetDescriptions = (descPresets ?? []).map(p => p.description)
-  const descriptionData = [
-    ...presetDescriptions,
-    ...(descSuggestions ?? []).map(s => s.description).filter(d => !presetDescriptions.includes(d)),
-  ]
+  const descriptionData = (descPresets ?? []).map(p => p.description)
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))
