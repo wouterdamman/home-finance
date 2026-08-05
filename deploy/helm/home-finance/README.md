@@ -68,3 +68,17 @@ CIDR/entity). Set to `false` on a cluster without Cilium (classic mode).
 
 - `env.INITIAL_ADMIN_EMAILS` — comma-separated, granted `role=admin` on first login
 - `env.ALLOWED_EMAILS` — comma-separated allowlist (unset = anyone the IdP authenticates)
+
+## Avatar storage
+
+Avatar photos are stored as bytea rows in Postgres — no PVC, no object storage,
+no extra chart config. `replicas: 1` with `strategy.type: Recreate` is safe by
+default because the app has no ReadWriteOnce volume to fight over during rollout.
+
+Older installs used a filesystem backend on a Longhorn RWO PVC
+(`avatarStorage.filesystem.*`), which caused Multi-Attach rollout races and has
+been removed from this chart. If you're upgrading from that setup: run
+`kubectl exec -it deploy/<release> -- /app/migrate-avatars` against the
+currently-running pod (it still has both the PVC mount and `DATABASE_URL`) to
+copy existing avatar files into Postgres *before* deploying a chart version
+without the PVC template — otherwise those files become unreachable.

@@ -28,9 +28,6 @@ type Config struct {
 	S3Region    string `env:"S3_REGION"`
 	S3UseSSL    bool   `env:"S3_USE_SSL" envDefault:"true"`
 
-	// AvatarStoragePath, if set, switches avatar storage to the filesystem backend (e.g. a mounted PersistentVolume). Empty (default) means avatars are stored as bytea rows in Postgres instead — see internal/avatarstorage.
-	AvatarStoragePath string `env:"AVATAR_STORAGE_PATH"`
-
 	// AuditExportInterval is a Go duration string (e.g. "10s", "1h", "12h").
 	// Empty disables the background exporter entirely — it's opt-in, same
 	// as S3 itself.

@@ -20,10 +20,6 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.avatarStorage.filesystem.enabled }}
-      securityContext:
-        fsGroup: 65532
-      {{- end }}
       containers:
         - name: server
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -57,10 +53,6 @@ spec:
                   name: {{ .Values.oidc.existingSecret }}
                   key: {{ .Values.oidc.clientSecretKey }}
                   {{- end }}
-            {{- if .Values.avatarStorage.filesystem.enabled }}
-            - name: AVATAR_STORAGE_PATH
-              value: {{ .Values.avatarStorage.filesystem.mountPath | quote }}
-            {{- end }}
             {{- if .Values.s3.enabled }}
             - name: S3_ENDPOINT
               valueFrom:
@@ -111,14 +103,3 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
-          {{- if .Values.avatarStorage.filesystem.enabled }}
-          volumeMounts:
-            - name: avatars
-              mountPath: {{ .Values.avatarStorage.filesystem.mountPath }}
-          {{- end }}
-      {{- if .Values.avatarStorage.filesystem.enabled }}
-      volumes:
-        - name: avatars
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-avatars
-      {{- end }}

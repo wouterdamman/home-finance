@@ -27,12 +27,7 @@ type Server struct {
 }
 
 func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, oidcProvider *auth.Provider) http.Handler {
-	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, s3: s3client.New(cfg)}
-	if cfg.AvatarStoragePath != "" {
-		s.avatarStorage = avatarstorage.NewFilesystem(cfg.AvatarStoragePath, pool)
-	} else {
-		s.avatarStorage = avatarstorage.NewPostgres(pool)
-	}
+	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, s3: s3client.New(cfg), avatarStorage: avatarstorage.NewPostgres(pool)}
 	if cfg.DevFakeAuth {
 		// Callers that hit the API directly (integration tests, curl) never
 		// go through /auth/login, so the dev admin row must exist up front —
