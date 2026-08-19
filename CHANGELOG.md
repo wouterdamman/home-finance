@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/wouterdamman/home-finance/compare/v1.15.0...v1.15.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/minio/minio-go/v7 to v7.3.0 ([#90](https://github.com/wouterdamman/home-finance/issues/90)) ([2661c45](https://github.com/wouterdamman/home-finance/commit/2661c45a9081974684bc2118c7ce430bfd770a84))
+
 ## [1.15.0](https://github.com/wouterdamman/home-finance/compare/v1.14.0...v1.15.0) (2026-08-05)
 
 
