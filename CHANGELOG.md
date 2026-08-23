@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.16.0](https://github.com/wouterdamman/home-finance/compare/v1.15.1...v1.16.0) (2026-08-23)
+
+
+### Features
+
+* **month:** itemized autofill copy-forward, editable transactions/pots, live split editor ([eb1b0ac](https://github.com/wouterdamman/home-finance/commit/eb1b0ac1104b95bf58bb5ce79e5f96903af09759))
+
+
+### Bug Fixes
+
+* **deps:** override transitive nanoid to patched 3.3.18 (CVE-2026-67213) ([b7146bc](https://github.com/wouterdamman/home-finance/commit/b7146bccd9649858df32dc7b00233109af174cd1))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.3.2 ([#97](https://github.com/wouterdamman/home-finance/issues/97)) ([d8abaff](https://github.com/wouterdamman/home-finance/commit/d8abaff184819011adfc991281b9fa995ca563de))
+* **tests:** update integration tests for autofill/itemized behavior change ([a49472e](https://github.com/wouterdamman/home-finance/commit/a49472e1ea94765890f4ad3f6c0f883e40e7f939))
+
 ## [1.15.1](https://github.com/wouterdamman/home-finance/compare/v1.15.0...v1.15.1) (2026-08-19)
 
 
