@@ -346,12 +346,15 @@ func TestCreatePeriodCopiesItemizedIncomeTransactions(t *testing.T) {
 	srv, _ := newIntegrationServer(t)
 	c := newAPIClient(t, srv)
 
-	// Create an itemized income source with includeInTemplate: true.
+	// Create an itemized income source with includeInTemplate + autofillActual:
+	// true — autofillActual is what actually gates copying the itemized
+	// transactions forward (see copyPeriodTemplate).
 	resp := c.do(http.MethodPost, "/api/income-sources", map[string]any{
 		"name":              "Test Itemized Source XYZ",
 		"defaultAmountCents": 0,
 		"isItemized":        true,
 		"includeInTemplate": true,
+		"autofillActual":    true,
 		"sortOrder":         999,
 	})
 	if resp.StatusCode != http.StatusCreated {
