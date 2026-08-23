@@ -68,6 +68,17 @@ func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID
 		return err
 	}
 
+	// Copy itemized expense transactions (for categories marked itemized, autofill_actual, and include_in_template)
+	if _, err := q.Exec(ctx, `
+		INSERT INTO transactions (period_id,category_id,amount_cents,description,tx_date)
+		SELECT $1,t.category_id,t.amount_cents,t.description,make_date($3,$4,1)
+		FROM transactions t
+		WHERE t.period_id=$2
+		AND t.category_id IN (SELECT id FROM categories WHERE include_in_template=true AND is_itemized=true AND autofill_actual=true)`,
+		destPeriodID, srcPeriodID, destYear, destMonth); err != nil {
+		return err
+	}
+
 	// Copy normal income entries (respecting include_in_template flag on income sources)
 	if _, err := q.Exec(ctx, `
 		INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
@@ -79,13 +90,13 @@ func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID
 		return err
 	}
 
-	// Copy itemized income transactions (for sources marked as itemized and include_in_template)
+	// Copy itemized income transactions (for sources marked as itemized, autofill_actual, and include_in_template)
 	if _, err := q.Exec(ctx, `
 		INSERT INTO income_transactions (period_id,source_id,amount_cents,description,tx_date)
 		SELECT $1,it.source_id,it.amount_cents,it.description,make_date($3,$4,1)
 		FROM income_transactions it
 		WHERE it.period_id=$2
-		AND it.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true AND is_itemized=true)`,
+		AND it.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true AND is_itemized=true AND autofill_actual=true)`,
 		destPeriodID, srcPeriodID, destYear, destMonth); err != nil {
 		return err
 	}
@@ -1141,6 +1152,40 @@ func (s *Server) handleCreateIncomeTransaction(w http.ResponseWriter, r *http.Re
 		return
 	}
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "periodId": periodID, "sourceId": body.SourceID, "amountCents": body.AmountCents, "description": body.Description, "txDate": body.TxDate})
+}
+
+func (s *Server) handleUpdateIncomeTransaction(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		AmountCents int64   `json:"amountCents"`
+		Description string  `json:"description"`
+		TxDate      *string `json:"txDate"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if err := validateAmountCents(body.AmountCents); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	var periodID int64
+	if err := s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_transactions WHERE id=$1`, id).Scan(&periodID); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "transaction not found")
+		return
+	}
+	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `UPDATE income_transactions SET amount_cents=$2,description=$3,tx_date=$4 WHERE id=$1`, id, body.AmountCents, body.Description, body.TxDate); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteIncomeTransaction(w http.ResponseWriter, r *http.Request) {

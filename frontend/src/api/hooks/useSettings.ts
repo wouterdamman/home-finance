@@ -34,6 +34,7 @@ export interface IncomeSource {
   includeInTemplate: boolean
   sortOrder: number
   archivedAt?: string
+  autofillActual?: boolean
 }
 
 export interface Pot {
@@ -113,7 +114,7 @@ export function useIncomeSources() {
 export function useCreateIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
+    mutationFn: (body: { name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number; autofillActual?: boolean }) =>
       api.post('/api/income-sources', body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })
@@ -122,7 +123,7 @@ export function useCreateIncomeSource() {
 export function useUpdateIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number }) =>
+    mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number; autofillActual?: boolean }) =>
       api.put(`/api/income-sources/${id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
   })
@@ -193,6 +194,19 @@ export function useCreatePotEntry(potId: number) {
   return useMutation({
     mutationFn: (body: { entryType: string; amountCents: number; description: string; entryDate?: string }) =>
       api.post(`/api/pots/${potId}/entries`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pot-ledger', potId] })
+      qc.invalidateQueries({ queryKey: ['pot-balances'] })
+      qc.invalidateQueries({ queryKey: ['year-summary'] })
+    },
+  })
+}
+
+export function useUpdatePotEntry(potId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, amountCents }: { id: number; amountCents: number }) =>
+      api.patch(`/api/pot-entries/${id}`, { amountCents }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pot-ledger', potId] })
       qc.invalidateQueries({ queryKey: ['pot-balances'] })

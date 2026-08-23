@@ -23,6 +23,18 @@ export function useCreateTransaction(periodId: number) {
   })
 }
 
+export function useUpdateTransaction(periodId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; amountCents: number; description: string; txDate?: string }) =>
+      api.put(`/api/transactions/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions', periodId] })
+      qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+    },
+  })
+}
+
 export function useDeleteTransaction(periodId: number) {
   const qc = useQueryClient()
   return useMutation({

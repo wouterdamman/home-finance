@@ -23,6 +23,18 @@ export function useCreateIncomeTransaction(periodId: number) {
   })
 }
 
+export function useUpdateIncomeTransaction(periodId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; amountCents: number; description: string; txDate?: string }) =>
+      api.put(`/api/income-transactions/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['income-transactions', periodId] })
+      qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+    },
+  })
+}
+
 export function useDeleteIncomeTransaction(periodId: number) {
   const qc = useQueryClient()
   return useMutation({

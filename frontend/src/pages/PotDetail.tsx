@@ -8,10 +8,10 @@ import { useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
 import { AreaChart } from '@mantine/charts'
 import { modals } from '@mantine/modals'
-import { IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconTrash, IconPlus, IconPencil, IconCheck, IconX } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
-import { usePots, usePotLedger, useCreatePotEntry, useDeletePotEntry } from '../api/hooks/useSettings'
+import { usePots, usePotLedger, useCreatePotEntry, useUpdatePotEntry, useDeletePotEntry } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
 import { parseToCents } from '../lib/money'
@@ -48,6 +48,7 @@ export default function PotDetail() {
   const { data: pots, isLoading: potsLoading } = usePots()
   const { data: ledger, isLoading: ledgerLoading } = usePotLedger(potId)
   const createEntry = useCreatePotEntry(potId)
+  const updateEntry = useUpdatePotEntry(potId)
   const deleteEntry = useDeletePotEntry(potId)
 
   const [entryType, setEntryType] = useState<string | null>('deposit')
@@ -55,6 +56,8 @@ export default function PotDetail() {
   const [description, setDescription] = useState('')
   const [entryDate, setEntryDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
   const [addSheetOpen, setAddSheetOpen] = useState(false)
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null)
+  const [editAmount, setEditAmount] = useState<number | string>('')
 
   if (potsLoading || ledgerLoading) return <Skeleton h={400} mt="md" />
 
@@ -76,6 +79,23 @@ export default function PotDetail() {
       { entryType, amountCents: cents, description, entryDate: entryDate ?? undefined },
       {
         onSuccess: () => { setAmount(''); setDescription(''); setAddSheetOpen(false) },
+        onError: (err: unknown) => notifications.show({ color: 'red', message: getErrorMessage(err, t('common.error')) }),
+      }
+    )
+  }
+
+  const startEditEntry = (entryId: number, amountCents: number) => {
+    setEditingEntryId(entryId)
+    setEditAmount(Math.abs(amountCents) / 100)
+  }
+
+  const saveEditEntry = () => {
+    if (editingEntryId == null) return
+    const cents = parseCents(editAmount)
+    updateEntry.mutate(
+      { id: editingEntryId, amountCents: cents },
+      {
+        onSuccess: () => setEditingEntryId(null),
         onError: (err: unknown) => notifications.show({ color: 'red', message: getErrorMessage(err, t('common.error')) }),
       }
     )
@@ -153,6 +173,8 @@ export default function PotDetail() {
                     <MoneyText cents={e.runningBalance} c="dimmed" size="xs" />
                   </Stack>
                 }
+                chevron={MANUAL_ENTRY_TYPES.includes(e.entryType)}
+                onClick={MANUAL_ENTRY_TYPES.includes(e.entryType) ? () => startEditEntry(e.id, e.amountCents) : undefined}
                 swipeAction={MANUAL_ENTRY_TYPES.includes(e.entryType) ? {
                   label: <IconTrash size={18} />,
                   destructive: true,
@@ -192,6 +214,20 @@ export default function PotDetail() {
             placeholder="0,00"
           />
           <Button loading={createEntry.isPending} onClick={handleAdd}>{t('pots.book')}</Button>
+        </BottomSheet>
+
+        <BottomSheet opened={editingEntryId !== null} onClose={() => setEditingEntryId(null)} title={t('common.edit')}>
+          <NumberInput
+            label={t('common.amount')}
+            value={editAmount}
+            onChange={setEditAmount}
+            decimalSeparator=","
+            decimalScale={2}
+            prefix="€ "
+            hideControls
+            placeholder="0,00"
+          />
+          <Button loading={updateEntry.isPending} onClick={saveEditEntry}>{t('common.save')}</Button>
         </BottomSheet>
       </Stack>
     )
@@ -304,11 +340,34 @@ export default function PotDetail() {
                     </Badge>
                   </Table.Td>
                   <Table.Td><Text size="sm">{e.description}</Text></Table.Td>
-                  <Table.Td ta="right"><MoneyText cents={e.amountCents} colored /></Table.Td>
+                  <Table.Td ta="right">
+                    {editingEntryId === e.id ? (
+                      <Group justify="flex-end" wrap="nowrap" gap={4}>
+                        <NumberInput
+                          size="xs"
+                          value={editAmount}
+                          onChange={setEditAmount}
+                          decimalSeparator=","
+                          decimalScale={2}
+                          prefix="€ "
+                          hideControls
+                          w={110}
+                          autoFocus
+                        />
+                        <ActionIcon size="sm" color="green" variant="subtle" aria-label={t('common.save')} loading={updateEntry.isPending} onClick={saveEditEntry}><IconCheck size={14} /></ActionIcon>
+                        <ActionIcon size="sm" variant="subtle" aria-label={t('common.cancel')} onClick={() => setEditingEntryId(null)}><IconX size={14} /></ActionIcon>
+                      </Group>
+                    ) : (
+                      <MoneyText cents={e.amountCents} colored />
+                    )}
+                  </Table.Td>
                   <Table.Td ta="right"><MoneyText cents={e.runningBalance} /></Table.Td>
                   <Table.Td>
-                    {MANUAL_ENTRY_TYPES.includes(e.entryType) && (
-                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleDelete(e.id)}><IconTrash size={14} /></ActionIcon>
+                    {MANUAL_ENTRY_TYPES.includes(e.entryType) && editingEntryId !== e.id && (
+                      <Group gap={4} wrap="nowrap">
+                        <ActionIcon size="sm" variant="subtle" aria-label={t('common.edit')} onClick={() => startEditEntry(e.id, e.amountCents)}><IconPencil size={14} /></ActionIcon>
+                        <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleDelete(e.id)}><IconTrash size={14} /></ActionIcon>
+                      </Group>
                     )}
                   </Table.Td>
                 </Table.Tr>

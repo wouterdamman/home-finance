@@ -102,10 +102,6 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if body.IsItemized && body.AutofillActual {
-		Error(w, http.StatusBadRequest, "bad_request", "autofillActual and isItemized cannot both be enabled")
-		return
-	}
 	var id int64
 	if err := s.pool.QueryRow(r.Context(),
 		`INSERT INTO categories (name,default_amount_cents,is_itemized,include_in_template,sort_order,parent_id,autofill_actual) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
@@ -137,10 +133,6 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.validateCategoryParent(r.Context(), &id, body.ParentID); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
-		return
-	}
-	if body.IsItemized && body.AutofillActual {
-		Error(w, http.StatusBadRequest, "bad_request", "autofillActual and isItemized cannot both be enabled")
 		return
 	}
 	if _, err := s.pool.Exec(r.Context(), `UPDATE categories SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,parent_id=$6,autofill_actual=$7 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.ParentID, body.AutofillActual); err != nil {
@@ -202,8 +194,9 @@ func (s *Server) handleListIncomeSources(w http.ResponseWriter, r *http.Request)
 		IncludeInTemplate  bool    `json:"includeInTemplate"`
 		SortOrder          int     `json:"sortOrder"`
 		ArchivedAt         *string `json:"archivedAt,omitempty"`
+		AutofillActual     bool    `json:"autofillActual"`
 	}
-	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at FROM income_sources ORDER BY sort_order,id`)
+	rows, err := s.pool.Query(r.Context(), `SELECT id,name,default_amount_cents,is_itemized,include_in_template,sort_order,archived_at,autofill_actual FROM income_sources ORDER BY sort_order,id`)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -213,7 +206,7 @@ func (s *Server) handleListIncomeSources(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var ro row
 		var aa *time.Time
-		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa); err != nil {
+		if err := rows.Scan(&ro.ID, &ro.Name, &ro.DefaultAmountCents, &ro.IsItemized, &ro.IncludeInTemplate, &ro.SortOrder, &aa, &ro.AutofillActual); err != nil {
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
 		}
@@ -237,6 +230,7 @@ func (s *Server) handleCreateIncomeSource(w http.ResponseWriter, r *http.Request
 		IsItemized         bool   `json:"isItemized"`
 		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
+		AutofillActual     bool   `json:"autofillActual"`
 	}
 	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
@@ -245,12 +239,12 @@ func (s *Server) handleCreateIncomeSource(w http.ResponseWriter, r *http.Request
 	}
 	var id int64
 	if err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO income_sources (name,default_amount_cents,is_itemized,include_in_template,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder).Scan(&id); err != nil {
+		`INSERT INTO income_sources (name,default_amount_cents,is_itemized,include_in_template,sort_order,autofill_actual) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder, body.AutofillActual).Scan(&id); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder})
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "includeInTemplate": body.IncludeInTemplate, "sortOrder": body.SortOrder, "autofillActual": body.AutofillActual})
 }
 
 func (s *Server) handleUpdateIncomeSource(w http.ResponseWriter, r *http.Request) {
@@ -265,13 +259,14 @@ func (s *Server) handleUpdateIncomeSource(w http.ResponseWriter, r *http.Request
 		IsItemized         bool   `json:"isItemized"`
 		IncludeInTemplate  bool   `json:"includeInTemplate"`
 		SortOrder          int    `json:"sortOrder"`
+		AutofillActual     bool   `json:"autofillActual"`
 	}
 	body.IncludeInTemplate = true
 	if err := DecodeJSON(r, &body); err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE income_sources SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,sort_order=$6 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder); err != nil {
+	if _, err := s.pool.Exec(r.Context(), `UPDATE income_sources SET name=$2,default_amount_cents=$3,is_itemized=$4,include_in_template=$5,sort_order=$6,autofill_actual=$7 WHERE id=$1`, id, body.Name, body.DefaultAmountCents, body.IsItemized, body.IncludeInTemplate, body.SortOrder, body.AutofillActual); err != nil {
 		Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
@@ -557,6 +552,46 @@ func (s *Server) handleCreatePotEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditLog(r.Context(), "pot.entry", "pot", potID, map[string]any{"entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description})
 	JSON(w, http.StatusCreated, map[string]any{"id": id, "potId": potID, "entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description, "entryDate": body.EntryDate})
+}
+
+func (s *Server) handleUpdatePotEntry(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(r, "id")
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		AmountCents int64 `json:"amountCents"`
+	}
+	if err := DecodeJSON(r, &body); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	var potID int64
+	var entryType string
+	if err := s.pool.QueryRow(r.Context(), `SELECT pot_id, entry_type FROM pot_ledger WHERE id=$1`, id).Scan(&potID, &entryType); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "entry not found")
+		return
+	}
+	switch entryType {
+	case "allocation", "carryover_out":
+		Error(w, http.StatusBadRequest, "bad_request", "cannot edit an automatically generated entry")
+		return
+	}
+	amount := body.AmountCents
+	if entryType == "withdrawal" && amount > 0 {
+		amount = -amount
+	}
+	if err := validateSignedAmountCents(amount); err != nil {
+		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if _, err := s.pool.Exec(r.Context(), `UPDATE pot_ledger SET amount_cents=$2 WHERE id=$1`, id, amount); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	s.auditLog(r.Context(), "pot.entry.update", "pot", potID, map[string]any{"entryId": id, "entryType": entryType, "amountCents": amount})
+	JSON(w, http.StatusOK, map[string]any{"id": id, "potId": potID, "entryType": entryType, "amountCents": amount})
 }
 
 func (s *Server) handleDeletePotEntry(w http.ResponseWriter, r *http.Request) {

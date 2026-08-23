@@ -106,6 +106,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Delete("/transactions/{id}", s.handleDeleteTransaction)
 			r.Get("/periods/{id}/income-transactions", s.handleListIncomeTransactions)
 			r.Post("/periods/{id}/income-transactions", s.handleCreateIncomeTransaction)
+			r.Put("/income-transactions/{id}", s.handleUpdateIncomeTransaction)
 			r.Delete("/income-transactions/{id}", s.handleDeleteIncomeTransaction)
 
 			// Splits
@@ -146,6 +147,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Post("/pots/{id}/archive", s.handleArchivePot)
 			r.Get("/pots/{id}/ledger", s.handleGetPotLedger)
 			r.Post("/pots/{id}/entries", s.handleCreatePotEntry)
+			r.Patch("/pot-entries/{id}", s.handleUpdatePotEntry)
 			r.Delete("/pot-entries/{id}", s.handleDeletePotEntry)
 
 			// Years

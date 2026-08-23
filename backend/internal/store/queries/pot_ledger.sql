@@ -9,6 +9,9 @@ SELECT COALESCE(SUM(amount_cents), 0)::BIGINT AS balance FROM pot_ledger WHERE p
 SELECT *, SUM(amount_cents) OVER (PARTITION BY pot_id ORDER BY entry_date, id) AS running_balance
 FROM pot_ledger WHERE pot_id = $1 ORDER BY entry_date, id;
 
+-- name: UpdatePotLedgerEntryAmount :exec
+UPDATE pot_ledger SET amount_cents = $2 WHERE id = $1;
+
 -- name: DeletePotLedgerForSourcePeriod :exec
 DELETE FROM pot_ledger WHERE source_period_id = $1;
 

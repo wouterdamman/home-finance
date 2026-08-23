@@ -477,13 +477,9 @@ function CategoriesTab() {
             <>
               <TextInput label={t('settings.name')} value={editName} onChange={e => setEditName(e.target.value)} />
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
-              <Switch label={t('settings.itemized')} checked={editItemized} disabled={editAutofill} onChange={e => setEditItemized(e.target.checked)} />
+              <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
-              <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!editItemized}>
-                <span>
-                  <Switch label={t('settings.autofillActual')} checked={editAutofill} disabled={editItemized} onChange={e => setEditAutofill(e.target.checked)} />
-                </span>
-              </Tooltip>
+              <Switch label={t('settings.autofillActual')} checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} />
               <Group justify="space-between">
                 <Text size="sm">{t('settings.suggestions')}</Text>
                 <CategoryPresetsButton categoryId={editingCat.id} />
@@ -516,13 +512,9 @@ function CategoriesTab() {
         <BottomSheet opened={addOpened} onClose={closeAdd} title={t('common.addNew')}>
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
-          <Switch label={t('settings.itemized')} checked={newItemized} disabled={newAutofill} onChange={e => setNewItemized(e.target.checked)} />
+          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
-          <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!newItemized}>
-            <span>
-              <Switch label={t('settings.autofillActual')} checked={newAutofill} disabled={newItemized} onChange={e => setNewAutofill(e.target.checked)} />
-            </span>
-          </Tooltip>
+          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
           <Select
             label={t('settings.parentCategory')}
             placeholder={t('settings.parentCategoryNone')}
@@ -595,15 +587,11 @@ function CategoriesTab() {
                       </Stack>
                     </Table.Td>
                     <Table.Td><Group justify="flex-end"><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Group></Table.Td>
-                    <Table.Td><Group justify="center"><Switch checked={editItemized} disabled={editAutofill} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
+                    <Table.Td><Group justify="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Group></Table.Td>
                     <Table.Td>
                       <Group justify="center">
-                        <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!editItemized}>
-                          <span>
-                            <Switch checked={editAutofill} disabled={editItemized} onChange={e => setEditAutofill(e.target.checked)} />
-                          </span>
-                        </Tooltip>
+                        <Switch checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} />
                       </Group>
                     </Table.Td>
                     <Table.Td>
@@ -639,13 +627,9 @@ function CategoriesTab() {
         <Stack gap="sm">
           <TextInput label={t('settings.name')} value={newName} onChange={e => setNewName(e.target.value)} />
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
-          <Switch label={t('settings.itemized')} checked={newItemized} disabled={newAutofill} onChange={e => setNewItemized(e.target.checked)} />
+          <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
-          <Tooltip label={t('settings.autofillItemizedConflict')} disabled={!newItemized}>
-            <span>
-              <Switch label={t('settings.autofillActual')} checked={newAutofill} disabled={newItemized} onChange={e => setNewAutofill(e.target.checked)} />
-            </span>
-          </Tooltip>
+          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
           <Select
             label={t('settings.parentCategory')}
             placeholder={t('settings.parentCategoryNone')}
@@ -743,10 +727,12 @@ function SourcesTab() {
   const [editAmount, setEditAmount] = useState<number | string>('')
   const [editItemized, setEditItemized] = useState(false)
   const [editTemplate, setEditTemplate] = useState(true)
+  const [editAutofill, setEditAutofill] = useState(false)
   const [newName, setNewName] = useState('')
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newItemized, setNewItemized] = useState(false)
   const [newTemplate, setNewTemplate] = useState(true)
+  const [newAutofill, setNewAutofill] = useState(false)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortState<SourceSortKey>>({ key: 'name', dir: 'asc' })
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
@@ -762,12 +748,13 @@ function SourcesTab() {
     })
   }, [data, search, sort])
 
-  const startEdit = (src: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean }) => {
+  const startEdit = (src: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; autofillActual?: boolean }) => {
     setEditing(src.id)
     setEditName(src.name)
     setEditAmount(src.defaultAmountCents / 100)
     setEditItemized(src.isItemized)
     setEditTemplate(src.includeInTemplate)
+    setEditAutofill(src.autofillActual ?? false)
   }
 
   if (isMobile) {
@@ -817,13 +804,14 @@ function SourcesTab() {
               <NumberInput label={t('settings.default')} value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
               <Switch label={t('settings.itemized')} checked={editItemized} onChange={e => setEditItemized(e.target.checked)} />
               <Switch label={t('settings.template')} checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} />
+              <Switch label={t('settings.autofillActual')} checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} />
               <Group justify="space-between">
                 <Text size="sm">{t('settings.suggestions')}</Text>
                 <IncomeSourcePresetsButton sourceId={editingSrc.id} />
               </Group>
               <Group grow>
                 <Button
-                  onClick={() => update.mutate({ id: editingSrc.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: editingSrc.sortOrder }, { onSuccess: () => setEditing(null) })}
+                  onClick={() => update.mutate({ id: editingSrc.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: editingSrc.sortOrder, autofillActual: editAutofill }, { onSuccess: () => setEditing(null) })}
                   loading={update.isPending}
                 >
                   {t('common.save')}
@@ -846,9 +834,10 @@ function SourcesTab() {
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
           <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
-            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
+            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), autofillActual: newAutofill }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewAutofill(false); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </BottomSheet>
@@ -879,12 +868,13 @@ function SourcesTab() {
               label={<Tooltip label={t('settings.templateHint')}><span>{t('settings.template')}</span></Tooltip>}
               sortKey="template" sort={sort} onSort={k => setSort(s => toggleSort(s, k))} ta="center"
             />
+            <Table.Th ta="center"><Tooltip label={t('settings.autofillActualHint')}><span>{t('settings.autofillActual')}</span></Tooltip></Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {rows.length === 0 && (
-            <Table.Tr><Table.Td colSpan={5}><EmptyState message={t('settings.noSources')} /></Table.Td></Table.Tr>
+            <Table.Tr><Table.Td colSpan={6}><EmptyState message={t('settings.noSources')} /></Table.Td></Table.Tr>
           )}
           {rows.map(src => (
             <Table.Tr key={src.id} opacity={src.archivedAt ? 0.5 : 1}>
@@ -894,9 +884,10 @@ function SourcesTab() {
                     <Table.Td><Group justify="flex-end"><NumberInput size="xs" value={editAmount} onChange={setEditAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls w={120} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editItemized} onChange={e => setEditItemized(e.target.checked)} /></Group></Table.Td>
                     <Table.Td><Group justify="center"><Switch checked={editTemplate} onChange={e => setEditTemplate(e.target.checked)} /></Group></Table.Td>
+                    <Table.Td><Group justify="center"><Switch checked={editAutofill} onChange={e => setEditAutofill(e.target.checked)} /></Group></Table.Td>
                     <Table.Td>
                       <Group gap="xs">
-                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: src.sortOrder }, { onSuccess: () => setEditing(null) })}>OK</Button>
+                        <Button size="xs" onClick={() => update.mutate({ id: src.id, name: editName, defaultAmountCents: amountToCents(editAmount), isItemized: editItemized, includeInTemplate: editTemplate, sortOrder: src.sortOrder, autofillActual: editAutofill }, { onSuccess: () => setEditing(null) })}>OK</Button>
                         <Button size="xs" variant="subtle" onClick={() => setEditing(null)}><IconX size={14} /></Button>
                       </Group>
                     </Table.Td>
@@ -906,6 +897,7 @@ function SourcesTab() {
                     <Table.Td ta="right">€ {(src.defaultAmountCents / 100).toFixed(2)}</Table.Td>
                     <Table.Td ta="center">{src.isItemized ? '✓' : ''}</Table.Td>
                     <Table.Td ta="center">{src.includeInTemplate ? '✓' : '—'}</Table.Td>
+                    <Table.Td ta="center">{src.autofillActual ? '✓' : ''}</Table.Td>
                     <Table.Td>
                       <Group gap="xs">
                         <IncomeSourcePresetsButton sourceId={src.id} />
@@ -928,9 +920,10 @@ function SourcesTab() {
           <NumberInput label={t('settings.default')} value={newAmount} onChange={setNewAmount} decimalSeparator="," decimalScale={2} prefix="€ " hideControls />
           <Switch label={t('settings.itemized')} checked={newItemized} onChange={e => setNewItemized(e.target.checked)} />
           <Switch label={t('settings.template')} checked={newTemplate} onChange={e => setNewTemplate(e.target.checked)} />
+          <Switch label={t('settings.autofillActual')} checked={newAutofill} onChange={e => setNewAutofill(e.target.checked)} />
           <Button disabled={!newName} loading={create.isPending} onClick={() => {
-            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0) }, {
-              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); closeAdd() }
+            create.mutate({ name: newName, defaultAmountCents: amountToCents(newAmount), isItemized: newItemized, includeInTemplate: newTemplate, sortOrder: (data?.length ?? 0), autofillActual: newAutofill }, {
+              onSuccess: () => { setNewName(''); setNewAmount(''); setNewItemized(false); setNewTemplate(true); setNewAutofill(false); closeAdd() }
             })
           }}>{t('common.add')}</Button>
         </Stack>

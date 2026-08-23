@@ -89,6 +89,7 @@ export default function MonthOverview() {
   const { data: me } = useMe()
   const isAdmin = me?.role === 'admin'
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
+  const [splitAmountEdits, setSplitAmountEdits] = useState<Record<number, string> | null>(null)
   const [newIncomeSourceId, setNewIncomeSourceId] = useState<string | null>(null)
   const [newAmount, setNewAmount] = useState<number | string>('')
   const [newCategoryId, setNewCategoryId] = useState<string | null>(null)
@@ -211,22 +212,54 @@ export default function MonthOverview() {
   const carryoverRemainder = 100 - nonCarryoverTotal
   const carryoverOverAllocated = !!carryoverPot && carryoverRemainder < -0.005
 
+  const currentAmountEdits = splitAmountEdits ?? Object.fromEntries(splits.map(s => [s.potId, String((s.projectedCents ?? 0) / 100)]))
+  const pctToProjectedCents = (pct: number) => Math.round((surplusCents * pct) / 100)
+  const centsToPct = (cents: number) => surplusCents !== 0 ? (cents / surplusCents) * 100 : 0
+
+  // The percentage and amount inputs are two independently-controlled fields
+  // that mirror each other: each one's value comes only from its own edit
+  // state, and editing one derives an update to the *other* field's state as
+  // a side effect. Deriving a field's own displayed value from a round-trip
+  // through the other field on every keystroke fights the caret mid-typing
+  // (Mantine reformats the controlled value each render) and garbles input.
+  const setSplitPercentage = (potId: number, pct: number) => {
+    setSplitEdits(prev => ({ ...prev!, [potId]: String(pct) }))
+    setSplitAmountEdits(prev => ({ ...(prev ?? currentAmountEdits), [potId]: String(pctToProjectedCents(pct) / 100) }))
+  }
+  const setSplitAmountText = (potId: number, text: string, amountValue: number) => {
+    setSplitAmountEdits(prev => ({ ...(prev ?? currentAmountEdits), [potId]: text }))
+    const pct = Math.round(centsToPct(Math.round(amountValue * 100)) * 100) / 100
+    setSplitEdits(prev => ({ ...prev!, [potId]: String(pct) }))
+  }
+
+  const startSplitEdit = () => {
+    setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))
+    setSplitAmountEdits(Object.fromEntries(splits.map(s => [s.potId, String((s.projectedCents ?? 0) / 100)])))
+  }
+  const cancelSplitEdit = () => { setSplitEdits(null); setSplitAmountEdits(null) }
+
   const handleSaveSplits = () => {
     replaceSplits.mutate(
       Object.entries(currentSplits).map(([potId, pct]) => ({ potId: Number(potId), percentage: pct })),
-      { onSuccess: () => setSplitEdits(null) }
+      { onSuccess: () => { setSplitEdits(null); setSplitAmountEdits(null) } }
     )
   }
 
   const handleAddSplitPot = () => {
     if (!newSplitPotId) return
     setSplitEdits(prev => ({ ...(prev ?? {}), [newSplitPotId]: '0' }))
+    setSplitAmountEdits(prev => ({ ...(prev ?? currentAmountEdits), [newSplitPotId]: '0' }))
     setNewSplitPotId(null)
   }
 
   const handleRemoveSplitPot = (potId: number) => {
     setSplitEdits(prev => {
       const next = { ...(prev ?? {}) }
+      delete next[potId]
+      return next
+    })
+    setSplitAmountEdits(prev => {
+      const next = { ...(prev ?? currentAmountEdits) }
       delete next[potId]
       return next
     })
@@ -367,7 +400,7 @@ export default function MonthOverview() {
             <Group gap="xs">
               <SortControl mode={splitSort} onChange={setSplitSort} />
               {!isClosed && !splitEdits && (
-                <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
+                <Button size="xs" variant="subtle" onClick={startSplitEdit}>
                   {t('month.adjust')}
                 </Button>
               )}
@@ -447,7 +480,7 @@ export default function MonthOverview() {
           </Button>
         </BottomSheet>
 
-        <BottomSheet opened={!!splitEdits} onClose={() => setSplitEdits(null)} title={t('month.splitSection')}>
+        <BottomSheet opened={!!splitEdits} onClose={cancelSplitEdit} title={t('month.splitSection')}>
           {carryoverOverAllocated && <Text size="xs" c="red">{t('month.splitOverAllocated')}</Text>}
           <Stack gap="sm">
             {splitPotIds.map(potId => {
@@ -458,19 +491,34 @@ export default function MonthOverview() {
                 <Group key={potId} justify="space-between" wrap="nowrap">
                   <Text size="sm" style={{ flex: 1 }}>{name}{isCarryoverRow && <Text span size="xs" c="dimmed"> ({t('pots.kind_carryover')})</Text>}</Text>
                   {isCarryoverRow ? (
-                    <Text size="sm" c={carryoverOverAllocated ? 'red' : 'dimmed'}>{carryoverRemainder.toFixed(2)}%</Text>
+                    <Group gap={6} wrap="nowrap">
+                      <Text size="sm" c={carryoverOverAllocated ? 'red' : 'dimmed'}>{carryoverRemainder.toFixed(2)}%</Text>
+                      <MoneyText cents={pctToProjectedCents(carryoverRemainder)} size="sm" c="dimmed" />
+                    </Group>
                   ) : (
-                    <NumberInput
-                      size="sm"
-                      value={Number(splitEdits?.[potId] ?? sp?.percentage ?? 0)}
-                      onChange={(v) => setSplitEdits(prev => ({ ...prev!, [potId]: String(v) }))}
-                      suffix="%"
-                      decimalScale={2}
-                      hideControls
-                      min={0}
-                      max={100}
-                      w={100}
-                    />
+                    <Group gap={6} wrap="nowrap">
+                      <NumberInput
+                        size="sm"
+                        value={Number(splitEdits?.[potId] ?? sp?.percentage ?? 0)}
+                        onChange={(v) => setSplitPercentage(potId, Number(v))}
+                        suffix="%"
+                        decimalScale={2}
+                        hideControls
+                        min={0}
+                        max={100}
+                        w={90}
+                      />
+                      <NumberInput
+                        size="sm"
+                        value={currentAmountEdits[potId] ?? '0'}
+                        onChange={(v) => setSplitAmountText(potId, String(v), Number(v) || 0)}
+                        decimalSeparator=","
+                        decimalScale={2}
+                        prefix="€ "
+                        hideControls
+                        w={100}
+                      />
+                    </Group>
                   )}
                   {!isCarryoverRow && (
                     <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleRemoveSplitPot(potId)}><IconX size={14} /></ActionIcon>
@@ -495,7 +543,7 @@ export default function MonthOverview() {
             )}
             <Group grow>
               <Button onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
-              <Button variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
+              <Button variant="subtle" onClick={cancelSplitEdit}>{t('common.cancel')}</Button>
             </Group>
           </Stack>
         </BottomSheet>
@@ -773,9 +821,9 @@ export default function MonthOverview() {
               splitEdits
                 ? <Group gap="xs">
                     <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
-                    <Button size="xs" variant="subtle" onClick={() => setSplitEdits(null)}>{t('common.cancel')}</Button>
+                    <Button size="xs" variant="subtle" onClick={cancelSplitEdit}>{t('common.cancel')}</Button>
                   </Group>
-                : <Button size="xs" variant="subtle" onClick={() => setSplitEdits(Object.fromEntries(splits.map(s => [s.potId, s.percentage])))}>
+                : <Button size="xs" variant="subtle" onClick={startSplitEdit}>
                     {t('month.adjust')}
                   </Button>
             )}
@@ -812,7 +860,7 @@ export default function MonthOverview() {
                         : <NumberInput
                             size="xs"
                             value={Number(splitEdits[potId] ?? sp?.percentage ?? 0)}
-                            onChange={(v) => setSplitEdits(prev => ({ ...prev!, [potId]: String(v) }))}
+                            onChange={(v) => setSplitPercentage(potId, Number(v))}
                             suffix="%"
                             decimalScale={2}
                             hideControls
@@ -823,8 +871,22 @@ export default function MonthOverview() {
                     : <Text size="sm">{sp?.percentage}%</Text>
                   }
                 </Table.Td>
-                <Table.Td ta="right">
-                  {sp ? <MoneyText cents={sp.projectedCents ?? 0} colored={!isClosed} /> : <Text size="sm" c="dimmed">—</Text>}
+                <Table.Td ta="right" w={130}>
+                  {splitEdits
+                    ? (isCarryoverRow
+                        ? <MoneyText cents={pctToProjectedCents(carryoverRemainder)} colored={!isClosed} />
+                        : <NumberInput
+                            size="xs"
+                            value={currentAmountEdits[potId] ?? '0'}
+                            onChange={(v) => setSplitAmountText(potId, String(v), Number(v) || 0)}
+                            decimalSeparator=","
+                            decimalScale={2}
+                            prefix="€ "
+                            hideControls
+                          />
+                      )
+                    : (sp ? <MoneyText cents={sp.projectedCents ?? 0} colored={!isClosed} /> : <Text size="sm" c="dimmed">—</Text>)
+                  }
                 </Table.Td>
                 {splitEdits && (
                   <Table.Td>

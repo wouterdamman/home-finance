@@ -6,12 +6,12 @@ import {
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { DateInput } from '@mantine/dates'
-import { IconTrash } from '@tabler/icons-react'
+import { IconTrash, IconPencil, IconCheck, IconX } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
-import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
+import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
 import { useCategoryDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
 import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
@@ -95,6 +95,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const { data: txs, isLoading } = useTransactions(periodId, categoryId)
   const { data: descPresets } = useCategoryDescriptionPresets(categoryId)
   const createTx = useCreateTransaction(periodId)
+  const updateTx = useUpdateTransaction(periodId)
   const deleteTx = useDeleteTransaction(periodId)
 
   const [desc, setDesc] = useState('')
@@ -102,6 +103,8 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const [txDate, setTxDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
   const [dateSheetOpen, setDateSheetOpen] = useState(false)
   const amountRef = useRef<HTMLInputElement>(null)
+  const [editingTxId, setEditingTxId] = useState<number | null>(null)
+  const [editAmount, setEditAmount] = useState<number | string>('')
 
   const descriptionData = (descPresets ?? []).map(p => p.description)
 
@@ -114,6 +117,20 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
     createTx.mutate({ categoryId, amountCents: cents, description: desc, txDate: txDate ?? undefined }, {
       onSuccess: () => { setDesc(''); setAmount('') }
     })
+  }
+
+  const startEditTx = (tx: { id: number; amountCents: number }) => {
+    setEditingTxId(tx.id)
+    setEditAmount(tx.amountCents / 100)
+  }
+
+  const saveEditTx = () => {
+    const tx = (txs ?? []).find(t => t.id === editingTxId)
+    if (!tx) return
+    updateTx.mutate(
+      { id: tx.id, amountCents: parseCents(editAmount), description: tx.description, txDate: tx.txDate ?? undefined },
+      { onSuccess: () => setEditingTxId(null) }
+    )
   }
 
   if (isLoading) return <Skeleton h={200} />
@@ -164,6 +181,8 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
                 title={tx.description || '—'}
                 subtitle={tx.txDate ? dayjs(tx.txDate).format('DD-MM-YYYY') : undefined}
                 trailing={<MoneyText cents={tx.amountCents} fw={600} />}
+                chevron={!isClosed}
+                onClick={!isClosed ? () => startEditTx(tx) : undefined}
                 swipeAction={!isClosed ? {
                   label: <IconTrash size={18} />,
                   destructive: true,
@@ -185,6 +204,19 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
             onChange={(v) => { setTxDate(v); setDateSheetOpen(false) }}
             valueFormat="DD-MM-YYYY"
           />
+        </BottomSheet>
+
+        <BottomSheet opened={editingTxId !== null} onClose={() => setEditingTxId(null)} title={t('common.edit')}>
+          <NumberInput
+            label={t('common.amount')}
+            value={editAmount}
+            onChange={setEditAmount}
+            decimalSeparator=","
+            decimalScale={2}
+            prefix="€ "
+            hideControls
+          />
+          <Button loading={updateTx.isPending} onClick={saveEditTx}>{t('common.save')}</Button>
         </BottomSheet>
       </Stack>
     )
@@ -252,10 +284,35 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
                 </Text>
               </Table.Td>
               <Table.Td>{tx.description}</Table.Td>
-              <Table.Td ta="right"><MoneyText cents={tx.amountCents} /></Table.Td>
+              <Table.Td ta="right">
+                {editingTxId === tx.id ? (
+                  <Group justify="flex-end" wrap="nowrap" gap={4}>
+                    <NumberInput
+                      size="xs"
+                      value={editAmount}
+                      onChange={setEditAmount}
+                      decimalSeparator=","
+                      decimalScale={2}
+                      prefix="€ "
+                      hideControls
+                      w={110}
+                      autoFocus
+                    />
+                    <ActionIcon size="sm" color="green" variant="subtle" aria-label={t('common.save')} loading={updateTx.isPending} onClick={saveEditTx}><IconCheck size={14} /></ActionIcon>
+                    <ActionIcon size="sm" variant="subtle" aria-label={t('common.cancel')} onClick={() => setEditingTxId(null)}><IconX size={14} /></ActionIcon>
+                  </Group>
+                ) : (
+                  <MoneyText cents={tx.amountCents} />
+                )}
+              </Table.Td>
               {!isClosed && (
                 <Table.Td>
-                  <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}><IconTrash size={14} /></ActionIcon>
+                  {editingTxId !== tx.id && (
+                    <Group gap={4} wrap="nowrap">
+                      <ActionIcon size="sm" variant="subtle" aria-label={t('common.edit')} onClick={() => startEditTx(tx)}><IconPencil size={14} /></ActionIcon>
+                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}><IconTrash size={14} /></ActionIcon>
+                    </Group>
+                  )}
                 </Table.Td>
               )}
             </Table.Tr>
