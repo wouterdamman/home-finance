@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/wouterdamman/home-finance/compare/v1.16.0...v1.17.0) (2026-08-24)
+
+
+### Features
+
+* allow deleting an empty category or income source from a running month ([e78ac1d](https://github.com/wouterdamman/home-finance/commit/e78ac1dc0101943be73ee3585e01a8f8c5b73e28))
+
 ## [1.16.0](https://github.com/wouterdamman/home-finance/compare/v1.15.1...v1.16.0) (2026-08-23)
 
 
