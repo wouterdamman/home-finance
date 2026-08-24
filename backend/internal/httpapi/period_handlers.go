@@ -818,10 +818,29 @@ func (s *Server) handleDeleteIncomeEntry(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	var periodID int64
-	s.pool.QueryRow(r.Context(), `SELECT period_id FROM income_entries WHERE id=$1`, id).Scan(&periodID)
+	var periodID, amountCents int64
+	var sourceID *int64
+	if err := s.pool.QueryRow(r.Context(), `SELECT period_id, source_id, amount_cents FROM income_entries WHERE id=$1`, id).Scan(&periodID, &sourceID, &amountCents); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "income entry not found")
+		return
+	}
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
 		return
+	}
+	if amountCents != 0 {
+		Error(w, http.StatusConflict, "conflict", "income entry has a non-zero amount")
+		return
+	}
+	if sourceID != nil {
+		var txCount int64
+		if err := s.pool.QueryRow(r.Context(), `SELECT count(*) FROM income_transactions WHERE period_id=$1 AND source_id=$2`, periodID, *sourceID).Scan(&txCount); err != nil {
+			Error(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
+		if txCount > 0 {
+			Error(w, http.StatusConflict, "conflict", "income entry has transactions")
+			return
+		}
 	}
 	if _, err := s.pool.Exec(r.Context(), `DELETE FROM income_entries WHERE id=$1`, id); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
@@ -923,9 +942,25 @@ func (s *Server) handleDeleteBudgetLine(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	var periodID int64
-	s.pool.QueryRow(r.Context(), `SELECT period_id FROM budget_lines WHERE id=$1`, id).Scan(&periodID)
+	var periodID, categoryID, amountCents int64
+	if err := s.pool.QueryRow(r.Context(), `SELECT period_id, category_id, amount_cents FROM budget_lines WHERE id=$1`, id).Scan(&periodID, &categoryID, &amountCents); err != nil {
+		Error(w, http.StatusNotFound, "not_found", "budget line not found")
+		return
+	}
 	if !isPeriodWritable(r.Context(), s.pool, w, periodID) {
+		return
+	}
+	if amountCents != 0 {
+		Error(w, http.StatusConflict, "conflict", "budget line has a non-zero amount")
+		return
+	}
+	var txCount int64
+	if err := s.pool.QueryRow(r.Context(), `SELECT count(*) FROM transactions WHERE period_id=$1 AND category_id=$2`, periodID, categoryID).Scan(&txCount); err != nil {
+		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if txCount > 0 {
+		Error(w, http.StatusConflict, "conflict", "budget line has transactions")
 		return
 	}
 	if _, err := s.pool.Exec(r.Context(), `DELETE FROM budget_lines WHERE id=$1`, id); err != nil {

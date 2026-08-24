@@ -133,6 +133,17 @@ export function useUpdateBudgetLine(periodId: number, year: number) {
   })
 }
 
+export function useDeleteBudgetLine(periodId: number, year: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/budget-lines/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['year-summary', year] })
+    },
+  })
+}
+
 export function useLockYear(year: number) {
   const qc = useQueryClient()
   return useMutation({

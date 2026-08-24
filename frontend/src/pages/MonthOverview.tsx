@@ -9,7 +9,7 @@ import { modals } from '@mantine/modals'
 import { IconTrash, IconX, IconDotsVertical, IconPlus, IconPencil, IconArrowsSort } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { useTranslation } from 'react-i18next'
-import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
+import { useYearSummary, useMonthOverview, useClosePeriod, useReopenPeriod, useUpdateBudgetLine, useCreateBudgetLine, useDeleteBudgetLine, useDeletePeriod } from '../api/hooks/usePeriods'
 import { useMe } from '../api/hooks/useMe'
 import { useUpdateIncome, useDeleteIncome, useCreateIncome } from '../api/hooks/useIncomes'
 import { useReplaceSplits } from '../api/hooks/useSplits'
@@ -100,14 +100,15 @@ export default function MonthOverview() {
   const [incomeSheet, setIncomeSheet] = useState<'create' | number | null>(null)
   const [editIncomeAmount, setEditIncomeAmount] = useState<number | string>('')
   const [budgetSheetOpen, setBudgetSheetOpen] = useState(false)
-  const [incomeSort, setIncomeSort] = useState<SortMode>('default')
-  const [expenseSort, setExpenseSort] = useState<SortMode>('default')
-  const [splitSort, setSplitSort] = useState<SortMode>('default')
+  const [incomeSort, setIncomeSort] = useState<SortMode>('amount-desc')
+  const [expenseSort, setExpenseSort] = useState<SortMode>('amount-desc')
+  const [splitSort, setSplitSort] = useState<SortMode>('amount-desc')
 
   const closePeriod = useClosePeriod(periodId ?? 0, y, m)
   const reopenPeriod = useReopenPeriod(periodId ?? 0, y, m)
   const createBudgetLine = useCreateBudgetLine(periodId ?? 0, y)
   const updateBudgetLine = useUpdateBudgetLine(periodId ?? 0, y)
+  const deleteBudgetLine = useDeleteBudgetLine(periodId ?? 0, y)
   const deletePeriod = useDeletePeriod(periodId ?? 0, y)
   const createIncome = useCreateIncome(periodId ?? 0)
   const updateIncome = useUpdateIncome(periodId ?? 0)
@@ -177,6 +178,27 @@ export default function MonthOverview() {
     onConfirm: () => updateBudgetLine.mutate({
       id: bl.id, label: bl.label ?? null, amountCents: bl.amountCents,
       tracksTransactions: !bl.tracksTransactions, sortOrder: bl.sortOrder,
+    }),
+  })
+
+  const handleDeleteBudgetLine = (bl: { id: number; label?: string }, categoryLabel: string) => modals.openConfirmModal({
+    title: t('month.deleteBudgetLineTitle'),
+    children: <Text size="sm">{t('month.deleteBudgetLineConfirm', { category: bl.label || categoryLabel })}</Text>,
+    labels: { confirm: t('common.delete'), cancel: t('common.cancel') },
+    confirmProps: { color: 'red' },
+    onConfirm: () => deleteBudgetLine.mutate(bl.id, {
+      onError: (err) => notifications.show({ color: 'red', message: getErrorMessage(err, t('common.error')) }),
+    }),
+  })
+
+  const handleDeleteIncome = (inc: { id: number; label?: string; sourceId?: number }, sourceLabel: string, onSuccess?: () => void) => modals.openConfirmModal({
+    title: t('month.deleteIncomeTitle'),
+    children: <Text size="sm">{t('month.deleteIncomeConfirm', { source: inc.label || sourceLabel })}</Text>,
+    labels: { confirm: t('common.delete'), cancel: t('common.cancel') },
+    confirmProps: { color: 'red' },
+    onConfirm: () => deleteIncome.mutate(inc.id, {
+      onSuccess,
+      onError: (err) => notifications.show({ color: 'red', message: getErrorMessage(err, t('common.error')) }),
     }),
   })
 
@@ -370,13 +392,30 @@ export default function MonthOverview() {
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditBudgetAmount(bl) }}
                             ><IconPencil size={14} /></ActionIcon>
                           )}
-                          <ActionIcon
-                            size="sm"
-                            variant={bl.tracksTransactions ? 'filled' : 'subtle'}
-                            color={bl.tracksTransactions ? 'blue' : 'gray'}
-                            aria-label={t('month.toggleTracking')}
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleToggleTracking(bl) }}
-                          >≡</ActionIcon>
+                          <Menu position="bottom-end" withinPortal>
+                            <Menu.Target>
+                              <ActionIcon
+                                size="sm"
+                                variant={bl.tracksTransactions ? 'filled' : 'subtle'}
+                                color={bl.tracksTransactions ? 'blue' : 'gray'}
+                                aria-label={t('month.moreOptions')}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                              >≡</ActionIcon>
+                            </Menu.Target>
+                            <Menu.Dropdown onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+                              <Menu.Item onClick={() => handleToggleTracking(bl)}>
+                                {bl.tracksTransactions ? t('month.trackTransactionsDisable') : t('month.trackTransactionsEnable')}
+                              </Menu.Item>
+                              <Menu.Item
+                                color="red"
+                                leftSection={<IconTrash size={14} />}
+                                disabled={bl.effectiveCents !== 0 || bl.transactionsTotalCents !== 0}
+                                onClick={() => handleDeleteBudgetLine(bl, budgetLineLabel(bl))}
+                              >
+                                {bl.effectiveCents !== 0 || bl.transactionsTotalCents !== 0 ? t('month.deleteBudgetLineDisabledHint') : t('common.delete')}
+                              </Menu.Item>
+                            </Menu.Dropdown>
+                          </Menu>
                         </>
                       )}
                     </Group>
@@ -455,7 +494,9 @@ export default function MonthOverview() {
                   color="red"
                   variant="light"
                   loading={deleteIncome.isPending}
-                  onClick={() => deleteIncome.mutate(editingIncome.id, { onSuccess: () => setIncomeSheet(null) })}
+                  disabled={editingIncome.effectiveCents !== 0 || editingIncome.transactionsTotalCents !== 0}
+                  title={editingIncome.effectiveCents !== 0 || editingIncome.transactionsTotalCents !== 0 ? t('month.deleteIncomeDisabledHint') : undefined}
+                  onClick={() => handleDeleteIncome(editingIncome, editingIncome.label || t('month.unknownSource', { id: editingIncome.sourceId }), () => setIncomeSheet(null))}
                 >
                   {t('common.delete')}
                 </Button>
@@ -648,7 +689,15 @@ export default function MonthOverview() {
                 </Table.Td>
                 {!isClosed && !inc.isItemized && inc.entryType !== 'carryover' && (
                   <Table.Td w={40}>
-                    <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteIncome.mutate(inc.id)}><IconTrash size={14} /></ActionIcon>
+                    <ActionIcon
+                      color="red"
+                      size="sm"
+                      variant="subtle"
+                      disabled={inc.effectiveCents !== 0 || inc.transactionsTotalCents !== 0}
+                      title={inc.effectiveCents !== 0 || inc.transactionsTotalCents !== 0 ? t('month.deleteIncomeDisabledHint') : t('common.delete')}
+                      aria-label={t('common.delete')}
+                      onClick={() => handleDeleteIncome(inc, inc.label || t('month.unknownSource', { id: inc.sourceId }))}
+                    ><IconTrash size={14} /></ActionIcon>
                   </Table.Td>
                 )}
               </Table.Tr>
@@ -739,14 +788,30 @@ export default function MonthOverview() {
                           onClick={() => openEditBudgetAmount(bl)}
                         ><IconPencil size={14} /></ActionIcon>
                       )}
-                      <ActionIcon
-                        size="xs"
-                        variant={bl.tracksTransactions ? 'filled' : 'subtle'}
-                        color={bl.tracksTransactions ? 'blue' : 'gray'}
-                        title={t('month.toggleTracking')}
-                        aria-label={t('month.toggleTracking')}
-                        onClick={() => handleToggleTracking(bl)}
-                      >≡</ActionIcon>
+                      <Menu position="bottom-end" withinPortal>
+                        <Menu.Target>
+                          <ActionIcon
+                            size="xs"
+                            variant={bl.tracksTransactions ? 'filled' : 'subtle'}
+                            color={bl.tracksTransactions ? 'blue' : 'gray'}
+                            title={t('month.moreOptions')}
+                            aria-label={t('month.moreOptions')}
+                          >≡</ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          <Menu.Item onClick={() => handleToggleTracking(bl)}>
+                            {bl.tracksTransactions ? t('month.trackTransactionsDisable') : t('month.trackTransactionsEnable')}
+                          </Menu.Item>
+                          <Menu.Item
+                            color="red"
+                            leftSection={<IconTrash size={14} />}
+                            disabled={bl.effectiveCents !== 0 || bl.transactionsTotalCents !== 0}
+                            onClick={() => handleDeleteBudgetLine(bl, budgetLineLabel(bl))}
+                          >
+                            {bl.effectiveCents !== 0 || bl.transactionsTotalCents !== 0 ? t('month.deleteBudgetLineDisabledHint') : t('common.delete')}
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
                     </Group>
                   </Table.Td>
                 )}
