@@ -12,7 +12,7 @@ import { IconTrash, IconPlus, IconPencil, IconCheck, IconX } from '@tabler/icons
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import {
-  useKids, useKidBalances, useKidLedger, useCreateKidLedgerEntry,
+  useKidBalances, useKidLedger, useCreateKidLedgerEntry,
   useUpdateKidLedgerEntry, useDeleteKidLedgerEntry, useUpdateKidReportedBalance,
 } from '../api/hooks/useSettings'
 import { useMe } from '../api/hooks/useMe'
@@ -47,7 +47,6 @@ export default function KidSavingsDetail() {
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
 
-  const { data: kids, isLoading: kidsLoading } = useKids()
   const { data: balances, isLoading: balancesLoading } = useKidBalances()
   const { data: ledger, isLoading: ledgerLoading } = useKidLedger(kidId)
   const { data: me } = useMe()
@@ -70,11 +69,10 @@ export default function KidSavingsDetail() {
   const [reportedAmount, setReportedAmount] = useState<number | string>('')
   const [reportedDate, setReportedDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'))
 
-  if (kidsLoading || balancesLoading || ledgerLoading) return <Skeleton h={400} mt="md" />
+  if (balancesLoading || ledgerLoading) return <Skeleton h={400} mt="md" />
 
-  const kid = kids?.find((k) => k.id === kidId)
   const balance = balances?.find((b) => b.kidId === kidId)
-  if (!kid || !balance) return <Alert color="yellow">{t('kids.notFound')}</Alert>
+  if (!balance) return <Alert color="yellow">{t('kids.notFound')}</Alert>
 
   const entries = ledger ?? []
   const diff = balance.reportedBalanceCents != null ? balance.reportedBalanceCents - balance.totalCents : null
@@ -200,7 +198,7 @@ export default function KidSavingsDetail() {
           <Text component={Link} to="/kids" c="blue" size="sm">{t('kids.back')}</Text>
         </Group>
 
-        <HeroStat label={kid.name} value={<MoneyText cents={balance.totalCents} span fw={800} size="2.5rem" />} />
+        <HeroStat label={balance.name} value={<MoneyText cents={balance.totalCents} span fw={800} size="2.5rem" />} />
         <Group justify="center" gap="lg">
           <Stack gap={0} align="center">
             <Text size="xs" c="dimmed">{t('kids.ours')}</Text>
@@ -332,7 +330,7 @@ export default function KidSavingsDetail() {
       <Group justify="space-between">
         <Group gap="sm">
           <Text component={Link} to="/kids" c="blue" size="sm">{t('kids.back')}</Text>
-          <Title order={2}>{kid.name}</Title>
+          <Title order={2}>{balance.name}</Title>
         </Group>
         <Group gap="lg">
           <Stack gap={0} align="flex-end">
