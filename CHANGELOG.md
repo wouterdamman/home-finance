@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.18.0](https://github.com/wouterdamman/home-finance/compare/v1.17.0...v1.18.0) (2026-09-12)
+
+
+### Features
+
+* track kids savings split between parent and own money ([6785673](https://github.com/wouterdamman/home-finance/commit/6785673d04422d966d2d6c05363ed07d3c00879d))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/coreos/go-oidc/v3 to v3.21.0 ([#111](https://github.com/wouterdamman/home-finance/issues/111)) ([ed5a195](https://github.com/wouterdamman/home-finance/commit/ed5a1950e3d5f9738bbd00fd7e3acc3db2c16c89))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.11.0 ([#119](https://github.com/wouterdamman/home-finance/issues/119)) ([33d3d01](https://github.com/wouterdamman/home-finance/commit/33d3d01c64c294221182098ed4266be242db07cd))
+* **deps:** update module github.com/pressly/goose/v3 to v3.28.0 ([#112](https://github.com/wouterdamman/home-finance/issues/112)) ([398f9ce](https://github.com/wouterdamman/home-finance/commit/398f9ce00f69b41599971bac84781116eb96be5f))
+* format reported-balance diff badge with MoneyText ([f18a336](https://github.com/wouterdamman/home-finance/commit/f18a336c0a9c0e87d241eae399a45b7330ada154))
+* remove unused duplicate Kid interface from api/types.ts ([70c7db1](https://github.com/wouterdamman/home-finance/commit/70c7db14afea0fe487c44cb5fa1f2e2d8b405b2f))
+* require a date alongside a reported kid savings balance ([fb8f3f2](https://github.com/wouterdamman/home-finance/commit/fb8f3f2c1cd48b86d77e5f29dc92ef6f7f28abcd))
+* return kidId in kid ledger entries, matching KidLedgerEntry type ([80cdcd9](https://github.com/wouterdamman/home-finance/commit/80cdcd9f662d97a07dd571709278d216b6ac9276))
+* show error when adding a kid ledger entry with no amount ([e957e7b](https://github.com/wouterdamman/home-finance/commit/e957e7be83a0e7f9158b3e412ae20a06ea473c7a))
+
+
+### Performance
+
+* drop redundant useKids() call on kid savings detail page ([3c9390b](https://github.com/wouterdamman/home-finance/commit/3c9390bcf6e38d641b782ddcbdff16c9385f0480))
+
 ## [1.17.0](https://github.com/wouterdamman/home-finance/compare/v1.16.0...v1.17.0) (2026-08-24)
 
 
