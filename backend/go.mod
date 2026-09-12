@@ -11,7 +11,7 @@ require (
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/xuri/excelize/v2 v2.11.0
-	golang.org/x/oauth2 v0.36.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/time v0.15.0
 )
 
