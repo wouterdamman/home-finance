@@ -184,7 +184,7 @@ export default function KidSavingsDetail() {
         <Group gap="xs">
           <MoneyText cents={balance.reportedBalanceCents} fw={700} />
           {diff !== 0 ? (
-            <Badge color="orange" variant="light">{t('kids.diff')} {(diff! / 100).toFixed(2)}</Badge>
+            <Badge color="orange" variant="light">{t('kids.diff')} <MoneyText cents={diff!} size="xs" span /></Badge>
           ) : (
             <Badge color="green" variant="light">{t('kids.matches')}</Badge>
           )}
