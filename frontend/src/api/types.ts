@@ -118,14 +118,6 @@ export interface MonthOverview {
   splitPercentageTotal: string
 }
 
-export interface Kid {
-  id: number
-  name: string
-  sortOrder: number
-  reportedBalanceCents?: number
-  reportedBalanceDate?: string
-}
-
 export interface KidBalance {
   kidId: number
   name: string
