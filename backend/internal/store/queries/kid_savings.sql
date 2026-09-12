@@ -9,7 +9,7 @@ INSERT INTO kid_savings_ledger (kid_id, owner, entry_type, amount_cents, descrip
 VALUES ($1, $2, $3, $4, $5, COALESCE($6, CURRENT_DATE)) RETURNING *;
 
 -- name: ListKidLedger :many
-SELECT *,
+SELECT id, kid_id, owner, entry_type, amount_cents, description, entry_date, created_at,
        SUM(amount_cents) FILTER (WHERE owner = 'ours') OVER (ORDER BY entry_date, id) AS running_ours,
        SUM(amount_cents) FILTER (WHERE owner = 'theirs') OVER (ORDER BY entry_date, id) AS running_theirs
 FROM kid_savings_ledger WHERE kid_id = $1 ORDER BY entry_date, id;

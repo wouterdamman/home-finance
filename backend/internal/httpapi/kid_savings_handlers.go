@@ -137,6 +137,7 @@ func (s *Server) handleGetKidLedger(w http.ResponseWriter, r *http.Request) {
 	}
 	type row struct {
 		ID                 int64  `json:"id"`
+		KidID              int64  `json:"kidId"`
 		Owner              string `json:"owner"`
 		EntryType          string `json:"entryType"`
 		AmountCents        int64  `json:"amountCents"`
@@ -146,7 +147,7 @@ func (s *Server) handleGetKidLedger(w http.ResponseWriter, r *http.Request) {
 		EntryDate          string `json:"entryDate"`
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id, owner, entry_type, amount_cents,
+		SELECT id, kid_id, owner, entry_type, amount_cents,
 		  SUM(amount_cents) FILTER (WHERE owner = 'ours') OVER (ORDER BY entry_date, id ROWS UNBOUNDED PRECEDING) AS running_ours,
 		  SUM(amount_cents) FILTER (WHERE owner = 'theirs') OVER (ORDER BY entry_date, id ROWS UNBOUNDED PRECEDING) AS running_theirs,
 		  description, entry_date
@@ -161,7 +162,7 @@ func (s *Server) handleGetKidLedger(w http.ResponseWriter, r *http.Request) {
 		var ro row
 		var ed time.Time
 		var runOurs, runTheirs *int64
-		if err := rows.Scan(&ro.ID, &ro.Owner, &ro.EntryType, &ro.AmountCents, &runOurs, &runTheirs, &ro.Description, &ed); err != nil {
+		if err := rows.Scan(&ro.ID, &ro.KidID, &ro.Owner, &ro.EntryType, &ro.AmountCents, &runOurs, &runTheirs, &ro.Description, &ed); err != nil {
 			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
 			return
 		}
