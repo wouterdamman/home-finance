@@ -150,6 +150,15 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Patch("/pot-entries/{id}", s.handleUpdatePotEntry)
 			r.Delete("/pot-entries/{id}", s.handleDeletePotEntry)
 
+			// Kids savings
+			r.Get("/kids/balances", s.handleGetKidBalances)
+			r.Get("/kids", s.handleListKids)
+			r.With(requireAdmin).Patch("/kids/{id}/reported-balance", s.handleUpdateKidReportedBalance)
+			r.Get("/kids/{id}/ledger", s.handleGetKidLedger)
+			r.Post("/kids/{id}/entries", s.handleCreateKidLedgerEntry)
+			r.Patch("/kid-entries/{id}", s.handleUpdateKidLedgerEntry)
+			r.Delete("/kid-entries/{id}", s.handleDeleteKidLedgerEntry)
+
 			// Years
 			r.Get("/years", s.handleListYears)
 			r.With(requireAdmin).Post("/years", s.handleCreateYear)

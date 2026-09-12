@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { api } from '../client'
 import i18n from '../../i18n/index'
-import type { PotBalance, PotLedgerEntry } from '../types'
+import type { PotBalance, PotLedgerEntry, KidBalance, KidLedgerEntry } from '../types'
 
 function showSaved() {
   notifications.show({ color: 'green', message: i18n.t('common.saved') })
@@ -223,6 +223,84 @@ export function useDeletePotEntry(potId: number) {
       qc.invalidateQueries({ queryKey: ['pot-ledger', potId] })
       qc.invalidateQueries({ queryKey: ['pot-balances'] })
       qc.invalidateQueries({ queryKey: ['year-summary'] })
+    },
+  })
+}
+
+export interface Kid {
+  id: number
+  name: string
+  sortOrder: number
+  archivedAt?: string
+  reportedBalanceCents?: number
+  reportedBalanceDate?: string
+}
+
+export function useKids() {
+  return useQuery<Kid[]>({
+    queryKey: ['kids'],
+    queryFn: () => api.get<Kid[]>('/api/kids'),
+  })
+}
+
+export function useKidBalances() {
+  return useQuery<KidBalance[]>({
+    queryKey: ['kid-balances'],
+    queryFn: () => api.get<KidBalance[]>('/api/kids/balances'),
+  })
+}
+
+export function useUpdateKidReportedBalance() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; reportedBalanceCents: number | null; reportedBalanceDate: string | null }) =>
+      api.patch(`/api/kids/${id}/reported-balance`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kid-balances'] })
+      showSaved()
+    },
+  })
+}
+
+export function useKidLedger(kidId: number | undefined) {
+  return useQuery<KidLedgerEntry[]>({
+    queryKey: ['kid-ledger', kidId],
+    queryFn: () => api.get<KidLedgerEntry[]>(`/api/kids/${kidId}/ledger`),
+    enabled: kidId != null,
+  })
+}
+
+export function useCreateKidLedgerEntry(kidId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { owner: 'ours' | 'theirs'; entryType: string; amountCents: number; description: string; entryDate?: string }) =>
+      api.post(`/api/kids/${kidId}/entries`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kid-ledger', kidId] })
+      qc.invalidateQueries({ queryKey: ['kid-balances'] })
+    },
+  })
+}
+
+export function useUpdateKidLedgerEntry(kidId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, owner, amountCents }: { id: number; owner: 'ours' | 'theirs'; amountCents: number }) =>
+      api.patch(`/api/kid-entries/${id}`, { owner, amountCents }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kid-ledger', kidId] })
+      qc.invalidateQueries({ queryKey: ['kid-balances'] })
+    },
+  })
+}
+
+export function useDeleteKidLedgerEntry(kidId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/kid-entries/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kid-ledger', kidId] })
+      qc.invalidateQueries({ queryKey: ['kid-balances'] })
     },
   })
 }

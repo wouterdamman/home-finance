@@ -14,6 +14,8 @@ const IncomeTransactions = lazy(() => import('./pages/IncomeTransactions'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Pots = lazy(() => import('./pages/Pots'))
 const PotDetail = lazy(() => import('./pages/PotDetail'))
+const KidsSavings = lazy(() => import('./pages/KidsSavings'))
+const KidSavingsDetail = lazy(() => import('./pages/KidSavingsDetail'))
 
 const fallback = <LoadingOverlay visible />
 
@@ -31,6 +33,8 @@ export const router = createBrowserRouter([
       { path: '/months/:year/:month/income', element: <Suspense fallback={fallback}><IncomeTransactions /></Suspense> },
       { path: '/pots', element: <Suspense fallback={fallback}><Pots /></Suspense> },
       { path: '/pots/:id', element: <Suspense fallback={fallback}><PotDetail /></Suspense> },
+      { path: '/kids', element: <Suspense fallback={fallback}><KidsSavings /></Suspense> },
+      { path: '/kids/:id', element: <Suspense fallback={fallback}><KidSavingsDetail /></Suspense> },
       { path: '/settings', element: <Suspense fallback={fallback}><Settings /></Suspense> },
     ],
   },
