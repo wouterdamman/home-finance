@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { Group, Stack, Text } from '@mantine/core'
-import { IconHome, IconReceipt2, IconChartLine, IconPigMoney, IconSettings } from '@tabler/icons-react'
+import { IconHome, IconChartLine, IconPigMoney, IconUsers, IconSettings } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useCurrentYear } from '../api/hooks/useCurrentYear'
 
@@ -16,7 +16,6 @@ export default function BottomTabBar() {
   const { t } = useTranslation()
   const location = useLocation()
   const currentYear = useCurrentYear()
-  const now = new Date()
 
   const tabs: Tab[] = [
     {
@@ -27,11 +26,11 @@ export default function BottomTabBar() {
       isActive: (p) => p.startsWith('/years/') || p.startsWith('/months/'),
     },
     {
-      key: 'log',
-      label: t('nav.log'),
-      icon: IconReceipt2,
-      to: `/months/${now.getFullYear()}/${now.getMonth() + 1}`,
-      isActive: (p) => p === `/months/${now.getFullYear()}/${now.getMonth() + 1}`,
+      key: 'pots',
+      label: t('nav.pots'),
+      icon: IconPigMoney,
+      to: '/pots',
+      isActive: (p) => p.startsWith('/pots'),
     },
     {
       key: 'trends',
@@ -41,11 +40,11 @@ export default function BottomTabBar() {
       isActive: (p) => p.startsWith('/trends'),
     },
     {
-      key: 'pots',
-      label: t('nav.pots'),
-      icon: IconPigMoney,
-      to: '/pots',
-      isActive: (p) => p.startsWith('/pots'),
+      key: 'kids',
+      label: t('nav.kids'),
+      icon: IconUsers,
+      to: '/kids',
+      isActive: (p) => p.startsWith('/kids'),
     },
     {
       key: 'settings',
@@ -56,10 +55,7 @@ export default function BottomTabBar() {
     },
   ]
 
-  // "Log" and "Home" both match /months/*, so let the exact current-month
-  // overview path win when both would otherwise claim active state.
-  const activeKey = tabs.find((tab) => tab.key === 'log' && tab.isActive(location.pathname))?.key
-    ?? tabs.find((tab) => tab.key !== 'log' && tab.isActive(location.pathname))?.key
+  const activeKey = tabs.find((tab) => tab.isActive(location.pathname))?.key
 
   return (
     <Group h="100%" grow gap={0} px="xs" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
