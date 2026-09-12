@@ -114,6 +114,12 @@ func (s *Server) handleUpdateKidReportedBalance(w http.ResponseWriter, r *http.R
 			Error(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
+		if body.ReportedBalanceDate == nil {
+			Error(w, http.StatusBadRequest, "bad_request", "reportedBalanceDate is required when reportedBalanceCents is set")
+			return
+		}
+	} else {
+		body.ReportedBalanceDate = nil
 	}
 	if _, err := s.pool.Exec(r.Context(), `UPDATE kids SET reported_balance_cents=$2, reported_balance_date=$3 WHERE id=$1`, id, body.ReportedBalanceCents, body.ReportedBalanceDate); err != nil {
 		Error(w, http.StatusInternalServerError, "db_error", err.Error())
