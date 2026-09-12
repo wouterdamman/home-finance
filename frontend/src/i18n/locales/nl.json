@@ -195,6 +195,7 @@
     "description": "Omschrijving",
     "noEntries": "Geen boekingen",
     "notFound": "Kind niet gevonden.",
+    "amountRequired": "Vul een bedrag in.",
     "ours": "Van ons",
     "theirs": "Van hen",
     "entry_deposit": "Storting",

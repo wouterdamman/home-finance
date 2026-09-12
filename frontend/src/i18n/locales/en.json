@@ -195,6 +195,7 @@
     "description": "Description",
     "noEntries": "No entries",
     "notFound": "Kid not found.",
+    "amountRequired": "Enter an amount.",
     "ours": "Ours",
     "theirs": "Theirs",
     "entry_deposit": "Deposit",

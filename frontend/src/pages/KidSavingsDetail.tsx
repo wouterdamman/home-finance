@@ -87,7 +87,10 @@ export default function KidSavingsDetail() {
   const handleAdd = () => {
     if (!entryType) return
     const cents = parseCents(amount)
-    if (!cents) return
+    if (!cents) {
+      notifications.show({ color: 'red', message: t('kids.amountRequired') })
+      return
+    }
     createEntry.mutate(
       { owner, entryType, amountCents: cents, description, entryDate: entryDate ?? undefined },
       {
