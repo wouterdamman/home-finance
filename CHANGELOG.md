@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.18.1](https://github.com/wouterdamman/home-finance/compare/v1.18.0...v1.18.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* add Kids Savings to mobile bottom tab bar, drop Log ([1476352](https://github.com/wouterdamman/home-finance/commit/147635214acacbd07f557a137b76f7d8dbcc7063))
+* **deps:** update module golang.org/x/oauth2 to v0.37.0 ([#121](https://github.com/wouterdamman/home-finance/issues/121)) ([fdd3d44](https://github.com/wouterdamman/home-finance/commit/fdd3d44566e9f8c1677773a67c6f85e99c3d33d0))
+* **deps:** update module golang.org/x/time to v0.16.0 ([#122](https://github.com/wouterdamman/home-finance/issues/122)) ([11e059a](https://github.com/wouterdamman/home-finance/commit/11e059a1e2b09d83739712f6298e5a304a63585e))
+
 ## [1.18.0](https://github.com/wouterdamman/home-finance/compare/v1.17.0...v1.18.0) (2026-09-12)
 
 
