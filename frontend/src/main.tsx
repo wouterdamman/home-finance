@@ -16,13 +16,21 @@ import { ChartPaletteProvider } from './contexts/ChartPaletteContext'
 
 // Safety net: any mutation without its own onError still surfaces a
 // notification instead of failing silently (button just stops loading).
+// v5 runs this IN ADDITION to a mutation's own onError, so the fixed id makes
+// Mantine drop the duplicate instead of stacking two identical red toasts.
+const MUTATION_ERROR_NOTIFICATION_ID = 'mutation-error'
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 30_000 },
   },
   mutationCache: new MutationCache({
     onError: (error) => {
-      notifications.show({ color: 'red', message: getErrorMessage(error, i18n.t('common.error')) })
+      notifications.show({
+        id: MUTATION_ERROR_NOTIFICATION_ID,
+        color: 'red',
+        message: getErrorMessage(error, i18n.t('common.error')),
+      })
     },
   }),
 })

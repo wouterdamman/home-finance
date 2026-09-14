@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Skeleton, Text } from '@mantine/core'
 import { CompositeChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
@@ -23,7 +24,7 @@ interface Props {
 // income/expenses/surplus of that single month — mirrors YearCompareWidget's
 // convention rather than putting the 3 metrics on the x-axis, which would
 // wrongly imply a continuum between unrelated measures.
-export default function MonthAcrossYearsWidget({ month, years, chartKind }: Props) {
+function MonthAcrossYearsWidget({ month, years, chartKind }: Props) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
@@ -43,15 +44,20 @@ export default function MonthAcrossYearsWidget({ month, years, chartKind }: Prop
   if (results.some((r) => r.isLoading)) return <Skeleton h="100%" />
   if (results.some((r) => !r.data)) return <Text size="sm" c="dimmed">{t('trends.noData')}</Text>
 
-  const chartData = sortedYears.map((year, i) => {
-    const row = results[i].data!.months[month - 1]
-    return {
+  const chartData = sortedYears.flatMap((year, i) => {
+    const row = results[i].data!.months.find((mo) => mo.month === month)
+    if (!row) return []
+    return [{
       year: String(year),
       [t('year.income')]: row.incomeTotalCents / 100,
       [t('year.expenses')]: row.expenseTotalCents / 100,
       [t('year.surplus')]: row.surplusCents / 100,
-    }
+    }]
   })
+
+  if (chartData.length === 0) {
+    return <Text size="sm" c="dimmed">{t('trends.noData')}</Text>
+  }
 
   const markType = chartKind === 'bar' ? 'bar' : 'line'
   const series = [
@@ -82,3 +88,7 @@ export default function MonthAcrossYearsWidget({ month, years, chartKind }: Prop
     </>
   )
 }
+
+// Memoized so toggling edit mode / opening the config modal / changing the
+// page's year Select doesn't re-render and re-lay-out every chart on the grid.
+export default memo(MonthAcrossYearsWidget)

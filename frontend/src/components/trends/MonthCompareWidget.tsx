@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Skeleton, Text } from '@mantine/core'
 import { CompositeChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
@@ -20,7 +21,7 @@ interface Props {
 // Self-contained comparison of specific months within one year (e.g. "why
 // was Jan pricier than Feb") — deliberately independent of the page's
 // global year filter, per user request.
-export default function MonthCompareWidget({ year, months, chartKind }: Props) {
+function MonthCompareWidget({ year, months, chartKind }: Props) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
@@ -72,3 +73,7 @@ export default function MonthCompareWidget({ year, months, chartKind }: Props) {
     </>
   )
 }
+
+// Memoized so toggling edit mode / opening the config modal / changing the
+// page's year Select doesn't re-render and re-lay-out every chart on the grid.
+export default memo(MonthCompareWidget)

@@ -38,3 +38,10 @@ export function niceAxisTicksSigned(minValue: number, maxValue: number, tickCoun
   }
   return ticks
 }
+
+// Recharts' own x-axis auto-thinning picks an uneven subset once 8-12+
+// category ticks don't fit (dropping just "Nov" while keeping every other
+// month), so every chart with a month-sized x-axis passes this explicitly.
+export function categoryTickInterval(pointCount: number): number {
+  return Math.max(0, Math.ceil(pointCount / 6) - 1)
+}

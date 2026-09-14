@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -28,23 +28,22 @@ export default defineConfig({
         // /api/docs + /api/openapi.yaml are server-rendered pages opened via
         // window.open (a full-page navigation, not a fetch/XHR) — none are SPA
         // routes. Without this, Workbox's default NavigationRoute serves the cached
-        // index.html for every navigation (matched against pathname+search) before
-        // it ever reaches the runtimeCaching rule below, so these paths 404 in
-        // React Router instead of hitting the backend — same failure mode that
+        // index.html for every navigation (matched against pathname+search), so
+        // these paths 404 in React Router
+        // instead of hitting the backend — same failure mode that
         // broke login for anyone whose browser already had the service worker
         // installed from a prior visit.
         navigateFallbackDenylist: [/^\/auth\//, /^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 5,
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
+        // Deliberately no runtimeCaching rule for /api/: it would persist
+        // every authenticated response (balances, transactions, the ['me']
+        // record) to disk unencrypted, and NetworkFirst falls back to that
+        // cache when the live request 401s — serving the previous user's
+        // finances to a signed-out browser. Note a /^\/api\// pattern also
+        // never matches: unlike navigateFallbackDenylist (tested against
+        // pathname+search), runtimeCaching regexes are tested against the
+        // full href, so such a rule looks inert right up until someone
+        // "fixes" the anchor. Offline support for /api must be designed
+        // deliberately, not bolted on here.
       },
     }),
   ],

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Text } from '@mantine/core'
 import type { TrendsFilter } from '../../lib/trendsFilter'
 import type { YearTrend } from '../../api/types'
@@ -15,7 +16,7 @@ interface Props {
   allYears: YearTrend[]
 }
 
-export default function KpiWidget({ metric, filter, allYears }: Props) {
+function KpiWidget({ metric, filter, allYears }: Props) {
   if (metric === 'yearsTracked') {
     return <Text size="lg" fw={700}>{allYears.length}</Text>
   }
@@ -23,3 +24,7 @@ export default function KpiWidget({ metric, filter, allYears }: Props) {
   const cents = row ? metricCents(row, metric) : 0
   return <MoneyText cents={cents} size="lg" fw={700} colored={metric === 'surplus'} />
 }
+
+// Memoized so toggling edit mode / opening the config modal / changing the
+// page's year Select doesn't re-render and re-lay-out every chart on the grid.
+export default memo(KpiWidget)

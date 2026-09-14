@@ -49,6 +49,32 @@ function isNumberArray(v: unknown): v is number[] {
   return Array.isArray(v) && v.every((x) => typeof x === 'number')
 }
 
+// `palette.categorical` has exactly 4 slots, so a persisted config with more
+// category ids would render series with an undefined color.
+const MAX_CATEGORY_SLOTS = 4
+
+function isMonth(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 12
+}
+
+function isYear(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1900 && v <= 9999
+}
+
+function validEntries(v: unknown, isValid: (x: unknown) => boolean): number[] | null {
+  if (!isNumberArray(v)) return null
+  const kept = v.filter(isValid)
+  return kept.length > 0 ? kept : null
+}
+
+// Grid spans are written straight into `gridColumn/gridRow: span N`, where a
+// 0, a fraction or a negative is silently invalid CSS and a large number
+// renders a card taller than the viewport.
+function clampSpan(v: unknown, fallback: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback
+  return Math.min(4, Math.max(1, Math.round(v)))
+}
+
 function normalizeChartKind(v: unknown): ChartKind {
   return v === 'bar' ? 'bar' : 'line'
 }
@@ -77,23 +103,27 @@ function sanitizeConfig(config: unknown): WidgetConfig | null {
         categoryIds = [c.categoryId]
       }
       if (categoryIds == null) return null
-      return { type: 'categoryChart', categoryIds, chartKind: normalizeChartKind(c.chartKind) }
+      return { type: 'categoryChart', categoryIds: categoryIds.slice(0, MAX_CATEGORY_SLOTS), chartKind: normalizeChartKind(c.chartKind) }
     }
-    case 'monthCompare':
-      if (typeof c.year === 'number' && isNumberArray(c.months) && c.months.length > 0) {
-        return { type: 'monthCompare', year: c.year, months: c.months, chartKind: normalizeChartKind(c.chartKind) }
+    case 'monthCompare': {
+      const months = validEntries(c.months, isMonth)
+      if (isYear(c.year) && months != null) {
+        return { type: 'monthCompare', year: c.year, months, chartKind: normalizeChartKind(c.chartKind) }
       }
       return null
+    }
     case 'allTimeTrend':
-      if (typeof c.fromYear === 'number' && typeof c.toYear === 'number') {
+      if (isYear(c.fromYear) && isYear(c.toYear)) {
         return { type: 'allTimeTrend', fromYear: c.fromYear, toYear: c.toYear, chartKind: normalizeChartKind(c.chartKind) }
       }
       return null
-    case 'monthAcrossYears':
-      if (typeof c.month === 'number' && isNumberArray(c.years) && c.years.length > 0) {
-        return { type: 'monthAcrossYears', month: c.month, years: c.years, chartKind: normalizeChartKind(c.chartKind) }
+    case 'monthAcrossYears': {
+      const years = validEntries(c.years, isYear)
+      if (isMonth(c.month) && years != null) {
+        return { type: 'monthAcrossYears', month: c.month, years, chartKind: normalizeChartKind(c.chartKind) }
       }
       return null
+    }
     default:
       return null
   }
@@ -143,8 +173,8 @@ export function loadDashboard(): Widget[] | null {
       out.push({
         id: w.id,
         visible: typeof w.visible === 'boolean' ? w.visible : true,
-        width: (typeof w.width === 'number' ? w.width : 1) as WidgetWidth,
-        height: (typeof w.height === 'number' ? w.height : defaultHeight(config)) as WidgetHeight,
+        width: clampSpan(w.width, 1) as WidgetWidth,
+        height: clampSpan(w.height, defaultHeight(config)) as WidgetHeight,
         config,
       })
     }

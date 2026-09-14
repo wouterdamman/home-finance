@@ -150,7 +150,11 @@
     "deleteIncomeConfirm": "Remove \"{{source}}\" from this month?",
     "deleteIncomeDisabledHint": "Only removable when the amount is €0 and there are no transactions",
     "unknownSource": "Source #{{id}}",
-    "noTransactions": "No transactions booked yet"
+    "noTransactions": "No transactions booked yet",
+    "noTrackedCategories": "No budget line in this month tracks individual transactions yet. Turn tracking on for a category in the month overview.",
+    "noItemizedSources": "No income source in this month is itemised yet. Mark a source as itemised in Settings.",
+    "deleteTransactionConfirm": "Delete \"{{description}}\"? This cannot be undone.",
+    "splitAmountNeedsSurplus": "Amounts can only be entered when the surplus is positive — adjust the percentage instead."
   },
   "pots": {
     "title": "Savings Pots",
@@ -181,7 +185,8 @@
     "target": "Savings goal",
     "targetDate": "Target date",
     "targetProgress": "{{percent}}% of goal",
-    "totalSavedLabel": "Total saved ({{count}} pots)"
+    "totalSavedLabel": "Total saved ({{count}} pots)",
+    "amountRequired": "Enter an amount."
   },
   "kids": {
     "title": "Kids Savings",
@@ -270,7 +275,9 @@
     "auditLogDate": "Date",
     "auditLogDetails": "Details",
     "auditLogEmpty": "No audit log entries found",
-    "auditLogLoadMore": "Load more"
+    "auditLogLoadMore": "Load more",
+    "promoteTitle": "Make admin",
+    "promoteConfirm": "Give {{name}} admin rights? They will be able to change categories, pots, years and other users."
   },
   "export": {
     "description": "Download income, expenses and transactions for a whole year or selected months as an Excel file.",
@@ -299,7 +306,9 @@
     "income": "Income",
     "expense": "Expenses",
     "surplus": "Surplus",
-    "skippedSheets": "These sheets in the file didn't match a recognized name and were skipped — check for typos or a wrong separator:"
+    "skippedSheets": "These sheets in the file didn't match a recognized name and were skipped — check for typos or a wrong separator:",
+    "importProblems": "Some rows were skipped",
+    "resetCounts": "Existing data was deleted"
   },
   "common": {
     "save": "Save",
@@ -331,6 +340,22 @@
     "saved": "Saved",
     "search": "Search...",
     "addNew": "Add new",
-    "sortBy": "Sort by"
+    "sortBy": "Sort by",
+    "status": "Status",
+    "ok": "OK",
+    "loadFailed": "Could not load this data."
+  },
+  "errors": {
+    "invalidServerResponse": "The server returned an unexpected response.",
+    "boundaryTitle": "Something went wrong",
+    "boundaryBody": "This page could not be loaded. Try again, or go back to the dashboard.",
+    "updateAvailableTitle": "A new version is available",
+    "updateAvailableBody": "The app was updated while this tab was open. Reload the page to continue.",
+    "reload": "Reload",
+    "backToDashboard": "Back to dashboard",
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "This address doesn't exist. Check the link, or go back to the dashboard.",
+    "backendUnavailableTitle": "Can't reach the server",
+    "backendUnavailableBody": "You're still signed in, but the server isn't responding. Try again in a moment."
   }
 }

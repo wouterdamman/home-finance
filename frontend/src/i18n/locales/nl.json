@@ -150,7 +150,11 @@
     "deleteIncomeConfirm": "\"{{source}}\" verwijderen uit deze maand?",
     "deleteIncomeDisabledHint": "Alleen te verwijderen als bedrag op € 0 staat en er geen transacties zijn",
     "unknownSource": "Bron #{{id}}",
-    "noTransactions": "Nog geen transacties geboekt"
+    "noTransactions": "Nog geen transacties geboekt",
+    "noTrackedCategories": "Geen budgetregel in deze maand houdt losse transacties bij. Zet bijhouden aan bij een categorie in het maandoverzicht.",
+    "noItemizedSources": "Geen inkomstenbron in deze maand is uitgesplitst. Markeer een bron als uitgesplitst in Instellingen.",
+    "deleteTransactionConfirm": "\"{{description}}\" verwijderen? Dit kan niet ongedaan worden gemaakt.",
+    "splitAmountNeedsSurplus": "Bedragen kun je alleen invoeren bij een positief overschot — pas anders het percentage aan."
   },
   "pots": {
     "title": "Spaarpotjes",
@@ -181,7 +185,8 @@
     "target": "Spaardoel",
     "targetDate": "Streefdatum",
     "targetProgress": "{{percent}}% van doel",
-    "totalSavedLabel": "Totaal gespaard ({{count}} potjes)"
+    "totalSavedLabel": "Totaal gespaard ({{count}} potjes)",
+    "amountRequired": "Vul een bedrag in."
   },
   "kids": {
     "title": "Sparen kinderen",
@@ -270,7 +275,9 @@
     "auditLogDate": "Datum",
     "auditLogDetails": "Details",
     "auditLogEmpty": "Geen audit-log-regels gevonden",
-    "auditLogLoadMore": "Meer laden"
+    "auditLogLoadMore": "Meer laden",
+    "promoteTitle": "Beheerder maken",
+    "promoteConfirm": "{{name}} beheerdersrechten geven? Diegene kan dan categorieën, potjes, jaren en andere gebruikers wijzigen."
   },
   "export": {
     "description": "Download inkomsten, uitgaven en transacties van een heel jaar of geselecteerde maanden als Excel-bestand.",
@@ -299,7 +306,9 @@
     "income": "Inkomsten",
     "expense": "Uitgaven",
     "surplus": "Surplus",
-    "skippedSheets": "Deze tabbladen in het bestand hadden geen herkende naam en zijn overgeslagen — check op typefouts of een verkeerd scheidingsteken:"
+    "skippedSheets": "Deze tabbladen in het bestand hadden geen herkende naam en zijn overgeslagen — check op typefouts of een verkeerd scheidingsteken:",
+    "importProblems": "Sommige regels zijn overgeslagen",
+    "resetCounts": "Bestaande gegevens zijn verwijderd"
   },
   "common": {
     "save": "Opslaan",
@@ -331,6 +340,22 @@
     "saved": "Opgeslagen",
     "search": "Zoeken...",
     "addNew": "Nieuw toevoegen",
-    "sortBy": "Sorteer op"
+    "sortBy": "Sorteer op",
+    "status": "Status",
+    "ok": "OK",
+    "loadFailed": "Kon deze gegevens niet laden."
+  },
+  "errors": {
+    "invalidServerResponse": "De server gaf een onverwacht antwoord.",
+    "boundaryTitle": "Er is iets misgegaan",
+    "boundaryBody": "Deze pagina kon niet worden geladen. Probeer het opnieuw of ga terug naar het dashboard.",
+    "updateAvailableTitle": "Nieuwe versie beschikbaar",
+    "updateAvailableBody": "De app is bijgewerkt terwijl dit tabblad open stond. Herlaad de pagina om verder te gaan.",
+    "reload": "Herladen",
+    "backToDashboard": "Terug naar dashboard",
+    "notFoundTitle": "Pagina niet gevonden",
+    "notFoundBody": "Dit adres bestaat niet. Controleer de link of ga terug naar het dashboard.",
+    "backendUnavailableTitle": "Server niet bereikbaar",
+    "backendUnavailableBody": "Je bent nog ingelogd, maar de server reageert niet. Probeer het zo opnieuw."
   }
 }

@@ -1,25 +1,48 @@
 import { useEffect, useState } from 'react'
-import { Outlet, NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink as RouterNavLink, useLocation } from 'react-router-dom'
 import { AppShell as MantineAppShell, NavLink, Group, Text, ActionIcon, Tooltip, Stack, Avatar } from '@mantine/core'
 import { IconWallet, IconLogout, IconPigMoney, IconSettings, IconCalendar, IconChevronLeft, IconChevronRight, IconPin, IconPinFilled, IconChartLine, IconUsers } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 import { useMe } from '../api/hooks/useMe'
 import { useYears } from '../api/hooks/usePeriods'
 import BottomTabBar from './BottomTabBar'
 
 const NAV_PINNED_KEY = 'nav-pinned'
 
+// Every localStorage key this app writes. Kept here (rather than imported
+// from each owner module) so logout can wipe them without pulling the Trends
+// dashboard and chart-palette modules into the shell's bundle.
+const APP_STORAGE_KEYS = [NAV_PINNED_KEY, 'trends-dashboard-v1', 'trends-year-filter', 'chart-palette']
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Safari private mode / quota exceeded — a lost UI preference must never
+    // throw out of a click handler.
+  }
+}
+
 export default function AppShell() {
   const { t } = useTranslation()
   const { data: user } = useMe()
   const { data: years } = useYears()
-  const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   // Sidebar is collapsed (icon rail) by default — it's secondary navigation,
   // most screen width should go to content. "Peek" is a transient expand
   // (click the chevron) that auto-collapses again on the next navigation;
   // "pinned" persists across navigation and reloads via localStorage.
-  const [pinned, setPinned] = useState(() => localStorage.getItem(NAV_PINNED_KEY) === 'true')
+  const [pinned, setPinned] = useState(() => safeGetItem(NAV_PINNED_KEY) === 'true')
   const [peek, setPeek] = useState(false)
   const expanded = pinned || peek
 
@@ -29,18 +52,39 @@ export default function AppShell() {
 
   const pin = () => {
     setPinned(true)
-    localStorage.setItem(NAV_PINNED_KEY, 'true')
+    safeSetItem(NAV_PINNED_KEY, 'true')
   }
   const unpin = () => {
     setPinned(false)
     setPeek(false)
-    localStorage.setItem(NAV_PINNED_KEY, 'false')
+    safeSetItem(NAV_PINNED_KEY, 'false')
   }
 
+  // A client-side navigate() would leave the whole TanStack cache (every
+  // period, transaction and the ['me'] record) in memory, so pressing Back
+  // repaints the previous user's finances on a shared machine. Purge every
+  // client-side store, then hard-navigate so no React state survives.
   const handleLogout = () => {
-    fetch('/auth/logout', { method: 'POST' })
-      .then(() => navigate('/login'))
-      .catch(() => navigate('/login'))
+    const purgeAndLeave = async () => {
+      queryClient.clear()
+      for (const key of APP_STORAGE_KEYS) {
+        try {
+          localStorage.removeItem(key)
+        } catch {
+          // storage unavailable — nothing to purge
+        }
+      }
+      try {
+        if ('caches' in window) {
+          const names = await caches.keys()
+          await Promise.all(names.map((name) => caches.delete(name)))
+        }
+      } catch {
+        // CacheStorage unavailable (or blocked) — nothing to purge
+      }
+      window.location.assign('/login')
+    }
+    fetch('/auth/logout', { method: 'POST' }).then(purgeAndLeave, purgeAndLeave)
   }
 
   const navLink = (key: string, label: string, icon: React.ReactNode, to: string) => (

@@ -8,6 +8,10 @@ export interface User {
   avatarUrl?: string | null
 }
 
+// Category, Pot and IncomeSource deliberately live in api/hooks/useSettings.ts
+// only — the copies that used to shadow them here were missing backend fields
+// (includeInTemplate, archivedAt, parentId, autofillActual, targetCents...),
+// so importing the wrong one silently dropped data.
 export interface Period {
   id: number
   year: number
@@ -21,7 +25,7 @@ export interface Period {
 
 export interface IncomeEntry {
   id: number
-  periodId: number
+  periodId?: number
   sourceId?: number
   label?: string
   amountCents: number
@@ -33,17 +37,9 @@ export interface IncomeEntry {
   effectiveCents: number
 }
 
-export interface Category {
-  id: number
-  name: string
-  defaultAmountCents: number
-  isItemized: boolean
-  sortOrder: number
-}
-
 export interface BudgetLine {
   id: number
-  periodId: number
+  periodId?: number
   categoryId?: number
   label?: string
   amountCents: number
@@ -70,13 +66,6 @@ export interface IncomeTransaction {
   amountCents: number
   description: string
   txDate?: string
-}
-
-export interface Pot {
-  id: number
-  name: string
-  kind: 'normal' | 'carryover'
-  sortOrder: number
 }
 
 export interface PotSplit {
@@ -190,14 +179,6 @@ export interface TrendsMonthlyTotal {
   surplusCents: number
 }
 
-export interface IncomeSource {
-  id: number
-  name: string
-  defaultAmountCents: number
-  isItemized: boolean
-  sortOrder: number
-}
-
 export interface ApiError {
   error: { code: string; message: string }
 }
@@ -213,6 +194,10 @@ export interface ImportReportMonth {
 export interface ImportReport {
   months: ImportReportMonth[]
   skippedSheets?: string[]
+  /** Cells the importer could not read, or amounts it refused as out of range. */
+  problems?: string[]
+  /** Rows deleted per table, present only when the import reset master data. */
+  resetCounts?: Record<string, number>
 }
 
 export interface AuditLogEntry {

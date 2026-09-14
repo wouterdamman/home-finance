@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
   NumberInput, ActionIcon, Stack, Button, Autocomplete,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import { modals } from '@mantine/modals'
 import { DateInput } from '@mantine/dates'
 import { IconTrash, IconPencil, IconCheck, IconX } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
@@ -12,7 +13,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
-import { useCategoryDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
+import { useCategoryDescriptionPresets, useCategoryTransactionDescriptions, mergeDescriptionSuggestions } from '../api/hooks/useDescriptionSuggestions'
 import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -39,6 +40,7 @@ export default function MonthTransactions() {
   const { data: categories } = useCategories()
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={400} />
+  if (summary.error || overviewQuery.error) return <Alert color="red">{t('common.error')}</Alert>
   if (!overview || !periodId) return (
     <Alert color="yellow">
       {t('month.notFound')} <Text component={Link} to={`/years/${y}`} c="blue">{t('common.back')}</Text>
@@ -46,7 +48,11 @@ export default function MonthTransactions() {
   )
 
   const isClosed = overview.period.status === 'closed'
-  const itemizedLines = overview.budgetLines.filter(bl => bl.tracksTransactions)
+  // A label-only tracked line has no category, so it can't key a tab or scope
+  // the ?categoryId= query — only reachable via import, never via the UI.
+  const itemizedLines = overview.budgetLines.filter(
+    (bl): bl is typeof bl & { categoryId: number } => bl.tracksTransactions && bl.categoryId != null,
+  )
   const defaultCatId = itemizedLines[0]?.categoryId ?? 0
   const categoryParam = searchParams.get('category')
   const initialCatId = itemizedLines.some(bl => String(bl.categoryId) === categoryParam)
@@ -63,37 +69,42 @@ export default function MonthTransactions() {
         <Title order={2}>{t('month.transactionsTitle', { month: m, year: y })}</Title>
       </Group>
 
-      <Tabs defaultValue={initialCatId} keepMounted={false}>
-        <Tabs.List>
-          {itemizedLines.map(bl => (
-            <Tabs.Tab key={bl.categoryId} value={String(bl.categoryId)}>
-              {budgetLineLabel(bl)}
-              <Text span size="xs" c="dimmed" ml="xs">
-                (<MoneyText span cents={bl.effectiveCents} />)
-              </Text>
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+      {itemizedLines.length === 0 ? (
+        <EmptyState message={t('month.noTrackedCategories')} />
+      ) : (
+        <Tabs defaultValue={initialCatId} keepMounted={false}>
+          <Tabs.List>
+            {itemizedLines.map(bl => (
+              <Tabs.Tab key={bl.id} value={String(bl.categoryId)}>
+                {budgetLineLabel(bl)}
+                <Text span size="xs" c="dimmed" ml="xs">
+                  (<MoneyText span cents={bl.effectiveCents} />)
+                </Text>
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
 
-        {itemizedLines.map(bl => (
-          <Tabs.Panel key={bl.categoryId} value={String(bl.categoryId)} pt="md">
-            <CategoryTab
-              periodId={periodId}
-              categoryId={bl.categoryId ?? 0}
-              isClosed={isClosed}
-            />
-          </Tabs.Panel>
-        ))}
-      </Tabs>
+          {itemizedLines.map(bl => (
+            <Tabs.Panel key={bl.id} value={String(bl.categoryId)} pt="md">
+              <CategoryTab
+                periodId={periodId}
+                categoryId={bl.categoryId}
+                isClosed={isClosed}
+              />
+            </Tabs.Panel>
+          ))}
+        </Tabs>
+      )}
     </Stack>
   )
 }
 
 function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; categoryId: number; isClosed: boolean }) {
   const { t } = useTranslation()
-  const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const isMobile = useMediaQuery('(max-width: 47.99em)', undefined, { getInitialValueInEffect: false })
   const { data: txs, isLoading } = useTransactions(periodId, categoryId)
   const { data: descPresets } = useCategoryDescriptionPresets(categoryId)
+  const { data: descHistory } = useCategoryTransactionDescriptions(categoryId)
   const createTx = useCreateTransaction(periodId)
   const updateTx = useUpdateTransaction(periodId)
   const deleteTx = useDeleteTransaction(periodId)
@@ -106,7 +117,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const [editingTxId, setEditingTxId] = useState<number | null>(null)
   const [editAmount, setEditAmount] = useState<number | string>('')
 
-  const descriptionData = (descPresets ?? []).map(p => p.description)
+  const descriptionData = useMemo(() => mergeDescriptionSuggestions(descPresets, descHistory), [descPresets, descHistory])
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))
@@ -132,6 +143,14 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
       { onSuccess: () => setEditingTxId(null) }
     )
   }
+
+  const confirmDeleteTx = (tx: { id: number; description: string }) => modals.openConfirmModal({
+    title: t('common.delete'),
+    children: <Text size="sm">{t('month.deleteTransactionConfirm', { description: tx.description || '—' })}</Text>,
+    labels: { confirm: t('common.delete'), cancel: t('common.cancel') },
+    confirmProps: { color: 'red' },
+    onConfirm: () => deleteTx.mutate(tx.id),
+  })
 
   if (isLoading) return <Skeleton h={200} />
 
@@ -310,7 +329,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
                   {editingTxId !== tx.id && (
                     <Group gap={4} wrap="nowrap">
                       <ActionIcon size="sm" variant="subtle" aria-label={t('common.edit')} onClick={() => startEditTx(tx)}><IconPencil size={14} /></ActionIcon>
-                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}><IconTrash size={14} /></ActionIcon>
+                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => confirmDeleteTx(tx)}><IconTrash size={14} /></ActionIcon>
                     </Group>
                   )}
                 </Table.Td>

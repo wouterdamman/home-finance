@@ -46,6 +46,10 @@ export function MobileListRow({
         cursor: tappable && !disabled ? 'pointer' : undefined,
         opacity: disabled ? 0.5 : 1,
         minHeight: 44,
+        // Inside `content` rather than on the non-swipe wrapper: react-swipeable-list
+        // supplies no separator of its own, so a list mixing swipeable and plain
+        // rows (pot/kid ledgers) otherwise loses the divider under the swipeable ones.
+        borderBottom: '1px solid var(--mantine-color-default-border)',
       }}
     >
       <Group wrap="nowrap" gap="sm" style={{ minWidth: 0, flex: 1 }}>
@@ -62,7 +66,7 @@ export function MobileListRow({
     </Group>
   )
 
-  if (!swipeAction) return <Box style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>{content}</Box>
+  if (!swipeAction) return content
 
   return (
     <SwipeableListItem

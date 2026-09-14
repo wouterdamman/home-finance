@@ -31,3 +31,29 @@ class MemoryStorage implements Storage {
 const memoryStorage = new MemoryStorage()
 Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage, configurable: true })
 Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true })
+
+// jsdom implements neither of these, and Mantine's MantineProvider (color
+// scheme) and ScrollArea-based components call them during mount.
+if (!window.matchMedia) {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+}
+
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver
+}

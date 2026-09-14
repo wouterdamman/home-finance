@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
+import { invalidatePeriodAggregates } from '../../lib/queryInvalidation'
 import type { IncomeTransaction } from '../types'
 
 export function useIncomeTransactions(periodId: number, sourceId?: number) {
@@ -19,6 +20,8 @@ export function useCreateIncomeTransaction(periodId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['income-transactions', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['income-source-transaction-descriptions'] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -31,6 +34,8 @@ export function useUpdateIncomeTransaction(periodId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['income-transactions', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['income-source-transaction-descriptions'] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -42,6 +47,8 @@ export function useDeleteIncomeTransaction(periodId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['income-transactions', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['income-source-transaction-descriptions'] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }

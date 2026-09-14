@@ -23,8 +23,12 @@ export function parseToCents(value: string): number | null {
   const cleaned = value.trim().replace(/[€\s]/g, '')
   // Detect format: if last separator is comma and it has 2 decimals → NL format
   const nlPattern = /^-?[\d.]*,\d{0,2}$/
+  // No comma at all, but every dot separates a full 3-digit group ("1.234",
+  // "1.234.567") → NL thousands grouping rather than a decimal point. Mirrors
+  // the EN branch below, which already reads "1,234" as 1234 units.
+  const nlGroupedPattern = /^-?\d{1,3}(\.\d{3})+$/
   let normalized: string
-  if (nlPattern.test(cleaned)) {
+  if (nlPattern.test(cleaned) || nlGroupedPattern.test(cleaned)) {
     normalized = cleaned.replace(/\./g, '').replace(',', '.')
   } else {
     normalized = cleaned.replace(/,/g, '')

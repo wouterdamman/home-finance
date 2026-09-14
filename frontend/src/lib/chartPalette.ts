@@ -58,3 +58,9 @@ export function loadPaletteId(): PaletteId {
 export function savePaletteId(id: PaletteId) {
   localStorage.setItem(STORAGE_KEY, id)
 }
+
+// Palette entries are either a Mantine token ('teal.6') or a raw hex value
+// (the Okabe-Ito set) — CSS needs the token resolved to its variable.
+export function paletteColorValue(color: string): string {
+  return color.includes('.') ? `var(--mantine-color-${color.replace('.', '-')})` : color
+}

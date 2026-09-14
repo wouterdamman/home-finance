@@ -1,10 +1,11 @@
+import { memo } from 'react'
 import { Skeleton, Text } from '@mantine/core'
 import { CompositeChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
 import { useTrendsMonthlyTotals } from '../../api/hooks/usePeriods'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
-import { niceAxisTicksSigned } from '../../lib/chartAxis'
+import { niceAxisTicksSigned, categoryTickInterval } from '../../lib/chartAxis'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
 
@@ -17,7 +18,7 @@ interface Props {
   chartKind: ChartKind
 }
 
-export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Props) {
+function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Props) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
@@ -51,7 +52,7 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
   // labels don't all fit (e.g. dropping just "Nov" while keeping every other
   // month) — pick a fixed, even stride ourselves so it's always a clean
   // "every Nth month" instead of an arbitrary-looking gap.
-  const xInterval = Math.max(0, Math.ceil(chartData.length / 6) - 1)
+  const xInterval = categoryTickInterval(chartData.length)
 
   return (
     <>
@@ -73,3 +74,7 @@ export default function AllTimeTrendWidget({ fromYear, toYear, chartKind }: Prop
     </>
   )
 }
+
+// Memoized so toggling edit mode / opening the config modal / changing the
+// page's year Select doesn't re-render and re-lay-out every chart on the grid.
+export default memo(AllTimeTrendWidget)

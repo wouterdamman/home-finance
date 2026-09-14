@@ -13,6 +13,10 @@ export function useReauth() {
   const [state, setState] = useState<ReauthState>('idle')
   const popupRef = useRef<Window | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Bumped by reset()/start() so a poll tick whose /reauth-status request was
+  // already in flight when the user cancelled can never resolve into 'fresh'
+  // and re-fire the destructive action the dialog was dismissed to avoid.
+  const runRef = useRef(0)
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -21,13 +25,30 @@ export function useReauth() {
     }
   }, [])
 
-  useEffect(() => stopPolling, [stopPolling])
+  const closePopup = useCallback(() => {
+    const popup = popupRef.current
+    popupRef.current = null
+    try {
+      if (popup && !popup.closed) popup.close()
+    } catch {
+      // cross-origin popup that navigated away — nothing we can do
+    }
+  }, [])
+
+  useEffect(() => () => {
+    runRef.current += 1
+    stopPolling()
+  }, [stopPolling])
 
   const start = useCallback(() => {
+    stopPolling()
+    closePopup()
+    const runId = ++runRef.current
     setState('pending')
     popupRef.current = window.open('/auth/reauth', 'reauth', 'width=480,height=640')
 
     pollRef.current = setInterval(async () => {
+      if (runRef.current !== runId) return
       if (!popupRef.current || popupRef.current.closed) {
         stopPolling()
         setState((s) => (s === 'fresh' ? s : 'cancelled'))
@@ -35,18 +56,24 @@ export function useReauth() {
       }
       try {
         const { fresh } = await api.get<{ fresh: boolean }>('/api/reauth-status')
+        if (runRef.current !== runId) return
         if (fresh) {
           stopPolling()
-          popupRef.current?.close()
+          closePopup()
           setState('fresh')
         }
       } catch {
         // transient — keep polling until the popup closes or times out
       }
     }, POLL_INTERVAL_MS)
-  }, [stopPolling])
+  }, [stopPolling, closePopup])
 
-  const reset = useCallback(() => setState('idle'), [])
+  const reset = useCallback(() => {
+    runRef.current += 1
+    stopPolling()
+    closePopup()
+    setState('idle')
+  }, [stopPolling, closePopup])
 
   return { state, start, reset }
 }

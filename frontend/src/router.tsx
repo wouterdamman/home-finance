@@ -3,6 +3,9 @@ import { Suspense, lazy } from 'react'
 import { LoadingOverlay } from '@mantine/core'
 import AuthGuard from './components/AuthGuard'
 import AppShell from './components/AppShell'
+import RouteErrorBoundary from './components/ErrorBoundary'
+import NotFound from './pages/NotFound'
+import { useCurrentYearState } from './api/hooks/useCurrentYear'
 
 const Login = lazy(() => import('./pages/Login'))
 const YearDashboard = lazy(() => import('./pages/YearDashboard'))
@@ -19,12 +22,26 @@ const KidSavingsDetail = lazy(() => import('./pages/KidSavingsDetail'))
 
 const fallback = <LoadingOverlay visible />
 
+// Resolved per render, not at module load: a PWA tab left open across New
+// Year would otherwise keep redirecting to last year, and a fresh install has
+// no period for the calendar year at all.
+function IndexRedirect() {
+  const { year, isPending } = useCurrentYearState()
+  if (isPending) return fallback
+  return <Navigate to={`/years/${year}`} replace />
+}
+
 export const router = createBrowserRouter([
-  { path: '/login', element: <Suspense fallback={fallback}><Login /></Suspense> },
+  {
+    path: '/login',
+    element: <Suspense fallback={fallback}><Login /></Suspense>,
+    errorElement: <RouteErrorBoundary />,
+  },
   {
     element: <AuthGuard><AppShell /></AuthGuard>,
+    errorElement: <RouteErrorBoundary />,
     children: [
-      { index: true, element: <Navigate to={`/years/${new Date().getFullYear()}`} replace /> },
+      { index: true, element: <IndexRedirect /> },
       { path: '/years/:year', element: <Suspense fallback={fallback}><YearDashboard /></Suspense> },
       { path: '/trends', element: <Suspense fallback={fallback}><Trends /></Suspense> },
       { path: '/trends/months', element: <Suspense fallback={fallback}><MonthCompareDetail /></Suspense> },
@@ -36,6 +53,7 @@ export const router = createBrowserRouter([
       { path: '/kids', element: <Suspense fallback={fallback}><KidsSavings /></Suspense> },
       { path: '/kids/:id', element: <Suspense fallback={fallback}><KidSavingsDetail /></Suspense> },
       { path: '/settings', element: <Suspense fallback={fallback}><Settings /></Suspense> },
+      { path: '*', element: <NotFound /> },
     ],
   },
 ])
