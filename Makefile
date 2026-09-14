@@ -42,7 +42,10 @@ build-image:
 # ── Lint ─────────────────────────────────────────────────────────
 lint:
 	cd backend && go vet ./... && golangci-lint run ./...
-	cd frontend && npm run lint
+	# No JS/TS linter: @typescript-eslint needs the legacy TypeScript compiler
+	# API, which typescript@7's native port does not expose, and it peer-caps
+	# below TS 7. The type checker is the frontend gate until that lands.
+	cd frontend && npm run typecheck
 
 # ── E2E ──────────────────────────────────────────────────────────
 e2e:

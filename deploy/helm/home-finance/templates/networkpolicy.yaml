@@ -10,12 +10,40 @@ spec:
       app: {{ .Release.Name }}
 
   ingress:
+    {{- with .Values.networkPolicy.cilium.gatewayIngress }}
+    {{- if .namespaceLabel }}
+    # Gateway data plane only — the hardened form. Set gatewayIngress.namespaceLabel
+    # and .podLabels to the labels the real Gateway's pods carry (confirm with
+    # `kubectl get pods -n <gateway ns> --show-labels`) and this replaces the
+    # cluster-wide rule below.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .namespaceLabel }}
+            {{- range $k, $v := .podLabels }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ .port | default 8080 | quote }}
+              protocol: TCP
+    {{- else }}
+    # Fallback: any managed endpoint may reach :8080, so a pod can bypass the
+    # Gateway and everything it provides (TLS, rate limiting, IP allowlisting,
+    # request logging). The app enforces its own session auth either way, so
+    # this is a defence-in-depth gap rather than a data leak — but narrow it.
+    #
+    # This stays the default deliberately: a wrong label selector yields NO
+    # matching ingress rule and silently makes the app unreachable on the next
+    # sync, which is a worse outcome than the gap. Set the labels above once
+    # verified against the live Gateway.
     - fromEntities:
         - cluster
       toPorts:
         - ports:
-            - port: "8080"
+            - port: {{ .port | default 8080 | quote }}
               protocol: TCP
+    {{- end }}
+    {{- end }}
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.cilium.prometheusNamespace }}
@@ -69,6 +97,70 @@ spec:
       toPorts:
         - ports:
             - port: "443"
+              protocol: TCP
+    {{- end }}
+    {{- with .Values.networkPolicy.cilium.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+---
+# The migrate Job's pod is labelled `app: <release>-migrate`, so the policy
+# above (endpointSelector `app: <release>`) never matched it — it ran wide open
+# in both directions while holding DATABASE_URL for the whole financial
+# database and executing arbitrary DDL. Covered by its own policy rather than
+# by relabelling the Job into the app's selector, for two reasons: the
+# Deployment's spec.selector.matchLabels is immutable on the live object (so a
+# `component:` label can't be added there to keep the two apart), and the Job
+# genuinely needs less than the server does — DNS and Postgres, no OIDC, no
+# ingress at all.
+#
+# Note this is a regular (Sync-phase) resource while the Job is a PreSync hook,
+# so on a brand-new install the first migration runs before the policy exists.
+# Every later sync is covered, and making this a hook too is exactly the
+# delete-and-recreate-on-every-sync pattern AGENTS.md warns against.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-migrate
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app: {{ .Release.Name }}-migrate
+
+  # Empty list = enforce ingress, allow nothing. The Job listens on no port.
+  ingress: []
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    {{- if .Values.postgres.cnpg.enabled }}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+            cnpg.io/cluster: {{ .Values.postgres.cnpg.clusterName }}
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    {{- else if .Values.networkPolicy.cilium.dbEgress.namespaceLabel }}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.cilium.dbEgress.namespaceLabel }}
+            {{- range $k, $v := .Values.networkPolicy.cilium.dbEgress.podLabels }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.cilium.dbEgress.port | default 5432 | quote }}
               protocol: TCP
     {{- end }}
     {{- with .Values.networkPolicy.cilium.extraEgress }}
