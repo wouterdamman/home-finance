@@ -2,17 +2,24 @@ package httpapi
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg" // registers the jpeg decoder used by handleUploadAvatar's content sniff
 	_ "image/png"  // registers the png decoder used by handleUploadAvatar's content sniff
 	"io"
 	"net/http"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/wouterdamman/home-finance/internal/auth"
 )
 
 const maxAvatarUploadBytes = 10 << 20 // 10MB — plenty for a profile photo
+
+// maxDisplayNameLen bounds a self-chosen display name.
+const maxDisplayNameLen = 200
 
 func avatarURL(id int64, hasAvatar *string) *string {
 	if hasAvatar == nil || *hasAvatar == "" {
@@ -53,13 +60,30 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"displayName"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		badRequest(w, err)
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE users SET display_name=$2 WHERE id=$1`, uid, body.DisplayName); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+	// display_name is an unbounded TEXT column rendered in every user list
+	// and audit-log row, so it has to be bounded here.
+	displayName := strings.TrimSpace(body.DisplayName)
+	if displayName == "" {
+		Error(w, http.StatusBadRequest, "bad_request", "displayName is required")
 		return
 	}
+	if len([]rune(displayName)) > maxDisplayNameLen {
+		Error(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("displayName must be at most %d characters", maxDisplayNameLen))
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `UPDATE users SET display_name=$2 WHERE id=$1`, uid, displayName)
+	if err != nil {
+		dbError(w, "updateMe", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		Error(w, http.StatusNotFound, "not_found", "user not found")
+		return
+	}
+	s.auditLog(r.Context(), "user.profile_update", "user", uid, map[string]any{"displayName": displayName})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -115,7 +139,7 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.avatarStorage.Put(ctx, uid, contentType, data); err != nil {
-		Error(w, http.StatusInternalServerError, "storage_error", err.Error())
+		dbError(w, "avatarStorage.Put", err)
 		return
 	}
 	s.auditLog(ctx, "user.avatar_upload", "user", uid, nil)
@@ -154,7 +178,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `SELECT id, email, display_name, role, avatar_content_type FROM users ORDER BY email`)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "listUsers", err)
 		return
 	}
 	defer rows.Close()
@@ -163,11 +187,17 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		var ro row
 		var avatarContentType *string
 		if err := rows.Scan(&ro.ID, &ro.Email, &ro.DisplayName, &ro.Role, &avatarContentType); err != nil {
-			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			dbError(w, "listUsers.scan", err)
 			return
 		}
 		ro.AvatarURL = avatarURL(ro.ID, avatarContentType)
 		out = append(out, ro)
+	}
+	// Without this a mid-iteration failure returns 200 with a silently
+	// truncated list — on the one screen where "who is an admin" matters.
+	if err := rows.Err(); err != nil {
+		dbError(w, "listUsers", err)
+		return
 	}
 	JSON(w, http.StatusOK, out)
 }
@@ -182,7 +212,7 @@ func (s *Server) handleUpdateUserRole(w http.ResponseWriter, r *http.Request) {
 		Role string `json:"role"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		badRequest(w, err)
 		return
 	}
 	if body.Role != "admin" && body.Role != "user" {
@@ -191,27 +221,65 @@ func (s *Server) handleUpdateUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if body.Role == "user" {
-		var adminCount int
-		if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE role='admin'`).Scan(&adminCount); err != nil {
-			Error(w, http.StatusInternalServerError, "db_error", err.Error())
-			return
-		}
-		var currentRole string
-		if err := s.pool.QueryRow(ctx, `SELECT role FROM users WHERE id=$1`, id).Scan(&currentRole); err != nil {
-			Error(w, http.StatusNotFound, "not_found", "user not found")
-			return
-		}
-		if currentRole == "admin" && adminCount <= 1 {
-			Error(w, http.StatusConflict, "last_admin", "cannot demote the last remaining admin")
-			return
-		}
-	}
-
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, id, body.Role); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+	// "At least one admin must remain" cannot be expressed as a constraint, and
+	// a read-then-write cannot enforce it either: as three separate round trips
+	// two concurrent demotes (one admin double-clicking is enough) both read
+	// adminCount = 2, both passed, and the app was left with no admin and no
+	// way back in short of direct database access. Folding the count into the
+	// UPDATE's WHERE clause is not sufficient either — under READ COMMITTED the
+	// subquery still reads a pre-statement snapshot.
+	//
+	// So: lock the admin set for the duration of the transaction. Ordering by
+	// id gives every caller the same lock order, and the target row is locked
+	// after the admin set, so concurrent demotes serialize instead of racing.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		dbError(w, "updateUserRole.begin", err)
 		return
 	}
-	s.auditLog(ctx, "user.role_change", "user", id, map[string]any{"role": body.Role})
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `SELECT id FROM users WHERE role='admin' ORDER BY id FOR UPDATE`)
+	if err != nil {
+		dbError(w, "updateUserRole.lockAdmins", err)
+		return
+	}
+	var adminCount int
+	for rows.Next() {
+		adminCount++
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		dbError(w, "updateUserRole.lockAdmins", err)
+		return
+	}
+
+	var currentRole string
+	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id=$1 FOR UPDATE`, id).Scan(&currentRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		Error(w, http.StatusNotFound, "not_found", "user not found")
+		return
+	}
+	if err != nil {
+		dbError(w, "updateUserRole.lockTarget", err)
+		return
+	}
+
+	if currentRole == "admin" && body.Role != "admin" && adminCount <= 1 {
+		Error(w, http.StatusConflict, "last_admin", "cannot demote the last remaining admin")
+		return
+	}
+
+	if currentRole != body.Role {
+		if _, err := tx.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, id, body.Role); err != nil {
+			dbError(w, "updateUserRole", err)
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		dbError(w, "updateUserRole.commit", err)
+		return
+	}
+	s.auditLog(ctx, "user.role_change", "user", id, map[string]any{"from": currentRole, "to": body.Role})
 	w.WriteHeader(http.StatusNoContent)
 }
