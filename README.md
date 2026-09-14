@@ -25,7 +25,7 @@ list intentionally stays a short summary rather than growing indefinitely.
 
 ## Local dev
 
-**Prerequisites:** Docker, Go 1.25+, Node 22+
+**Prerequisites:** Docker, Go 1.26+ (`backend/go.mod`), Node 22+ (CI and the image build on 24)
 
 ```bash
 cp .env.example .env
@@ -34,7 +34,9 @@ make dev          # starts postgres + dex, backend on :8080, frontend on :5173
 
 The frontend proxies `/api` and `/auth` to `:8080`. Open http://localhost:5173.
 
-Dev login: any user (DEV_FAKE_AUTH=true bypasses OIDC).
+Dev login: the local dex container (`deploy/dex/config.yaml` — `wouter@example.com` /
+`password`). `DEV_FAKE_AUTH=true` skips OIDC entirely instead, and only starts with
+`ENV=development`.
 
 ### Useful commands
 
@@ -54,6 +56,7 @@ make import ARGS="--xlsx /path/to/Fam_Finance_2026.xlsx --year 2026 --wipe --clo
 |---|---|---|
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `PORT` | `8080` | HTTP listen port |
+| `ENV` | `production` | Deployment environment. Only `development` unlocks `DEV_FAKE_AUTH` — a missing or misspelled value fails secure |
 | `AUTO_MIGRATE` | `false` | Run goose migrations on startup |
 | `DEV_FAKE_AUTH` | `false` | Skip OIDC, inject dev user |
 | `OIDC_ISSUER_URL` | — | OIDC provider discovery URL |
@@ -64,45 +67,49 @@ make import ARGS="--xlsx /path/to/Fam_Finance_2026.xlsx --year 2026 --wipe --clo
 | `INITIAL_ADMIN_EMAILS` | — | Comma-separated emails granted `role=admin` on first login (upsert only — doesn't override a role changed later in Settings > Users) |
 | `STATIC_DIR` | — | Path to frontend dist (empty = no SPA serving) |
 | `SESSION_SECURE` | `true` | `Secure` flag on the session cookie — `false` only for plain-HTTP local dev |
-| `S3_ENDPOINT` | — | S3-compatible object storage endpoint (avatars + audit-log export). Empty disables both |
+| `S3_ENDPOINT` | — | S3-compatible object storage endpoint (audit-log export only). Empty disables it |
 | `S3_BUCKET` | — | Bucket name |
 | `S3_ACCESS_KEY_ID` | — | Access key |
 | `S3_SECRET_ACCESS_KEY` | — | Secret key |
 | `S3_REGION` | — | Region (optional, provider-dependent) |
 | `S3_USE_SSL` | `true` | Use HTTPS to reach the S3 endpoint |
-| `AUDIT_EXPORT_INTERVAL` | — | Go duration string (`"10s"`, `"1h"`, `"12h"`) for periodic audit-log export to S3. Empty disables it; requires S3 to also be configured |
+| `AUDIT_EXPORT_INTERVAL` | — | Go duration string (`"10s"`, `"1h"`, `"12h"`) for periodic audit-log export to S3 — the only feature that uses S3. Empty disables it; requires S3 to also be configured |
 
 ## API overview
 
 All endpoints under `/api`, session-auth via cookie, amounts in cents.
 
 Endpoints marked **(admin)** are gated by `requireAdmin` — read endpoints stay open to any
-authenticated user so a `role=user` account can still use the app day-to-day.
+authenticated user so a `role=user` account can still use the app day-to-day. Endpoints marked
+**(reauth)** additionally need a step-up re-authentication completed in the last 5 minutes
+(`GET /api/reauth-status`); this app never accepts a password in a request body.
 
 ```
 GET   /api/me
 PATCH /api/me                  (own display name)
-POST  /api/me/avatar           (multipart; 503 if S3 not configured)
-GET   /api/users/:id/avatar    (auth-gated proxy — object storage is never public)
+GET   /api/reauth-status       ({"fresh": bool} — step-up reauth freshness)
+POST  /api/me/avatar           (multipart; bytes land in users.avatar_data, not object storage)
+GET   /api/users/:id/avatar    (auth-gated proxy — avatars are never a public URL)
 GET   /api/users                                (admin)
 PATCH /api/users/:id/role      (body: {"role": "admin"|"user"})  (admin — can't demote the last admin)
 
 GET  /api/years
 POST /api/years                                 (admin)
 GET  /api/years/:year/summary
-POST /api/years/:year/lock     (body: {"password": "..."})  (admin)
-POST /api/years/:year/unlock   (body: {"password": "..."})  (admin)
+POST /api/years/:year/lock                      (admin, reauth)
+POST /api/years/:year/unlock                    (admin, reauth)
 
 GET  /api/periods?year=
 POST /api/periods
 GET  /api/periods/:id/overview
 POST /api/periods/:id/close                     (admin)
 POST /api/periods/:id/reopen                    (admin)
-DEL  /api/periods/:id          (body: {"password": "..."})  (admin)
+DEL  /api/periods/:id                           (admin, reauth)
 
-CRUD /api/income-entries
-CRUD /api/budget-lines
-CRUD /api/transactions
+CRUD /api/periods/:id/incomes,             /api/incomes/:id
+CRUD /api/periods/:id/budget-lines,        /api/budget-lines/:id
+CRUD /api/periods/:id/transactions,        /api/transactions/:id
+CRUD /api/periods/:id/income-transactions, /api/income-transactions/:id
 PUT  /api/periods/:id/splits   (carryover pot's percentage is always server-computed)
 
 GET  /api/categories
@@ -113,13 +120,22 @@ GET  /api/pots
 POST/PUT /api/pots, /api/pots/:id, /api/pots/:id/archive                        (admin)
 GET  /api/pots/balances
 GET  /api/pots/:id/ledger
-POST /api/pots/:id/entries
-DEL  /api/pot-entries/:id      (manual entries only — allocation/carryover_out are lifecycle-managed)
+POST  /api/pots/:id/entries
+PATCH /api/pot-entries/:id     (manual entries only — amountCents)
+DEL   /api/pot-entries/:id     (manual entries only — allocation/carryover_out are lifecycle-managed)
 
-GET  /api/export/years/:year?months=1,2,3        (whole year if months omitted)
-POST /api/import/xlsx          (multipart: file, year, wipe, resetMaster, closeThrough, password)
+GET   /api/kids, /api/kids/balances, /api/kids/:id/ledger
+POST  /api/kids/:id/entries
+PATCH /api/kid-entries/:id
+DEL   /api/kid-entries/:id
+PATCH /api/kids/:id/reported-balance                                            (admin)
+
+GET  /api/trends/years, /api/trends/category-totals, /api/trends/monthly-totals
+
+GET  /api/export/years/:year?months=1,2,3   (whole year if months omitted)      (admin)
+POST /api/import/xlsx          (multipart: file, year, wipe, resetMaster, closeThrough)  (admin)
                                 (legacy Fam_Finance workbook or this app's own export, auto-detected;
-                                 wipe/resetMaster require password and are audit-logged)
+                                 wipe/resetMaster need a fresh reauth and are audit-logged)
 
 GET  /api/audit-log?limit=&before=&action=&entityType=&userEmail=&from=&to=     (admin)
 GET  /api/docs                                                                   (admin)
@@ -153,10 +169,12 @@ kubectl run importer --rm -it --restart=Never \
   -- /app/importer --xlsx /tmp/Finance.xlsx --year 2026 --wipe --close-through 6
 ```
 
-### Object storage (avatars + audit-log export)
+### Object storage (audit-log export)
 
-Both optional and off by default. Enable by pointing `s3.existingSecret` at a Secret with
-`ENDPOINT` / `ACCESS_KEY_ID` / `SECRET_ACCESS_KEY` keys (any S3-compatible provider):
+Optional and off by default — the audit-log exporter is the only feature that uses S3. Avatar
+photos are stored as `bytea` rows in Postgres, so no object storage is involved there. Enable by
+pointing `s3.existingSecret` at a Secret with `ENDPOINT` / `ACCESS_KEY_ID` /
+`SECRET_ACCESS_KEY` keys (any S3-compatible provider):
 
 ```bash
 kubectl create secret generic home-finance-s3 \
@@ -174,7 +192,7 @@ helm upgrade --install home-finance deploy/helm/home-finance \
 
 `auditExport.interval` is a Go duration string (`10s`, `5m`, `1h`, `12h`) and runs as a goroutine
 inside the app pod, not a separate CronJob — that's why sub-minute intervals work. Leave it unset
-to keep S3 enabled for avatars only.
+and S3 is never touched at all.
 
 ## Database migrations
 
