@@ -62,6 +62,12 @@ func main() {
 		slog.Error("import", "err", err)
 		os.Exit(1)
 	}
+	for table, n := range report.ResetCounts {
+		slog.Info("reset masterdata deleted rows", "table", table, "rows", n)
+	}
+	for _, p := range report.Problems {
+		slog.Warn("row skipped", "problem", p)
+	}
 
 	fmt.Printf("\nImport report for %d:\n", *year)
 	fmt.Printf("%-8s %14s %14s %14s %8s\n", "Month", "Income", "Expense", "Surplus", "Status")

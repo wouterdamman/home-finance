@@ -1,8 +1,9 @@
 package httpapi
 
 import (
-	"fmt"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -61,9 +62,13 @@ func (s *Server) handleImportXLSX(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The parser error names the server-side temp file and excelize internals;
+	// neither is the uploader's business, and neither helps them fix the file.
 	sheets, skipped, err := importer.DetectAndParse(tmp.Name())
 	if err != nil {
-		Error(w, http.StatusBadRequest, "parse_error", fmt.Sprintf("could not parse xlsx: %v", err))
+		slog.Error("import: parse xlsx", "err", err, "filename", header.Filename)
+		Error(w, http.StatusBadRequest, "parse_error",
+			"could not read this file as a supported Excel workbook")
 		return
 	}
 
@@ -75,10 +80,34 @@ func (s *Server) handleImportXLSX(w http.ResponseWriter, r *http.Request) {
 		CloseThrough: closeThrough,
 	})
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "import_error", err.Error())
+		slog.Error("import: run", "err", err, "year", year, "filename", header.Filename)
+		// A ValidationError is written by the importer and names the month/row
+		// at fault; anything else is a driver or constraint error, whose text
+		// embeds cell content and raw Postgres detail.
+		var ve *importer.ValidationError
+		if errors.As(err, &ve) {
+			Error(w, http.StatusBadRequest, "import_invalid", ve.Error())
+			return
+		}
+		Error(w, http.StatusInternalServerError, "import_error",
+			"import failed and was rolled back; no data was changed")
 		return
 	}
 	report.SkippedSheets = skipped
+
+	// resetMasterdata is not scoped to the requested year: it deletes every
+	// period of every year plus pots, categories and income sources. Record it
+	// separately, with the row counts, so the trail can't be read as "one year
+	// was re-imported".
+	if resetMaster {
+		s.auditLog(ctx, "import.reset_masterdata", "masterdata", 0, map[string]any{
+			"filename":    header.Filename,
+			"requestYear": year,
+			"scope":       "all years",
+			"deletedRows": report.ResetCounts,
+			"notCleared":  []string{"kids", "kid_savings_ledger", "years", "locked_years", "users", "audit_log"},
+		})
+	}
 
 	s.auditLog(ctx, "import.xlsx", "year", int64(year), map[string]any{
 		"filename":     header.Filename,
@@ -86,6 +115,7 @@ func (s *Server) handleImportXLSX(w http.ResponseWriter, r *http.Request) {
 		"resetMaster":  resetMaster,
 		"closeThrough": closeThrough,
 		"months":       len(report.Months),
+		"problems":     len(report.Problems),
 	})
 
 	JSON(w, http.StatusOK, report)
