@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.2](https://github.com/wouterdamman/home-finance/compare/v1.19.1...v1.19.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **frontend:** description autocomplete only shows curated presets again ([8707514](https://github.com/wouterdamman/home-finance/commit/87075144c8dac7492d6cbc515f85247ba55cff83))
+
 ## [1.19.1](https://github.com/wouterdamman/home-finance/compare/v1.19.0...v1.19.1) (2026-09-15)
 
 
