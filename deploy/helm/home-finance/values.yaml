@@ -180,13 +180,18 @@ networkPolicy:
     # `kubectl get pods -n <gateway ns> --show-labels`, then set both fields —
     # until then the policy falls back to allowing any in-cluster endpoint.
     gatewayIngress:
-      # This cluster runs Cilium's Gateway API as a shared node-local Envoy
-      # DaemonSet (no per-Gateway pod, no io.cilium.gateway/owning-gateway
-      # label present) — confirmed via `kubectl get pods -n kube-system -l
-      # k8s-app=cilium-envoy -o jsonpath='{.items[0].metadata.labels}'`.
-      namespaceLabel: "kube-system"
-      podLabels:
-        k8s-app: cilium-envoy
+      # REVERTED 2026-09-15: this cluster's Cilium Gateway API runs as a
+      # node-local Envoy DaemonSet with hostNetwork: true (podIP == hostIP).
+      # Cilium classifies hostNetwork pod traffic as the `host`/`remote-node`
+      # entity, not as a pod-labeled endpoint — a `fromEndpoints` selector on
+      # k8s-app=cilium-envoy can never match it. Setting namespaceLabel here
+      # previously took down prod: the old fromEntities:[cluster] catch-all
+      # was replaced by a rule that matches nothing, so ALL gateway traffic
+      # to :8080 was silently dropped. Fix properly with `fromEntities:
+      # [host, remote-node]` (not namespaceLabel/podLabels) before narrowing
+      # this again — verify with a real request before trusting it.
+      namespaceLabel: ""
+      podLabels: {}
       port: 8080
     # REQUIRED when postgres.cnpg.enabled=false (external DB) and
     # networkPolicy.cilium.enabled=true — otherwise the app can't reach it.
