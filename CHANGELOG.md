@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.18.3](https://github.com/wouterdamman/home-finance/compare/v1.18.2...v1.18.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deploy:** revert gatewayIngress narrowing — took down prod ([cdae75d](https://github.com/wouterdamman/home-finance/commit/cdae75d6ada8ac292affa4f8966d695cc6258c4c))
+* **deploy:** support hostNetwork Gateway data planes in gatewayIngress narrowing ([5dbfbdc](https://github.com/wouterdamman/home-finance/commit/5dbfbdc72dd4fd6e35f464a0cc85d7f78c2328c8))
+* **deps:** tidy go.sum after go-jose v4.1.5 bump ([ee9772c](https://github.com/wouterdamman/home-finance/commit/ee9772cdf985d8eb3c2e39ff95fdf30ee24ddafd))
+
 ## [1.18.2](https://github.com/wouterdamman/home-finance/compare/v1.18.1...v1.18.2) (2026-09-15)
 
 
