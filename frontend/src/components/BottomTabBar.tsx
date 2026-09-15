@@ -74,7 +74,7 @@ export default function BottomTabBar() {
             style={{ textDecoration: 'none', color: active ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-dimmed)' }}
           >
             <Icon size={22} stroke={active ? 2.2 : 1.8} />
-            <Text fz={10} fw={active ? 600 : 400}>{tab.label}</Text>
+            <Text fz={10} fw={active ? 600 : 400} style={{ whiteSpace: 'nowrap' }}>{tab.label}</Text>
           </Stack>
         )
       })}
