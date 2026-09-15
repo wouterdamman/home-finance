@@ -13,7 +13,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '../api/hooks/useTransactions'
-import { useCategoryDescriptionPresets, useCategoryTransactionDescriptions, mergeDescriptionSuggestions } from '../api/hooks/useDescriptionSuggestions'
+import { useCategoryDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
 import { useCategories } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -104,7 +104,6 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const isMobile = useMediaQuery('(max-width: 47.99em)', undefined, { getInitialValueInEffect: false })
   const { data: txs, isLoading } = useTransactions(periodId, categoryId)
   const { data: descPresets } = useCategoryDescriptionPresets(categoryId)
-  const { data: descHistory } = useCategoryTransactionDescriptions(categoryId)
   const createTx = useCreateTransaction(periodId)
   const updateTx = useUpdateTransaction(periodId)
   const deleteTx = useDeleteTransaction(periodId)
@@ -117,7 +116,7 @@ function CategoryTab({ periodId, categoryId, isClosed }: { periodId: number; cat
   const [editingTxId, setEditingTxId] = useState<number | null>(null)
   const [editAmount, setEditAmount] = useState<number | string>('')
 
-  const descriptionData = useMemo(() => mergeDescriptionSuggestions(descPresets, descHistory), [descPresets, descHistory])
+  const descriptionData = useMemo(() => (descPresets ?? []).map((p) => p.description), [descPresets])
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))

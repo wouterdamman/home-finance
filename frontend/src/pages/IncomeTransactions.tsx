@@ -13,7 +13,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useIncomeTransactions, useCreateIncomeTransaction, useUpdateIncomeTransaction, useDeleteIncomeTransaction } from '../api/hooks/useIncomeTransactions'
-import { useIncomeSourceDescriptionPresets, useIncomeSourceTransactionDescriptions, mergeDescriptionSuggestions } from '../api/hooks/useDescriptionSuggestions'
+import { useIncomeSourceDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
 import { useIncomeSources } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -104,7 +104,6 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const isMobile = useMediaQuery('(max-width: 47.99em)', undefined, { getInitialValueInEffect: false })
   const { data: txs, isLoading } = useIncomeTransactions(periodId, sourceId)
   const { data: descPresets } = useIncomeSourceDescriptionPresets(sourceId)
-  const { data: descHistory } = useIncomeSourceTransactionDescriptions(sourceId)
   const createTx = useCreateIncomeTransaction(periodId)
   const updateTx = useUpdateIncomeTransaction(periodId)
   const deleteTx = useDeleteIncomeTransaction(periodId)
@@ -117,7 +116,7 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const [editingTxId, setEditingTxId] = useState<number | null>(null)
   const [editAmount, setEditAmount] = useState<number | string>('')
 
-  const descriptionData = useMemo(() => mergeDescriptionSuggestions(descPresets, descHistory), [descPresets, descHistory])
+  const descriptionData = useMemo(() => (descPresets ?? []).map((p) => p.description), [descPresets])
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))
