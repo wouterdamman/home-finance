@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.18.2](https://github.com/wouterdamman/home-finance/compare/v1.18.1...v1.18.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **api:** fail closed on write guards, stop leaking driver errors ([217e726](https://github.com/wouterdamman/home-finance/commit/217e726d8042b017ac89428780a9f64cb7a93598))
+* **auth:** verify email claims, close open redirect, add PKCE ([92f7034](https://github.com/wouterdamman/home-finance/commit/92f70347b6262c02f895724245316f7df976f4d5))
+* **importer:** make re-import idempotent, round-trip itemized income ([a7e27e3](https://github.com/wouterdamman/home-finance/commit/a7e27e3f39c9c96f5889214ee235f0c82d8ee933))
+* prevent Sparen kinderen tab label from wrapping on mobile ([bcfb09c](https://github.com/wouterdamman/home-finance/commit/bcfb09c62d992d7f2818275101625b89db64d5e2))
+* remediate code review and security audit findings ([5315e15](https://github.com/wouterdamman/home-finance/commit/5315e15285069a1313c279e57f1292a30b94b1a0))
+* **server:** graceful shutdown, bounded pool, safe allocation loop ([f4ef521](https://github.com/wouterdamman/home-finance/commit/f4ef521e40eecb0d99abc1499654d14161a6e48e))
+* **web:** stop cancelled reauth firing, clear session data on logout ([2c43f2a](https://github.com/wouterdamman/home-finance/commit/2c43f2af968a6f21bc407b68226a92375a720057))
+
+
+### CI/CD
+
+* harden pod security, pin actions by digest, gate image scanning ([42e07ec](https://github.com/wouterdamman/home-finance/commit/42e07ec4c6743126e12f94c8a27313721aacc3ce))
+
 ## [1.18.1](https://github.com/wouterdamman/home-finance/compare/v1.18.0...v1.18.1) (2026-09-12)
 
 
