@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/wouterdamman/home-finance
-  tag: 1.18.2@sha256:878e6565b25251672bd30b19b65161ccf81b0fcefeaebe604480e0246444562e # x-release-please-version
+  tag: 1.18.3@sha256:878e6565b25251672bd30b19b65161ccf81b0fcefeaebe604480e0246444562e # x-release-please-version
   pullPolicy: IfNotPresent
 
 # Only needed if the image repository above is private. List of Secret
