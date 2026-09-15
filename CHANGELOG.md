@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0](https://github.com/wouterdamman/home-finance/compare/v1.18.3...v1.19.0) (2026-09-15)
+
+
+### Features
+
+* replace app icon with piggy-bank artwork ([42a429c](https://github.com/wouterdamman/home-finance/commit/42a429c8012ff0cd678f6492d5241b4d5175f655))
+
+
+### Bug Fixes
+
+* **deps:** tidy go.sum after mscfb v1.0.8 bump ([431bf4e](https://github.com/wouterdamman/home-finance/commit/431bf4e92e4e3e0777ab87ffb3b99e9875575b8f))
+
 ## [1.18.3](https://github.com/wouterdamman/home-finance/compare/v1.18.2...v1.18.3) (2026-09-15)
 
 

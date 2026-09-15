@@ -2,8 +2,8 @@ apiVersion: v2
 name: home-finance
 description: Self-hosted family budget tracker — income/expense tracking, goal-based savings pots, and a Trends dashboard, backed by Go, React, and PostgreSQL.
 type: application
-version: 1.18.3 # x-release-please-version
-appVersion: "1.18.3" # x-release-please-version
+version: 1.19.0 # x-release-please-version
+appVersion: "1.19.0" # x-release-please-version
 home: https://github.com/wouterdamman/home-finance
 icon: https://raw.githubusercontent.com/wouterdamman/home-finance/main/deploy/helm/home-finance/icon.png
 sources:
@@ -23,4 +23,4 @@ annotations:
       url: https://github.com/wouterdamman/home-finance/blob/main/docs/DEPLOYMENT.md
   artifacthub.io/images: |
     - name: home-finance
-      image: ghcr.io/wouterdamman/home-finance:1.18.3 # x-release-please-version
+      image: ghcr.io/wouterdamman/home-finance:1.19.0 # x-release-please-version
