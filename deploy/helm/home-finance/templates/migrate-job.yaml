@@ -1,7 +1,12 @@
+{{- $migrateSA := printf "%s-migrate" (.Values.serviceAccount.name | default .Release.Name) }}
+{{- if not .Values.serviceAccount.create }}
+{{- $migrateSA = .Values.serviceAccount.name | default "default" }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ .Release.Name }}-migrate
+  namespace: {{ .Release.Namespace }}
   labels:
     app: {{ .Release.Name }}
   annotations:
@@ -10,21 +15,43 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 2
+  # A migration blocked on a Postgres lock would otherwise hang forever — and
+  # since this is an ArgoCD PreSync hook, the whole sync hangs with it.
+  activeDeadlineSeconds: {{ .Values.migrateJob.activeDeadlineSeconds }}
   template:
     metadata:
       labels:
         app: {{ .Release.Name }}-migrate
     spec:
       restartPolicy: Never
+      serviceAccountName: {{ $migrateSA }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           args: ["--migrate-only"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.migrateJob.resources | nindent 12 }}
           env:
             - name: DATABASE_URL
               valueFrom:

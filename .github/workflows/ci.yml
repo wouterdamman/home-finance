@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Every job here runs third-party code (npm install trees, Go modules, a Docker
+# build) on the runner and writes nothing back to the repo. Without this block
+# GITHUB_TOKEN inherits whatever the repo/org default is, which is usually
+# read/write.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend
@@ -27,15 +34,29 @@ jobs:
     env:
       DATABASE_URL: postgres://homefinance:homefinance@localhost:5432/homefinance_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v7
+      # Every `uses:` in this repo is pinned to a full commit SHA: a tag is
+      # mutable, so whoever controls the action's repo can repoint v7 and every
+      # later run executes unreviewed code. Renovate keeps the SHAs (and the
+      # trailing version comments) current via helpers:pinGitHubActionDigests.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: backend/go.mod
+          # Explicit, and deliberately NOT go-version-file: backend/go.mod says
+          # `go 1.26.0` with no toolchain directive, while the Dockerfile builds
+          # production with golang:1.27-alpine — CI was validating against a
+          # different, older toolchain than the one that ships. Keep this in
+          # step with the Dockerfile's golang tag.
+          go-version: '1.27'
           cache-dependency-path: backend/go.sum
 
       - name: go vet
         run: cd backend && go vet ./...
+
+      # Fails while go.sum still carries stale entries from successive Renovate
+      # bumps — run `go mod tidy` in backend/ to clear it.
+      - name: go mod tidy check
+        run: cd backend && go mod tidy -diff
 
       - name: Unit tests
         run: cd backend && go test ./...
@@ -52,39 +73,56 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # frontend/.npmrc sets ignore-scripts=true, so no dependency's
+      # install hook runs on the runner.
       - name: Install
         run: cd frontend && npm ci
 
+      # Via npm scripts, not `npx tsc`: from a cwd whose node_modules is
+      # missing, npx silently installs an unrelated `tsc` package and reports a
+      # false clean. The script resolves the local binary. It runs `tsc -b`,
+      # which is what actually covers vite.config.ts.
       - name: Type check
-        run: cd frontend && npx tsc --noEmit
+        run: cd frontend && npm run typecheck
 
       - name: Unit tests
-        run: cd frontend && npx vitest run
+        run: cd frontend && npm test -- --run
 
   docker-build:
     name: Docker build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build image
         run: docker build -f deploy/docker/Dockerfile -t home-finance:ci .
 
-      # Report-only for now (exit-code 0): surfaces CVEs in the Actions log
-      # without blocking merges. Flip exit-code to 1 once findings are
-      # triaged and you want new HIGH/CRITICAL CVEs to fail CI.
-      - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0
+      # Report-only pass: surfaces HIGH findings in the log without blocking.
+      - name: Scan image for vulnerabilities (report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: home-finance:ci
           severity: CRITICAL,HIGH
           exit-code: '0'
+          format: table
+
+      # Blocking pass. The base is distroless-static and the binaries are
+      # statically linked Go, so a fixable CRITICAL here is real and should stop
+      # the merge. release.yml runs the same gate against the multi-arch image
+      # that actually gets pushed.
+      - name: Fail on fixable CRITICAL CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: home-finance:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
           format: table

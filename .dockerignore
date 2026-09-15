@@ -1,0 +1,22 @@
+# Keeps the build context small and, more importantly, keeps secrets out of the
+# image: the Dockerfile does `COPY frontend/ ./`, so a developer's
+# frontend/.env.local would land in the builder, get inlined into the bundle by
+# Vite at build time, and then be served publicly from the shipped image.
+.git
+.github
+
+# Reinstalled from the lockfile inside the builder; copying host node_modules
+# in would be both slow and wrong (native deps built for the host platform).
+**/node_modules
+
+**/.env
+**/.env.*
+!**/.env.example
+
+frontend/dist
+frontend/.vite
+**/*.tsbuildinfo
+
+backend/bin
+*.log
+.DS_Store

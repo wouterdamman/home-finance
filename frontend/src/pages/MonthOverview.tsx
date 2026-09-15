@@ -85,7 +85,7 @@ export default function MonthOverview() {
   const overview = overviewQuery.data
 
   const navigate = useNavigate()
-  const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const isMobile = useMediaQuery('(max-width: 47.99em)', undefined, { getInitialValueInEffect: false })
   const { data: me } = useMe()
   const isAdmin = me?.role === 'admin'
   const [splitEdits, setSplitEdits] = useState<Record<number, string> | null>(null)
@@ -244,10 +244,21 @@ export default function MonthOverview() {
   // a side effect. Deriving a field's own displayed value from a round-trip
   // through the other field on every keystroke fights the caret mid-typing
   // (Mantine reformats the controlled value each render) and garbles input.
-  const setSplitPercentage = (potId: number, pct: number) => {
-    setSplitEdits(prev => ({ ...prev!, [potId]: String(pct) }))
-    setSplitAmountEdits(prev => ({ ...(prev ?? currentAmountEdits), [potId]: String(pctToProjectedCents(pct) / 100) }))
+  // Stores the raw string Mantine emits, exactly like the amount field below:
+  // coercing through Number() here would snap a cleared field to 0 and swallow
+  // a half-typed decimal separator mid-edit.
+  const setSplitPercentage = (potId: number, text: string) => {
+    setSplitEdits(prev => ({ ...prev!, [potId]: text }))
+    const pct = Number(text)
+    setSplitAmountEdits(prev => ({
+      ...(prev ?? currentAmountEdits),
+      [potId]: Number.isFinite(pct) ? String(pctToProjectedCents(pct) / 100) : '0',
+    }))
   }
+  // A zero surplus makes every amount 0%, a negative one flips the sign (€50
+  // against a −€100 surplus stores −50%, which the server then rejects), so the
+  // amount field is disabled rather than silently writing a nonsense split.
+  const amountSplitDisabled = surplusCents <= 0
   const setSplitAmountText = (potId: number, text: string, amountValue: number) => {
     setSplitAmountEdits(prev => ({ ...(prev ?? currentAmountEdits), [potId]: text }))
     const pct = Math.round(centsToPct(Math.round(amountValue * 100)) * 100) / 100
@@ -523,6 +534,7 @@ export default function MonthOverview() {
 
         <BottomSheet opened={!!splitEdits} onClose={cancelSplitEdit} title={t('month.splitSection')}>
           {carryoverOverAllocated && <Text size="xs" c="red">{t('month.splitOverAllocated')}</Text>}
+          {amountSplitDisabled && <Text size="xs" c="dimmed">{t('month.splitAmountNeedsSurplus')}</Text>}
           <Stack gap="sm">
             {splitPotIds.map(potId => {
               const sp = splits.find(s => s.potId === potId)
@@ -540,8 +552,8 @@ export default function MonthOverview() {
                     <Group gap={6} wrap="nowrap">
                       <NumberInput
                         size="sm"
-                        value={Number(splitEdits?.[potId] ?? sp?.percentage ?? 0)}
-                        onChange={(v) => setSplitPercentage(potId, Number(v))}
+                        value={splitEdits?.[potId] ?? sp?.percentage ?? ''}
+                        onChange={(v) => setSplitPercentage(potId, String(v))}
                         suffix="%"
                         decimalScale={2}
                         hideControls
@@ -557,6 +569,7 @@ export default function MonthOverview() {
                         decimalScale={2}
                         prefix="€ "
                         hideControls
+                        disabled={amountSplitDisabled}
                         w={100}
                       />
                     </Group>
@@ -672,6 +685,10 @@ export default function MonthOverview() {
                   {inc.isItemized || isClosed || inc.entryType === 'carryover'
                     ? <MoneyText cents={inc.effectiveCents} />
                     : <NumberInput
+                        // Remounts when the server value changes so a failed PUT
+                        // (or another session's edit) can't leave the locally
+                        // typed number on screen as if it had been saved.
+                        key={inc.amountCents}
                         size="xs"
                         defaultValue={inc.amountCents / 100}
                         decimalSeparator=","
@@ -897,6 +914,9 @@ export default function MonthOverview() {
         {carryoverOverAllocated && (
           <Text size="xs" c="red" mb="sm">{t('month.splitOverAllocated')}</Text>
         )}
+        {splitEdits && amountSplitDisabled && (
+          <Text size="xs" c="dimmed" mb="sm">{t('month.splitAmountNeedsSurplus')}</Text>
+        )}
         <Table.ScrollContainer minWidth={420}>
         <Table>
           <Table.Thead>
@@ -924,8 +944,8 @@ export default function MonthOverview() {
                         ? <Text size="sm" c={carryoverOverAllocated ? 'red' : 'dimmed'}>{carryoverRemainder.toFixed(2)}%</Text>
                         : <NumberInput
                             size="xs"
-                            value={Number(splitEdits[potId] ?? sp?.percentage ?? 0)}
-                            onChange={(v) => setSplitPercentage(potId, Number(v))}
+                            value={splitEdits[potId] ?? sp?.percentage ?? ''}
+                            onChange={(v) => setSplitPercentage(potId, String(v))}
                             suffix="%"
                             decimalScale={2}
                             hideControls
@@ -948,6 +968,7 @@ export default function MonthOverview() {
                             decimalScale={2}
                             prefix="€ "
                             hideControls
+                            disabled={amountSplitDisabled}
                           />
                       )
                     : (sp ? <MoneyText cents={sp.projectedCents ?? 0} colored={!isClosed} /> : <Text size="sm" c="dimmed">—</Text>)

@@ -13,10 +13,11 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  packages: write
+# No workflow-level `permissions:` on purpose — that granted every job the union
+# of what any one of them needs, so the job that runs docker/build-push-action
+# over the whole npm + Go dependency tree (by far the most likely place for
+# attacker-controlled code to execute) also held contents: write. Each job
+# declares only its own below.
 
 env:
   REGISTRY: ghcr.io
@@ -27,12 +28,18 @@ jobs:
     name: Release Please
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: googleapis/release-please-action@v5
+      # Every `uses:` is pinned to a full commit SHA — tags are mutable, and
+      # these jobs hold write access to the repo and to the image the cluster
+      # pulls. Renovate keeps them current (helpers:pinGitHubActionDigests).
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -41,20 +48,27 @@ jobs:
     name: Build & push image
     runs-on: ubuntu-latest
     needs: release-please
+    permissions:
+      contents: read
+      packages: write
+      # Both required by actions/attest-build-provenance: id-token to get the
+      # OIDC token it signs with, attestations to record the result.
+      id-token: write
+      attestations: write
     if: |
       always() &&
       (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -62,7 +76,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -70,7 +84,8 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
@@ -78,13 +93,51 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # SBOM + max-mode provenance attached to the pushed image, so what the
+          # cluster runs can be traced back to a commit and a dependency set.
+          sbom: true
+          provenance: mode=max
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Signed, verifiable provenance for the exact digest that was pushed
+      # (`gh attestation verify oci://<image>@<digest>`). The multi-arch
+      # artifact the cluster pulls previously had no signature of any kind.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      # ci.yml only ever scanned a single-arch throwaway build, and with
+      # exit-code 0 — the multi-arch artifact that actually ships was never
+      # examined. Scan the pushed digest, and fail the release on a fixable
+      # CRITICAL. Distroless-static + statically linked Go means the expected
+      # finding count is ~0, so a hit here is worth stopping for.
+      - name: Scan pushed image for vulnerabilities (report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          format: table
+
+      - name: Fail on fixable CRITICAL CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
 
   cleanup-old-packages:
     name: Clean up old package versions
     runs-on: ubuntu-latest
     needs: [release-please, build-push]
+    permissions:
+      packages: write
     # Same gate as build-push (only after an actual release, or a manual
     # retry build) — a fresh version was just pushed above, so it's safe to
     # prune old ones now. Multi-arch manifests (linux/amd64 + linux/arm64)
@@ -94,19 +147,92 @@ jobs:
       always() &&
       needs.build-push.result == 'success' &&
       (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
+    env:
+      OWNER: wouterdamman
+      PACKAGE: home-finance
+      # Was 4. With imagePullPolicy: IfNotPresent in the Helm chart, rolling
+      # back further than the retained window gives an unrecoverable
+      # ImagePullBackOff — 10 releases of headroom is cheap insurance.
+      KEEP: '10'
+      DRY_RUN: ${{ github.event.inputs.cleanup_dry_run == 'true' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Inline rather than a third-party action: this step deletes from the
+      # registry the production cluster pulls from, and GHCR pruning has already
+      # broken a live image pull here once. The rule that matters is that an
+      # untagged digest is NOT automatically garbage — every multi-arch tag's
+      # per-platform children, and its SBOM/provenance attestations, are all
+      # untagged. So the keep set is resolved from each retained tag's actual
+      # manifest list instead of from the version listing alone, and any failure
+      # to resolve one aborts the whole step before a single DELETE is sent.
+      #
       # GITHUB_TOKEN can only delete package versions if the package's own
       # "Manage Actions access" settings (Package -> Package settings, on
       # github.com) grant this repository Admin — that's a one-time manual
       # step outside this file, not something a workflow can grant itself.
       # If this step 403s, go set that, or swap this token for a PAT with
       # delete:packages scope stored as a repo secret instead.
-      - name: Delete old package versions
-        uses: smartsquaregmbh/delete-old-packages@v1.0.0
-        with:
-          user: wouterdamman
-          type: container
-          names: |
-            home-finance
-          keep: 4
-          dry-run: ${{ github.event.inputs.cleanup_dry_run == 'true' }}
+      - name: Prune old package versions
+        run: |
+          set -euo pipefail
+          api="/users/${OWNER}/packages/container/${PACKAGE}/versions"
+          gh api --paginate "$api" > versions.json
+          echo "Package has $(jq 'length' versions.json) version(s)."
+
+          # Versions carrying at least one human tag (a release number or
+          # `latest`); sha256-* tags are attestation referrers, not releases.
+          jq -r '
+            [ .[]
+              | select([ .metadata.container.tags[]? | select(startswith("sha256-") | not) ] | length > 0)
+            ]
+            | sort_by(.created_at) | reverse | .['"0:${KEEP}"'] | .[].name
+          ' versions.json | sort -u > keep-roots.txt
+          if [ ! -s keep-roots.txt ]; then
+            echo "Refusing to prune: no tagged versions found." >&2
+            exit 1
+          fi
+
+          # Resolve each retained tag's manifest list into its children.
+          registry_token=$(printf '%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          cp keep-roots.txt keep-digests.txt
+          while read -r digest; do
+            curl -sSfL \
+              -H "Authorization: Bearer ${registry_token}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json" \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${OWNER}/${PACKAGE}/manifests/${digest}" \
+              | jq -r '.manifests[]?.digest' >> keep-digests.txt
+          done < keep-roots.txt
+          sort -u keep-digests.txt -o keep-digests.txt
+          echo "Keeping $(wc -l < keep-digests.txt) digest(s) from $(wc -l < keep-roots.txt) release(s)."
+
+          # An attestation pushed as a referrer tag `sha256-<hex>` belongs to
+          # digest `sha256:<hex>` — keep it iff its subject is kept.
+          sed 's/^sha256:/sha256-/' keep-digests.txt > keep-referrer-tags.txt
+
+          jq -r --rawfile keep keep-digests.txt --rawfile reftags keep-referrer-tags.txt '
+            ($keep    | split("\n") | map(select(length > 0))) as $keepset
+            | ($reftags | split("\n") | map(select(length > 0))) as $refset
+            | .[]
+            | select((.name | IN($keepset[])) | not)
+            | select([ .metadata.container.tags[]? | select(IN($refset[])) ] | length == 0)
+            | "\(.id) \(.name) [\((.metadata.container.tags // []) | join(","))]"
+          ' versions.json > delete.txt || true
+
+          if [ ! -s delete.txt ]; then
+            echo "Nothing to prune."
+            exit 0
+          fi
+          echo "Would delete $(wc -l < delete.txt) version(s):"
+          cat delete.txt
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY_RUN set - no deletions performed."
+            exit 0
+          fi
+          while read -r id name tags; do
+            echo "Deleting $id $name $tags"
+            gh api --method DELETE "${api}/${id}"
+          done < delete.txt

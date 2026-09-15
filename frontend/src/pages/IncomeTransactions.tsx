@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import {
   Title, Text, Group, Tabs, Skeleton, Alert, Table,
   NumberInput, ActionIcon, Stack, Button, Autocomplete,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import { modals } from '@mantine/modals'
 import { DateInput } from '@mantine/dates'
 import { IconTrash, IconPencil, IconCheck, IconX } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
@@ -12,7 +13,7 @@ import EmptyState from '../components/EmptyState'
 import dayjs from 'dayjs'
 import { useYearSummary, useMonthOverview } from '../api/hooks/usePeriods'
 import { useIncomeTransactions, useCreateIncomeTransaction, useUpdateIncomeTransaction, useDeleteIncomeTransaction } from '../api/hooks/useIncomeTransactions'
-import { useIncomeSourceDescriptionPresets } from '../api/hooks/useDescriptionSuggestions'
+import { useIncomeSourceDescriptionPresets, useIncomeSourceTransactionDescriptions, mergeDescriptionSuggestions } from '../api/hooks/useDescriptionSuggestions'
 import { useIncomeSources } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import { parseToCents } from '../lib/money'
@@ -39,6 +40,7 @@ export default function IncomeTransactions() {
   const { data: sources } = useIncomeSources()
 
   if (summary.isLoading || overviewQuery.isLoading) return <Skeleton h={400} />
+  if (summary.error || overviewQuery.error) return <Alert color="red">{t('common.error')}</Alert>
   if (!overview || !periodId) return (
     <Alert color="yellow">
       {t('month.notFound')} <Text component={Link} to={`/years/${y}`} c="blue">{t('common.back')}</Text>
@@ -46,7 +48,11 @@ export default function IncomeTransactions() {
   )
 
   const isClosed = overview.period.status === 'closed'
-  const itemizedIncomes = overview.incomes.filter(inc => inc.isItemized)
+  // A label-only itemized entry has no source, so it can't key a tab or scope
+  // the ?sourceId= query — only reachable via import, never via the UI.
+  const itemizedIncomes = overview.incomes.filter(
+    (inc): inc is typeof inc & { sourceId: number } => inc.isItemized && inc.sourceId != null,
+  )
   const defaultSourceId = itemizedIncomes[0]?.sourceId ?? 0
   const sourceParam = searchParams.get('source')
   const initialSourceId = itemizedIncomes.some(inc => String(inc.sourceId) === sourceParam)
@@ -63,37 +69,42 @@ export default function IncomeTransactions() {
         <Title order={2}>{t('month.incomeTransactionsTitle', { month: m, year: y })}</Title>
       </Group>
 
-      <Tabs defaultValue={initialSourceId} keepMounted={false}>
-        <Tabs.List>
-          {itemizedIncomes.map(inc => (
-            <Tabs.Tab key={inc.sourceId} value={String(inc.sourceId)}>
-              {incomeLabel(inc)}
-              <Text span size="xs" c="dimmed" ml="xs">
-                (<MoneyText span cents={inc.effectiveCents} />)
-              </Text>
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+      {itemizedIncomes.length === 0 ? (
+        <EmptyState message={t('month.noItemizedSources')} />
+      ) : (
+        <Tabs defaultValue={initialSourceId} keepMounted={false}>
+          <Tabs.List>
+            {itemizedIncomes.map(inc => (
+              <Tabs.Tab key={inc.id} value={String(inc.sourceId)}>
+                {incomeLabel(inc)}
+                <Text span size="xs" c="dimmed" ml="xs">
+                  (<MoneyText span cents={inc.effectiveCents} />)
+                </Text>
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
 
-        {itemizedIncomes.map(inc => (
-          <Tabs.Panel key={inc.sourceId} value={String(inc.sourceId)} pt="md">
-            <SourceTab
-              periodId={periodId}
-              sourceId={inc.sourceId ?? 0}
-              isClosed={isClosed}
-            />
-          </Tabs.Panel>
-        ))}
-      </Tabs>
+          {itemizedIncomes.map(inc => (
+            <Tabs.Panel key={inc.id} value={String(inc.sourceId)} pt="md">
+              <SourceTab
+                periodId={periodId}
+                sourceId={inc.sourceId}
+                isClosed={isClosed}
+              />
+            </Tabs.Panel>
+          ))}
+        </Tabs>
+      )}
     </Stack>
   )
 }
 
 function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceId: number; isClosed: boolean }) {
   const { t } = useTranslation()
-  const isMobile = useMediaQuery('(max-width: 47.99em)')
+  const isMobile = useMediaQuery('(max-width: 47.99em)', undefined, { getInitialValueInEffect: false })
   const { data: txs, isLoading } = useIncomeTransactions(periodId, sourceId)
   const { data: descPresets } = useIncomeSourceDescriptionPresets(sourceId)
+  const { data: descHistory } = useIncomeSourceTransactionDescriptions(sourceId)
   const createTx = useCreateIncomeTransaction(periodId)
   const updateTx = useUpdateIncomeTransaction(periodId)
   const deleteTx = useDeleteIncomeTransaction(periodId)
@@ -106,7 +117,7 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
   const [editingTxId, setEditingTxId] = useState<number | null>(null)
   const [editAmount, setEditAmount] = useState<number | string>('')
 
-  const descriptionData = (descPresets ?? []).map(p => p.description)
+  const descriptionData = useMemo(() => mergeDescriptionSuggestions(descPresets, descHistory), [descPresets, descHistory])
 
   const total = (txs ?? []).reduce((sum, tx) => sum + tx.amountCents, 0)
   const sortedTxs = [...(txs ?? [])].sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''))
@@ -132,6 +143,14 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
       { onSuccess: () => setEditingTxId(null) }
     )
   }
+
+  const confirmDeleteTx = (tx: { id: number; description: string }) => modals.openConfirmModal({
+    title: t('common.delete'),
+    children: <Text size="sm">{t('month.deleteTransactionConfirm', { description: tx.description || '—' })}</Text>,
+    labels: { confirm: t('common.delete'), cancel: t('common.cancel') },
+    confirmProps: { color: 'red' },
+    onConfirm: () => deleteTx.mutate(tx.id),
+  })
 
   if (isLoading) return <Skeleton h={200} />
 
@@ -310,7 +329,7 @@ function SourceTab({ periodId, sourceId, isClosed }: { periodId: number; sourceI
                   {editingTxId !== tx.id && (
                     <Group gap={4} wrap="nowrap">
                       <ActionIcon size="sm" variant="subtle" aria-label={t('common.edit')} onClick={() => startEditTx(tx)}><IconPencil size={14} /></ActionIcon>
-                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => deleteTx.mutate(tx.id)}><IconTrash size={14} /></ActionIcon>
+                      <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => confirmDeleteTx(tx)}><IconTrash size={14} /></ActionIcon>
                     </Group>
                   )}
                 </Table.Td>

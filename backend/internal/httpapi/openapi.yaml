@@ -1,11 +1,26 @@
 openapi: 3.1.0
 info:
   title: Home Finance API
-  version: "1.3.0"
-  description: >
+  version: "1.4.0"
+  description: |
     Internal API for a personal/family budgeting app. Plain net/http + chi
     router, hand-written JSON handlers. All money amounts are integer cents.
     Dates are YYYY-MM-DD strings; timestamps are RFC3339.
+
+    Every error response uses the shape
+    `{"error": {"code": "...", "message": "..."}}`. Messages are safe to show
+    to a user; `db_error` carries a fixed generic message and never raw driver
+    text.
+
+    JSON request bodies are capped at 1 MiB by middleware; a larger body gets
+    413 `body_too_large`. Multipart uploads bypass that cap and enforce their
+    own, larger limit.
+
+    Unmatched `/api` paths return 404 `not_found` and unsupported methods
+    return 405 `method_not_allowed`, both as JSON rather than the SPA.
+
+    Operations marked "Admin only" also require the caller's role to be
+    `admin`; other roles get 403 `forbidden`.
 
 servers:
   - url: /
@@ -35,6 +50,14 @@ tags:
     description: Calendar years, year summaries, lock/unlock.
   - name: AuditLog
     description: Read-only audit trail of mutating actions.
+  - name: Kids
+    description: Kids savings ledgers and balances.
+  - name: Users
+    description: Admin user list and role management.
+  - name: Import
+    description: Spreadsheet import.
+  - name: Export
+    description: Spreadsheet export.
 
 security:
   - cookieAuth: []
@@ -61,7 +84,7 @@ paths:
         "200":
           description: DB reachable.
         "503":
-          description: DB unreachable.
+          description: DB unreachable. Fixed `db_unreachable` payload; never the raw connection error.
           content:
             application/json:
               schema:
@@ -114,22 +137,37 @@ paths:
     get:
       operationId: authReauth
       tags: [Auth]
-      summary: Starts a step-up re-authentication popup (prompt=login) used to confirm identity before a destructive action. Requires an existing session. Rate-limited per IP.
+      summary: Starts a step-up re-authentication popup (prompt=login) used to confirm identity before a destructive action. Requires an existing session and a same-origin (or absent) Sec-Fetch-Site. Rate-limited per session user, falling back to remote address.
       responses:
         "302":
           description: Redirect to OIDC provider with prompt=login (prod), or an immediate self-closing confirmation page (dev fake auth).
         "401":
           description: Not logged in.
+        "403":
+          description: Sec-Fetch-Site indicates a cross-site navigation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /auth/logout:
     post:
       operationId: authLogout
       tags: [Auth]
-      summary: Destroys the session and redirects to /login.
-      security: []
+      summary: Destroys the session and redirects to /login. Requires the X-Requested-With CSRF header.
+      security:
+        - csrfHeader: []
       responses:
         "302":
           description: Redirect to /login.
+        "403":
+          description: Missing X-Requested-With header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/me:
     get:
@@ -143,6 +181,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateMe
+      tags: [Auth]
+      summary: Updates the caller's own display name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "204":
+          description: Display name updated.
+        "400":
+          description: Empty displayName, or longer than 200 characters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/reauth-status:
     get:
@@ -166,6 +237,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/users:
+    get:
+      operationId: listUsers
+      tags: [Users]
+      summary: Lists all users with their role. Admin only.
+      responses:
+        "200":
+          description: Users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/users/{id}/role:
+    patch:
+      operationId: updateUserRole
+      tags: [Users]
+      summary: Sets a user's role. Admin only. The last remaining admin cannot be demoted.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleRequest"
+      responses:
+        "204":
+          description: Role updated (no-op when already set).
+        "400":
+          description: Invalid id, or role is neither "admin" nor "user".
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`last_admin`: cannot demote the last remaining admin."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/periods:
     get:
@@ -211,7 +342,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PeriodBasic"
         "400":
-          description: Invalid body.
+          description: Invalid body, or year/month out of range.
           content:
             application/json:
               schema:
@@ -222,6 +353,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -260,7 +393,7 @@ paths:
     post:
       operationId: closePeriod
       tags: [Periods]
-      summary: Closes a period, allocating surplus to pots and generating carryover ledger/income entries for next month.
+      summary: Closes a period, allocating surplus to pots and generating carryover ledger/income entries for next month. Admin only.
       parameters:
         - $ref: "#/components/parameters/PeriodId"
       responses:
@@ -272,6 +405,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Period not found.
           content:
@@ -279,7 +414,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Period already closed.
+          description: Period already closed, year locked, next period already closed, or the next year is locked.
           content:
             application/json:
               schema:
@@ -295,7 +430,7 @@ paths:
     post:
       operationId: reopenPeriod
       tags: [Periods]
-      summary: Reopens a closed period, removing generated carryover ledger entries and carryover income entries.
+      summary: Reopens a closed period, removing generated carryover ledger entries and carryover income entries. Admin only.
       parameters:
         - $ref: "#/components/parameters/PeriodId"
       responses:
@@ -307,6 +442,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Period not found.
           content:
@@ -330,7 +467,7 @@ paths:
     delete:
       operationId: deletePeriod
       tags: [Periods]
-      summary: Deletes an open period after a fresh Authentik re-authentication.
+      summary: Deletes an open period after a fresh Authentik re-authentication. Admin only.
       parameters:
         - $ref: "#/components/parameters/PeriodId"
       responses:
@@ -348,6 +485,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Period not found.
           content:
@@ -355,7 +494,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Period is closed, or year is locked.
+          description: Period is closed, year is locked, or the previous period's carryover lands in it (`carryover_present`).
           content:
             application/json:
               schema:
@@ -371,7 +510,44 @@ paths:
     get:
       operationId: listAuditLog
       tags: [AuditLog]
-      summary: Lists the 200 most recent audit log entries, newest first.
+      summary: Lists audit log entries, newest first. Admin only.
+      parameters:
+        - name: limit
+          in: query
+          description: Page size, 1-200. Out-of-range or unparseable values fall back to 50.
+          schema:
+            type: integer
+            default: 50
+        - name: before
+          in: query
+          description: Return only entries with a lower id (keyset pagination).
+          schema:
+            type: integer
+            format: int64
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: entityType
+          in: query
+          schema:
+            type: string
+        - name: userEmail
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: Inclusive lower bound on createdAt.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: Inclusive upper bound on createdAt.
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: Audit log entries.
@@ -381,6 +557,14 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AuditLogEntry"
+        "400":
+          description: Malformed from/to date; expected YYYY-MM-DD.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           description: Server/DB error.
           content:
@@ -414,12 +598,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Period closed or year locked.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -461,6 +653,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -482,12 +676,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "409":
-          description: Period closed or year locked.
+        "404":
+          description: Income entry not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed, year locked, or the entry has a non-zero amount or transactions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/periods/{id}/budget-lines:
     post:
@@ -510,7 +712,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/BudgetLine"
         "400":
-          description: Invalid id, body, or amount.
+          description: Invalid id, body, amount, or a child category used as the line's category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
           content:
             application/json:
               schema:
@@ -521,6 +729,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -562,6 +772,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -583,12 +795,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "409":
-          description: Period closed or year locked.
+        "404":
+          description: Budget line not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed, year locked, or the line has a non-zero amount or transactions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/periods/{id}/transactions:
     get:
@@ -642,12 +862,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Period closed or year locked.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -689,6 +917,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -710,12 +940,151 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: Transaction not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Period closed or year locked.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/periods/{id}/income-transactions:
+    get:
+      operationId: listIncomeTransactions
+      tags: [Transactions]
+      summary: Lists income transactions for a period, optionally filtered by income source.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+        - name: sourceId
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Income transactions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IncomeTransaction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      operationId: createIncomeTransaction
+      tags: [Transactions]
+      summary: Adds an income transaction to a period. Fails if the period is closed or its year is locked.
+      parameters:
+        - $ref: "#/components/parameters/PeriodId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncomeTransactionRequest"
+      responses:
+        "201":
+          description: Income transaction created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomeTransaction"
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/income-transactions/{id}:
+    put:
+      operationId: updateIncomeTransaction
+      tags: [Transactions]
+      summary: Updates an income transaction's amount/description/date.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIncomeTransactionRequest"
+      responses:
+        "204":
+          description: Income transaction updated.
+        "400":
+          description: Invalid id, body, or amount.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Income transaction not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      operationId: deleteIncomeTransaction
+      tags: [Transactions]
+      summary: Deletes an income transaction.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Income transaction deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Income transaction not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Period closed or year locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/periods/{id}/splits:
     put:
@@ -734,7 +1103,13 @@ paths:
         "204":
           description: Splits replaced.
         "400":
-          description: Invalid id/body, or percentages exceed/don't total 100%.
+          description: Invalid id/body, or a percentage that is not a finite number in 0..100, exceeds 100%, or does not total 100%.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Period not found.
           content:
             application/json:
               schema:
@@ -745,6 +1120,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/categories:
     get:
@@ -769,7 +1148,7 @@ paths:
     post:
       operationId: createCategory
       tags: [Categories]
-      summary: Creates a category. includeInTemplate defaults to true if omitted.
+      summary: Creates a category. includeInTemplate defaults to true if omitted. Admin only.
       requestBody:
         required: true
         content:
@@ -784,17 +1163,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/Category"
         "400":
-          description: Invalid body.
+          description: Empty or over-long name, defaultAmountCents out of range, or an invalid parent (self, a child, or a 3rd level).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Referenced parent category not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A category with these values already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/categories/order:
     put:
       operationId: reorderCategories
       tags: [Categories]
-      summary: Sets sort order for categories according to the order of ids in the array.
+      summary: Sets sort order for categories according to the order of ids in the array. Admin only.
       requestBody:
         required: true
         content:
@@ -811,11 +1208,15 @@ paths:
         "204":
           description: Order updated.
         "400":
-          description: Invalid body.
+          description: Invalid body, or more than 1000 ids.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -827,7 +1228,7 @@ paths:
     put:
       operationId: updateCategory
       tags: [Categories]
-      summary: Updates a category's name/default amount/itemized flag/template flag. includeInTemplate defaults to true if omitted.
+      summary: Updates a category's name/default amount/itemized flag/template flag/parent. includeInTemplate defaults to true if omitted. Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       requestBody:
@@ -840,17 +1241,35 @@ paths:
         "204":
           description: Category updated.
         "400":
-          description: Invalid id or body.
+          description: Invalid id, empty or over-long name, defaultAmountCents out of range, or an invalid parent.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Category not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`in_use`: this category and its new parent both carry a budget line in the same month, so nesting it would double-count."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/categories/{id}/archive:
     post:
       operationId: archiveCategory
       tags: [Categories]
-      summary: Toggles archived state for a category (archives if active, unarchives if archived).
+      summary: Toggles archived state for a category (archives if active, unarchives if archived). Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       responses:
@@ -862,6 +1281,103 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Category not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/categories/{id}/description-presets:
+    get:
+      operationId: listCategoryDescriptionPresets
+      tags: [Categories]
+      summary: Lists the saved transaction-description presets for a category.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Presets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DescriptionPreset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      operationId: createCategoryDescriptionPreset
+      tags: [Categories]
+      summary: Adds a transaction-description preset to a category. Admin only.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDescriptionPresetRequest"
+      responses:
+        "201":
+          description: Preset created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DescriptionPreset"
+        "400":
+          description: Invalid id, or empty description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Category not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: This description already has a preset for this category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/category-description-presets/{id}:
+    delete:
+      operationId: deleteCategoryDescriptionPreset
+      tags: [Categories]
+      summary: Deletes a category description preset. Admin only.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Preset deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Preset not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/category-aliases:
     get:
@@ -880,7 +1396,7 @@ paths:
     post:
       operationId: createCategoryAlias
       tags: [Categories]
-      summary: Creates a category alias.
+      summary: Creates a category alias. Admin only.
       requestBody:
         required: true
         content:
@@ -902,7 +1418,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/CategoryAlias"
         "400":
-          description: Invalid body, or parent category is itself a child.
+          description: Empty or over-long aliasName, missing parentCategoryId, or a parent that is itself a child.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Referenced record not found.
           content:
             application/json:
               schema:
@@ -913,12 +1437,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/category-aliases/{id}:
     delete:
       operationId: deleteCategoryAlias
       tags: [Categories]
-      summary: Deletes a category alias.
+      summary: Deletes a category alias. Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       responses:
@@ -930,6 +1458,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Alias not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/income-sources:
     get:
@@ -954,7 +1492,7 @@ paths:
     post:
       operationId: createIncomeSource
       tags: [IncomeSources]
-      summary: Creates an income source. includeInTemplate defaults to true if omitted.
+      summary: Creates an income source. includeInTemplate defaults to true if omitted. Admin only.
       requestBody:
         required: true
         content:
@@ -969,17 +1507,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/IncomeSource"
         "400":
-          description: Invalid body.
+          description: Empty or over-long name, or defaultAmountCents out of range.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Referenced record not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: An income source with these values already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/income-sources/{id}:
     put:
       operationId: updateIncomeSource
       tags: [IncomeSources]
-      summary: Updates an income source's name/default amount/template flag/sort order. includeInTemplate defaults to true if omitted.
+      summary: Updates an income source's name/default amount/template flag/sort order. includeInTemplate defaults to true if omitted. Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       requestBody:
@@ -992,15 +1548,33 @@ paths:
         "204":
           description: Income source updated.
         "400":
-          description: Invalid id or body.
+          description: Invalid id, empty or over-long name, or defaultAmountCents out of range.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Income source not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: An income source with these values already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
     delete:
       operationId: deleteIncomeSource
       tags: [IncomeSources]
-      summary: Permanently deletes an income source. Fails if it has any income entries or itemized transactions — archive it instead.
+      summary: Permanently deletes an income source. Fails if it has any income entries or itemized transactions - archive it instead. Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       responses:
@@ -1012,18 +1586,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "409":
-          description: Income source is referenced by income entries or transactions.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Income source not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: "`in_use`: referenced by income entries or transactions."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/income-sources/{id}/archive:
     post:
       operationId: archiveIncomeSource
       tags: [IncomeSources]
-      summary: Toggles archived state for an income source (archives if active, unarchives if archived).
+      summary: Toggles archived state for an income source (archives if active, unarchives if archived). Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       responses:
@@ -1035,6 +1619,103 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Income source not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/income-sources/{id}/description-presets:
+    get:
+      operationId: listIncomeSourceDescriptionPresets
+      tags: [IncomeSources]
+      summary: Lists the saved transaction-description presets for an income source.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Presets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DescriptionPreset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      operationId: createIncomeSourceDescriptionPreset
+      tags: [IncomeSources]
+      summary: Adds a transaction-description preset to an income source. Admin only.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDescriptionPresetRequest"
+      responses:
+        "201":
+          description: Preset created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DescriptionPreset"
+        "400":
+          description: Invalid id, or empty description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Income source not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: This description already has a preset for this income source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/income-source-description-presets/{id}:
+    delete:
+      operationId: deleteIncomeSourceDescriptionPreset
+      tags: [IncomeSources]
+      summary: Deletes an income source description preset. Admin only.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Preset deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Preset not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/pots/balances:
     get:
@@ -1080,7 +1761,7 @@ paths:
     post:
       operationId: createPot
       tags: [Pots]
-      summary: Creates a pot. kind defaults to "normal" if omitted.
+      summary: Creates a pot. kind defaults to "normal" if omitted. Admin only.
       requestBody:
         required: true
         content:
@@ -1095,23 +1776,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/Pot"
         "400":
-          description: Invalid body or targetCents out of range.
+          description: Empty or over-long name, or targetCents out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Referenced record not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Conflict creating pot (e.g. duplicate name/constraint).
+          description: A pot with these values already exists.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/pots/{id}:
     put:
       operationId: updatePot
       tags: [Pots]
-      summary: Updates a pot's name/kind/sort order/target. kind defaults to "normal" if omitted.
+      summary: Updates a pot's name/kind/sort order/target. kind defaults to "normal" if omitted. Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       requestBody:
@@ -1124,23 +1817,35 @@ paths:
         "204":
           description: Pot updated.
         "400":
-          description: Invalid id, body, or targetCents out of range.
+          description: Invalid id, empty or over-long name, or targetCents out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Pot not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Conflict updating pot.
+          description: A pot with these values already exists.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/pots/{id}/archive:
     post:
       operationId: archivePot
       tags: [Pots]
-      summary: Toggles archived state for a pot (archives if active, unarchives if archived).
+      summary: Toggles archived state for a pot. Archiving also detaches it from every not-yet-closed period's splits, handing its share to the carryover pot. Admin only.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       responses:
@@ -1152,6 +1857,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Pot not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`in_use`: the pot still receives a share of the surplus in an open period and there is no carryover pot to absorb it."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/pots/{id}/ledger:
     get:
@@ -1186,7 +1907,7 @@ paths:
     post:
       operationId: createPotEntry
       tags: [Pots]
-      summary: Adds a manual ledger entry (withdrawal/deposit/adjustment/opening_balance) to a pot. Withdrawal amounts are coerced negative.
+      summary: Adds a manual ledger entry (withdrawal/deposit/adjustment/opening_balance) to a pot. Withdrawal amounts are coerced negative. The response carries the resolved entryDate - today's date when the request omitted it.
       parameters:
         - $ref: "#/components/parameters/EntityId"
       requestBody:
@@ -1201,13 +1922,27 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PotLedgerEntry"
+                $ref: "#/components/schemas/PotEntryCreated"
         "400":
-          description: Invalid id, entryType, or amount out of range.
+          description: Invalid id, entryType, amount out of range, or entryDate not YYYY-MM-DD.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: Pot not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`year_locked`: the entry's calendar year is locked."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -1216,6 +1951,47 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /api/pot-entries/{id}:
+    patch:
+      operationId: updatePotEntry
+      tags: [Pots]
+      summary: Updates a manual pot ledger entry's amount. Withdrawal amounts are coerced negative. Automatically generated entries (allocation/carryover_out) cannot be edited.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePotEntryRequest"
+      responses:
+        "200":
+          description: Entry updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PotEntryUpdated"
+        "400":
+          description: Invalid id, amount out of range, or the entry is auto-generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`year_locked`: the entry's calendar year is locked."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
     delete:
       operationId: deletePotEntry
       tags: [Pots]
@@ -1237,6 +2013,215 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: "`year_locked`: the entry's calendar year is locked."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/kids/balances:
+    get:
+      operationId: getKidBalances
+      tags: [Kids]
+      summary: Lists non-archived kids with their ours/theirs/total ledger balances and last reported balance.
+      responses:
+        "200":
+          description: Kid balances.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KidBalance"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/kids:
+    get:
+      operationId: listKids
+      tags: [Kids]
+      summary: Lists non-archived kids, ordered by sort order.
+      responses:
+        "200":
+          description: Kids.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Kid"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/kids/{id}/reported-balance:
+    patch:
+      operationId: updateKidReportedBalance
+      tags: [Kids]
+      summary: Records the balance the bank reports for a kid, for reconciliation. Admin only. Sending a null reportedBalanceCents clears both fields.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKidReportedBalanceRequest"
+      responses:
+        "204":
+          description: Reported balance updated.
+        "400":
+          description: Invalid id, amount out of range, or reportedBalanceDate missing while reportedBalanceCents is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Kid not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/kids/{id}/ledger:
+    get:
+      operationId: getKidLedger
+      tags: [Kids]
+      summary: Lists a kid's savings ledger in date order, with running ours/theirs balances.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Kid ledger entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KidLedgerEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/kids/{id}/entries:
+    post:
+      operationId: createKidLedgerEntry
+      tags: [Kids]
+      summary: Adds a ledger entry to a kid. Withdrawal amounts are coerced negative. The response carries the resolved entryDate - today's date when the request omitted it.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKidLedgerEntryRequest"
+      responses:
+        "201":
+          description: Entry created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KidEntryCreated"
+        "400":
+          description: Invalid id, owner, entryType, amount out of range, or entryDate not YYYY-MM-DD.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Kid not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`year_locked`: the entry's calendar year is locked."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/kid-entries/{id}:
+    patch:
+      operationId: updateKidLedgerEntry
+      tags: [Kids]
+      summary: Updates a kid ledger entry's owner and amount. Withdrawal amounts are coerced negative.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKidLedgerEntryRequest"
+      responses:
+        "200":
+          description: Entry updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KidEntryUpdated"
+        "400":
+          description: Invalid id, owner, or amount out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`year_locked`: the entry's calendar year is locked."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      operationId: deleteKidLedgerEntry
+      tags: [Kids]
+      summary: Deletes a kid ledger entry.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: Entry deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`year_locked`: the entry's calendar year is locked."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/years:
     get:
@@ -1261,7 +2246,7 @@ paths:
     post:
       operationId: createYear
       tags: [Years]
-      summary: Registers a year (2000-2100), idempotent.
+      summary: Registers a year (2000-2100), idempotent. Admin only.
       requestBody:
         required: true
         content:
@@ -1287,6 +2272,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
         "500":
           description: Server/DB error.
           content:
@@ -1319,7 +2308,7 @@ paths:
     post:
       operationId: lockYear
       tags: [Years]
-      summary: Locks a year after a fresh Authentik re-authentication, once all its periods are closed.
+      summary: Locks a year after a fresh Authentik re-authentication, once all its periods are closed. Admin only.
       parameters:
         - $ref: "#/components/parameters/YearParam"
       responses:
@@ -1337,6 +2326,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           description: Year already locked, or open periods still exist.
           content:
@@ -1354,7 +2345,7 @@ paths:
     post:
       operationId: unlockYear
       tags: [Years]
-      summary: Unlocks a year after a fresh Authentik re-authentication.
+      summary: Unlocks a year after a fresh Authentik re-authentication. Admin only.
       parameters:
         - $ref: "#/components/parameters/YearParam"
       responses:
@@ -1372,8 +2363,96 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/export/years/{year}:
+    get:
+      operationId: exportYear
+      tags: [Export]
+      summary: Streams an .xlsx workbook for a year - one sheet per month, a year overview and pot balances. Admin only.
+      parameters:
+        - $ref: "#/components/parameters/YearParam"
+        - name: months
+          in: query
+          description: Comma-separated month numbers (1-12). Omitted or empty means all twelve.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workbook, sent as an attachment named home-finance-{year}.xlsx.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid year, or an unparseable/out-of-range month in the months filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/import/xlsx:
+    post:
+      operationId: importXLSX
+      tags: [Import]
+      summary: Imports a budget workbook for one year. Admin only. wipe or resetMaster additionally require a fresh Authentik re-authentication. The whole import runs in one transaction and is rolled back on failure.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The .xlsx workbook. Max 20 MB.
+                year:
+                  type: integer
+                  description: Target year, 2000-2100.
+                wipe:
+                  type: string
+                  enum: ["true", "false"]
+                  description: Delete the target year's periods before importing.
+                resetMaster:
+                  type: string
+                  enum: ["true", "false"]
+                  description: Also delete all periods of all years plus pots, categories and income sources first.
+                closeThrough:
+                  type: integer
+                  description: Close imported periods up to and including this month. 0 means close none.
+              required: [file, year]
+      responses:
+        "200":
+          description: Import finished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportReport"
+        "400":
+          description: "Malformed/oversized upload, missing file, invalid year, `parse_error` for an unreadable workbook, or `import_invalid` for a user-fixable spreadsheet problem (carries the offending month and row reference)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: "`import_error`: the import failed and was rolled back, so no data was changed; or `server_error` if the upload could not be buffered."
           content:
             application/json:
               schema:
@@ -1416,6 +2495,44 @@ components:
       schema:
         type: integer
 
+  responses:
+    BadRequest:
+      description: Invalid request (code `bad_request`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Not authenticated, or no fresh step-up re-authentication on file (code `unauthorized` / `reauth_required`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Admin role required, or the X-Requested-With CSRF header is missing (code `forbidden` / `csrf`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BodyTooLarge:
+      description: JSON body exceeded the 1 MiB limit (code `body_too_large`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Too many attempts (code `rate_limited`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServerError:
+      description: Server or database error (code `db_error` / `server_error`); the message is generic.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
   schemas:
     Error:
       type: object
@@ -1440,7 +2557,47 @@ components:
           type: string
         displayName:
           type: string
-      required: [id, email, displayName]
+        role:
+          type: string
+          enum: [admin, user]
+        avatarUrl:
+          type: [string, "null"]
+          description: Path to the avatar proxy, or null when no avatar is stored.
+      required: [id, email, displayName, role]
+
+    UpdateMeRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 200
+      required: [displayName]
+
+    User:
+      type: object
+      description: Row from GET /api/users.
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        avatarUrl:
+          type: string
+      required: [id, email, displayName, role]
+
+    UpdateUserRoleRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [admin, user]
+      required: [role]
 
     Period:
       type: object
@@ -2141,3 +3298,351 @@ components:
           type: [string, "null"]
           description: Raw JSON encoded as a string.
       required: [id, createdAt, action]
+
+    IncomeTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        periodId:
+          type: integer
+          format: int64
+        sourceId:
+          type: integer
+          format: int64
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        txDate:
+          type: [string, "null"]
+          format: date
+      required: [id, periodId, sourceId, amountCents, description]
+
+    CreateIncomeTransactionRequest:
+      type: object
+      properties:
+        sourceId:
+          type: integer
+          format: int64
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        txDate:
+          type: [string, "null"]
+          format: date
+      required: [sourceId, amountCents]
+
+    UpdateIncomeTransactionRequest:
+      type: object
+      properties:
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        txDate:
+          type: [string, "null"]
+          format: date
+      required: [amountCents]
+
+    DescriptionPreset:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        description:
+          type: string
+        sortOrder:
+          type: integer
+      required: [id, description, sortOrder]
+
+    CreateDescriptionPresetRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          description: Trimmed server-side; must not be empty.
+        sortOrder:
+          type: integer
+      required: [description]
+
+    PotEntryCreated:
+      type: object
+      description: Response from POST /api/pots/{id}/entries.
+      properties:
+        id:
+          type: integer
+          format: int64
+        potId:
+          type: integer
+          format: int64
+        entryType:
+          type: string
+          enum: [withdrawal, deposit, adjustment, opening_balance]
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        entryDate:
+          type: string
+          format: date
+          description: The date actually stored - the submitted value, or today when it was omitted.
+      required: [id, potId, entryType, amountCents, description, entryDate]
+
+    PotEntryUpdated:
+      type: object
+      description: Response from PATCH /api/pot-entries/{id}.
+      properties:
+        id:
+          type: integer
+          format: int64
+        potId:
+          type: integer
+          format: int64
+        entryType:
+          type: string
+          enum: [withdrawal, deposit, adjustment, opening_balance]
+        amountCents:
+          type: integer
+          format: int64
+      required: [id, potId, entryType, amountCents]
+
+    UpdatePotEntryRequest:
+      type: object
+      properties:
+        amountCents:
+          type: integer
+          format: int64
+          description: For an entry of type withdrawal, a positive value is coerced to negative server-side.
+      required: [amountCents]
+
+    Kid:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        archivedAt:
+          type: string
+          format: date-time
+        reportedBalanceCents:
+          type: integer
+          format: int64
+        reportedBalanceDate:
+          type: string
+          format: date
+      required: [id, name, sortOrder]
+
+    KidBalance:
+      type: object
+      description: Row from GET /api/kids/balances - non-archived kids only.
+      properties:
+        kidId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        oursCents:
+          type: integer
+          format: int64
+        theirsCents:
+          type: integer
+          format: int64
+        totalCents:
+          type: integer
+          format: int64
+        reportedBalanceCents:
+          type: integer
+          format: int64
+        reportedBalanceDate:
+          type: string
+          format: date
+      required: [kidId, name, oursCents, theirsCents, totalCents]
+
+    KidLedgerEntry:
+      type: object
+      description: Row from GET /api/kids/{id}/ledger.
+      properties:
+        id:
+          type: integer
+          format: int64
+        kidId:
+          type: integer
+          format: int64
+        owner:
+          type: string
+          enum: [ours, theirs]
+        entryType:
+          type: string
+          enum: [opening_balance, deposit, withdrawal, adjustment]
+        amountCents:
+          type: integer
+          format: int64
+        runningOursCents:
+          type: integer
+          format: int64
+        runningTheirsCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        entryDate:
+          type: string
+          format: date
+      required:
+        - id
+        - kidId
+        - owner
+        - entryType
+        - amountCents
+        - runningOursCents
+        - runningTheirsCents
+        - description
+        - entryDate
+
+    CreateKidLedgerEntryRequest:
+      type: object
+      properties:
+        owner:
+          type: string
+          enum: [ours, theirs]
+        entryType:
+          type: string
+          enum: [opening_balance, deposit, withdrawal, adjustment]
+        amountCents:
+          type: integer
+          format: int64
+          description: For entryType=withdrawal, a positive value is coerced to negative server-side.
+        description:
+          type: string
+        entryDate:
+          type: [string, "null"]
+          format: date
+          description: Defaults to today when omitted; the locked-year check is applied to this date.
+      required: [owner, entryType, amountCents]
+
+    KidEntryCreated:
+      type: object
+      description: Response from POST /api/kids/{id}/entries.
+      properties:
+        id:
+          type: integer
+          format: int64
+        kidId:
+          type: integer
+          format: int64
+        owner:
+          type: string
+          enum: [ours, theirs]
+        entryType:
+          type: string
+          enum: [opening_balance, deposit, withdrawal, adjustment]
+        amountCents:
+          type: integer
+          format: int64
+        description:
+          type: string
+        entryDate:
+          type: string
+          format: date
+          description: The date actually stored - the submitted value, or today when it was omitted.
+      required: [id, kidId, owner, entryType, amountCents, description, entryDate]
+
+    UpdateKidLedgerEntryRequest:
+      type: object
+      properties:
+        owner:
+          type: string
+          enum: [ours, theirs]
+        amountCents:
+          type: integer
+          format: int64
+      required: [owner, amountCents]
+
+    KidEntryUpdated:
+      type: object
+      description: Response from PATCH /api/kid-entries/{id}.
+      properties:
+        id:
+          type: integer
+          format: int64
+        kidId:
+          type: integer
+          format: int64
+        owner:
+          type: string
+          enum: [ours, theirs]
+        entryType:
+          type: string
+          enum: [opening_balance, deposit, withdrawal, adjustment]
+        amountCents:
+          type: integer
+          format: int64
+      required: [id, kidId, owner, entryType, amountCents]
+
+    UpdateKidReportedBalanceRequest:
+      type: object
+      properties:
+        reportedBalanceCents:
+          type: [integer, "null"]
+          format: int64
+          description: Null clears both fields.
+        reportedBalanceDate:
+          type: [string, "null"]
+          format: date
+          description: Required whenever reportedBalanceCents is set.
+
+    ImportReport:
+      type: object
+      description: Response from POST /api/import/xlsx.
+      properties:
+        months:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportMonthReport"
+        skippedSheets:
+          type: array
+          description: Sheets the parser did not recognize as a month.
+          items:
+            type: string
+        problems:
+          type: array
+          description: Rows that could not be imported (unreadable or out-of-range amount, missing category) and were skipped; everything else was imported.
+          items:
+            type: string
+        resetCounts:
+          type: object
+          description: Rows deleted per table by resetMaster, captured before the wipe. Present only when resetMaster was set.
+          additionalProperties:
+            type: integer
+            format: int64
+      required: [months]
+
+    ImportMonthReport:
+      type: object
+      properties:
+        month:
+          type: integer
+        incomeTotalCents:
+          type: integer
+          format: int64
+        expenseTotalCents:
+          type: integer
+          format: int64
+        surplusCents:
+          type: integer
+          format: int64
+        closed:
+          type: boolean
+      required: [month, incomeTotalCents, expenseTotalCents, surplusCents, closed]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Title, Skeleton, Alert, Stack, SimpleGrid, Group, Select, ActionIcon, Tooltip, Button, Chip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
@@ -71,9 +71,12 @@ export default function Trends() {
   const registeredYears = useMemo(() => registeredYearsQuery.data ?? [], [registeredYearsQuery.data])
   const allYears = useMemo(() => yearsQuery.data ?? [], [yearsQuery.data])
 
+  // Deliberately not gated on `registeredYears.length > 0`: a fresh install
+  // with no years registered yet would otherwise leave both `dashboard` and
+  // `filter` null forever, and the page stuck on its skeleton.
   useEffect(() => {
-    if (dashboard === null && registeredYears.length > 0 && categoryQuery.data) {
-      const lastYear = Math.max(...registeredYears)
+    if (dashboard === null && categoryQuery.data) {
+      const lastYear = registeredYears.length > 0 ? Math.max(...registeredYears) : new Date().getFullYear()
       const topCategoryIds = categoryQuery.data.categories.map((c) => c.id)
       const recentMonths = categoryQuery.data.entries
         .filter((e) => e.year === lastYear)
@@ -86,67 +89,67 @@ export default function Trends() {
   }, [dashboard, registeredYears, categoryQuery.data])
 
   useEffect(() => {
-    if (filter === null && registeredYears.length > 0) {
+    if (filter === null && !registeredYearsQuery.isLoading) {
       setFilter(loadTrendsFilter(registeredYears))
     }
-  }, [filter, registeredYears])
+  }, [filter, registeredYears, registeredYearsQuery.isLoading])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
   )
 
-  if (yearsQuery.isLoading || categoryQuery.isLoading || registeredYearsQuery.isLoading || dashboard === null || filter === null) {
-    return <Skeleton h={400} />
-  }
-  if (yearsQuery.error || categoryQuery.error || registeredYearsQuery.error) return <Alert color="red">{t('common.error')}</Alert>
-  if (!categoryQuery.data) return null
+  const updateFilter = useCallback((next: TrendsFilter) => {
+    setFilter(next)
+    saveTrendsFilter(next)
+  }, [])
+
+  const commitDashboard = useCallback((update: (prev: Widget[]) => Widget[]) => {
+    setDashboard((prev) => {
+      if (prev === null) return prev
+      const next = update(prev)
+      saveDashboard(next)
+      return next
+    })
+  }, [])
+
+  const handleSetVisible = useCallback((id: string, visible: boolean) => {
+    commitDashboard((prev) => prev.map((w) => (w.id === id ? { ...w, visible } : w)))
+  }, [commitDashboard])
+
+  const handleDeleteWidget = useCallback((id: string) => {
+    commitDashboard((prev) => prev.filter((w) => w.id !== id))
+  }, [commitDashboard])
+
+  // Reordering only moves the *visible* widgets among themselves; hidden ones
+  // keep their original slots so re-showing one later drops it back where it
+  // was instead of at the end of the grid.
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    commitDashboard((prev) => {
+      const visible = prev.filter((w) => w.visible)
+      const oldIndex = visible.findIndex((w) => w.id === active.id)
+      const newIndex = visible.findIndex((w) => w.id === over.id)
+      if (oldIndex === -1 || newIndex === -1) return prev
+      const reordered = arrayMove(visible, oldIndex, newIndex)
+      let next = 0
+      return prev.map((w) => (w.visible ? reordered[next++] : w))
+    })
+  }, [commitDashboard])
+
+  const handleAddWidget = useCallback((config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => {
+    commitDashboard((prev) => [...prev, { ...newWidget(config), width, height }])
+  }, [commitDashboard])
+
+  const handleSaveWidgetConfig = useCallback((config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => {
+    if (!editingWidgetId) return
+    commitDashboard((prev) => prev.map((w) => (w.id === editingWidgetId ? { ...w, config, width, height } : w)))
+  }, [commitDashboard, editingWidgetId])
 
   const catData = categoryQuery.data
 
-  const updateFilter = (next: TrendsFilter) => {
-    setFilter(next)
-    saveTrendsFilter(next)
-  }
-
-  const updateDashboard = (next: Widget[]) => {
-    setDashboard(next)
-    saveDashboard(next)
-  }
-
-  const visibleWidgets = dashboard.filter((w) => w.visible)
-  const hiddenWidgets = dashboard.filter((w) => !w.visible)
-
-  const handleSetVisible = (id: string, visible: boolean) => {
-    updateDashboard(dashboard.map((w) => (w.id === id ? { ...w, visible } : w)))
-  }
-
-  const handleDeleteWidget = (id: string) => {
-    updateDashboard(dashboard.filter((w) => w.id !== id))
-  }
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const oldIndex = visibleWidgets.findIndex((w) => w.id === active.id)
-    const newIndex = visibleWidgets.findIndex((w) => w.id === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
-    const reordered = arrayMove(visibleWidgets, oldIndex, newIndex)
-    updateDashboard([...reordered, ...hiddenWidgets])
-  }
-
-  const handleAddWidget = (config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => {
-    updateDashboard([...dashboard, { ...newWidget(config), width, height }])
-  }
-
-  const handleSaveWidgetConfig = (config: WidgetConfig, width: WidgetWidth, height: WidgetHeight) => {
-    if (!editingWidgetId) return
-    updateDashboard(dashboard.map((w) => (w.id === editingWidgetId ? { ...w, config, width, height } : w)))
-  }
-
-  const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
-
-  const renderWidgetBody = (config: WidgetConfig) => {
+  const renderWidgetBody = useCallback((config: WidgetConfig) => {
     // Self-contained — each has its own year/month(s), doesn't depend on the
     // page-level year filter at all.
     if (config.type === 'monthCompare') {
@@ -158,9 +161,24 @@ export default function Trends() {
     if (config.type === 'monthAcrossYears') {
       return <MonthAcrossYearsWidget month={config.month} years={config.years} chartKind={config.chartKind} />
     }
+    if (!filter || !catData) return null
     if (config.type === 'kpi') return <KpiWidget metric={config.metric} filter={filter} allYears={allYears} />
     return <CategoryWidget categoryIds={config.categoryIds} chartKind={config.chartKind} filter={filter} catData={catData} />
+  }, [filter, catData, allYears])
+
+  // Error first: `registeredYears` stays empty when /api/years fails, which
+  // used to leave the page on a skeleton the Alert below could never replace.
+  if (yearsQuery.error || categoryQuery.error || registeredYearsQuery.error) return <Alert color="red">{t('common.error')}</Alert>
+  if (yearsQuery.isLoading || categoryQuery.isLoading || registeredYearsQuery.isLoading) {
+    return <Skeleton h={400} />
   }
+  if (!catData) return null
+  if (dashboard === null || filter === null) return <Skeleton h={400} />
+
+  const visibleWidgets = dashboard.filter((w) => w.visible)
+  const hiddenWidgets = dashboard.filter((w) => !w.visible)
+  const editingWidget = dashboard.find((w) => w.id === editingWidgetId)
+  const yearOptions = registeredYears.length > 0 ? registeredYears.map(String) : [String(filter.year)]
 
   return (
     <Stack gap="xl">
@@ -176,7 +194,7 @@ export default function Trends() {
       <Group justify="space-between" wrap="wrap" align="flex-end">
         <Select
           label={t('settings.year')}
-          data={registeredYears.map(String)}
+          data={yearOptions}
           value={String(filter.year)}
           onChange={(v) => v && updateFilter({ year: Number(v) })}
           w={isMobile ? '100%' : 160}

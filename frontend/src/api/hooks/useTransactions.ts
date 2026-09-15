@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
+import { invalidatePeriodAggregates } from '../../lib/queryInvalidation'
 import type { Transaction } from '../types'
 
 export function useTransactions(periodId: number, categoryId?: number) {
@@ -19,6 +20,8 @@ export function useCreateTransaction(periodId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['category-transaction-descriptions'] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -31,6 +34,8 @@ export function useUpdateTransaction(periodId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['category-transaction-descriptions'] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -42,6 +47,8 @@ export function useDeleteTransaction(periodId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
+      qc.invalidateQueries({ queryKey: ['category-transaction-descriptions'] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }

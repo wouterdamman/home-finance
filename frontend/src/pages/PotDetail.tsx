@@ -14,7 +14,8 @@ import dayjs from 'dayjs'
 import { usePots, usePotLedger, useCreatePotEntry, useUpdatePotEntry, useDeletePotEntry } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
-import { parseToCents } from '../lib/money'
+import { parseToCents, formatCents, formatCentsCompact } from '../lib/money'
+import { niceAxisTicksSigned } from '../lib/chartAxis'
 import { getErrorMessage } from '../api/client'
 import { notifications } from '@mantine/notifications'
 import HeroStat from '../components/mobile/HeroStat'
@@ -70,11 +71,23 @@ export default function PotDetail() {
     date: e.entryDate ? dayjs(e.entryDate).format('DD-MM') : '',
     [t('pots.runningBalance')]: e.runningBalance / 100,
   }))
+  const chartValues = chartData.map((d) => Number(d[t('pots.runningBalance')]) || 0)
+  const chartTicks = niceAxisTicksSigned(Math.min(...chartValues, 0), Math.max(...chartValues, 0))
+  const chartYAxisProps = {
+    tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale),
+    width: 56,
+    ticks: chartTicks,
+    domain: [chartTicks[0], chartTicks[chartTicks.length - 1]] as [number, number],
+  }
+  const chartXAxisProps = { interval: Math.max(0, Math.ceil(chartData.length / 6) - 1) }
 
   const handleAdd = () => {
     if (!entryType) return
     const cents = parseCents(amount)
-    if (!cents) return
+    if (!cents) {
+      notifications.show({ color: 'red', message: t('pots.amountRequired') })
+      return
+    }
     createEntry.mutate(
       { entryType, amountCents: cents, description, entryDate: entryDate ?? undefined },
       {
@@ -84,9 +97,12 @@ export default function PotDetail() {
     )
   }
 
-  const startEditEntry = (entryId: number, amountCents: number) => {
+  // The server re-applies the negative sign only for withdrawals; adjustment /
+  // opening_balance are stored exactly as sent, so stripping the sign here
+  // would silently flip a negative entry on an otherwise unchanged save.
+  const startEditEntry = (entryId: number, entryType: string, amountCents: number) => {
     setEditingEntryId(entryId)
-    setEditAmount(Math.abs(amountCents) / 100)
+    setEditAmount((entryType === 'withdrawal' ? Math.abs(amountCents) : amountCents) / 100)
   }
 
   const saveEditEntry = () => {
@@ -147,7 +163,9 @@ export default function PotDetail() {
               dataKey="date"
               series={[{ name: t('pots.runningBalance'), color: palette.surplus }]}
               curveType="linear"
-              valueFormatter={(v) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(v)}
+              valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+              xAxisProps={chartXAxisProps}
+              yAxisProps={chartYAxisProps}
             />
           </Paper>
         )}
@@ -174,7 +192,7 @@ export default function PotDetail() {
                   </Stack>
                 }
                 chevron={MANUAL_ENTRY_TYPES.includes(e.entryType)}
-                onClick={MANUAL_ENTRY_TYPES.includes(e.entryType) ? () => startEditEntry(e.id, e.amountCents) : undefined}
+                onClick={MANUAL_ENTRY_TYPES.includes(e.entryType) ? () => startEditEntry(e.id, e.entryType, e.amountCents) : undefined}
                 swipeAction={MANUAL_ENTRY_TYPES.includes(e.entryType) ? {
                   label: <IconTrash size={18} />,
                   destructive: true,
@@ -270,7 +288,9 @@ export default function PotDetail() {
             dataKey="date"
             series={[{ name: t('pots.runningBalance'), color: palette.surplus }]}
             curveType="linear"
-            valueFormatter={(v) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(v)}
+            valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+            xAxisProps={chartXAxisProps}
+            yAxisProps={chartYAxisProps}
           />
         </Paper>
       )}
@@ -365,7 +385,7 @@ export default function PotDetail() {
                   <Table.Td>
                     {MANUAL_ENTRY_TYPES.includes(e.entryType) && editingEntryId !== e.id && (
                       <Group gap={4} wrap="nowrap">
-                        <ActionIcon size="sm" variant="subtle" aria-label={t('common.edit')} onClick={() => startEditEntry(e.id, e.amountCents)}><IconPencil size={14} /></ActionIcon>
+                        <ActionIcon size="sm" variant="subtle" aria-label={t('common.edit')} onClick={() => startEditEntry(e.id, e.entryType, e.amountCents)}><IconPencil size={14} /></ActionIcon>
                         <ActionIcon color="red" size="sm" variant="subtle" aria-label={t('common.delete')} onClick={() => handleDelete(e.id)}><IconTrash size={14} /></ActionIcon>
                       </Group>
                     )}

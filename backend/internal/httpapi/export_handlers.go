@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -82,7 +83,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 		var status *string
 		if err := s.pool.QueryRow(ctx, `SELECT id, status FROM periods WHERE year=$1 AND month=$2`, year, month).
 			Scan(&periodID, &status); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			Error(w, http.StatusInternalServerError, "db_error", err.Error())
+			dbError(w, "export: load period", err)
 			return
 		}
 
@@ -91,7 +92,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 			var err error
 			mt.IncomeTotalCents, mt.ExpenseTotalCents, err = s.writeMonthSheet(ctx, f, headerStyle, year, month, *periodID)
 			if err != nil {
-				Error(w, http.StatusInternalServerError, "db_error", err.Error())
+				dbError(w, "export: write month sheet", err)
 				return
 			}
 		}
@@ -100,7 +101,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 
 	writeYearOverviewSheet(f, headerStyle, year, totals)
 	if err := s.writePotBalancesSheet(ctx, f, headerStyle); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "export: write pot balances", err)
 		return
 	}
 
@@ -111,7 +112,8 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	if _, err := f.WriteTo(w); err != nil {
-		Error(w, http.StatusInternalServerError, "export_error", err.Error())
+		// The response is already streaming by now, so this can only be logged.
+		slog.Error("export: write workbook", "err", err, "year", year)
 		return
 	}
 }
@@ -138,6 +140,15 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row++
 
+	// Carryover entries are included deliberately, so the sheet's Totaal
+	// inkomsten and Surplus match what the app shows for the month and the
+	// listed rows actually add up to the printed total. They must not be
+	// re-imported as ordinary income, though — closing the previous period
+	// generates them, so a reimport would write a second copy on top of the
+	// one close creates. That is handled on the read side instead: both
+	// parsers skip rows whose label matches isCarryoverLabel, and the label
+	// ("Doorlopen maand <maand>", period_handlers.go) is generated server-side
+	// and never user-editable, so the guard cannot be dodged by renaming.
 	incRows, err := s.pool.Query(ctx, `
 		SELECT COALESCE(src.name, ie.label, ''), ie.amount_cents, COALESCE(src.is_itemized,false),
 		  COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
@@ -158,7 +169,7 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		if itemized {
 			effective = txCents
 		}
-		f.SetCellValue(sheetName, cellRef("A", row), label)
+		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
 		f.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
 		incomeTotal += effective
 		row++
@@ -210,7 +221,7 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 			typeLabel = "Boekingen"
 			trackedCats = append(trackedCats, trackedCat{label: label})
 		}
-		f.SetCellValue(sheetName, cellRef("A", row), label)
+		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
 		f.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
 		f.SetCellValue(sheetName, cellRef("C", row), typeLabel)
 		expenseTotal += effective
@@ -262,8 +273,8 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 				date = txDate.Format("2006-01-02")
 			}
 			f.SetCellValue(sheetName, cellRef("A", row), date)
-			f.SetCellValue(sheetName, cellRef("B", row), catLabel)
-			f.SetCellValue(sheetName, cellRef("C", row), desc)
+			f.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(catLabel))
+			f.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(desc))
 			f.SetCellValue(sheetName, cellRef("D", row), float64(cents)/100)
 			row++
 		}
@@ -273,10 +284,80 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		}
 	}
 
+	// ── Line items of itemized income sources ───────────────
+	// The income section above collapses an itemized source to its summed
+	// total; without these rows a reimport recreates the source as itemized
+	// with zero line items, and EffectiveIncomeCentsSQL then values it at 0.
+	itxRows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(src.name,''), it.description, it.amount_cents, it.tx_date
+		FROM income_transactions it LEFT JOIN income_sources src ON src.id = it.source_id
+		WHERE it.period_id=$1 ORDER BY it.tx_date NULLS LAST, it.id`, periodID)
+	if err != nil {
+		return 0, 0, err
+	}
+	type incomeTxLine struct {
+		source, desc, date string
+		cents              int64
+	}
+	var incomeTxLines []incomeTxLine
+	for itxRows.Next() {
+		var line incomeTxLine
+		var txDate *time.Time
+		if err := itxRows.Scan(&line.source, &line.desc, &line.cents, &txDate); err != nil {
+			itxRows.Close()
+			return 0, 0, err
+		}
+		if txDate != nil {
+			line.date = txDate.Format("2006-01-02")
+		}
+		incomeTxLines = append(incomeTxLines, line)
+	}
+	itxRows.Close()
+	if err := itxRows.Err(); err != nil {
+		return 0, 0, err
+	}
+
+	if len(incomeTxLines) > 0 {
+		row++ // blank separator row
+		f.SetCellValue(sheetName, cellRef("A", row), "Inkomsten transacties")
+		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
+		row++
+		f.SetCellValue(sheetName, cellRef("A", row), "Datum")
+		f.SetCellValue(sheetName, cellRef("B", row), "Bron")
+		f.SetCellValue(sheetName, cellRef("C", row), "Omschrijving")
+		f.SetCellValue(sheetName, cellRef("D", row), "Bedrag")
+		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
+		row++
+		for _, line := range incomeTxLines {
+			f.SetCellValue(sheetName, cellRef("A", row), line.date)
+			f.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(line.source))
+			f.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(line.desc))
+			f.SetCellValue(sheetName, cellRef("D", row), float64(line.cents)/100)
+			row++
+		}
+	}
+
 	f.SetColWidth(sheetName, "A", "A", 28)
 	f.SetColWidth(sheetName, "B", "D", 16)
 
 	return incomeTotal, expenseTotal, nil
+}
+
+// sanitizeExportCell defuses spreadsheet formula injection in user-entered
+// text. excelize writes these as string-typed cells, so Excel itself won't
+// evaluate them — but "Save As → CSV", the usual way this workbook gets shared
+// with an accountant, drops the type and a leading =/+/-/@ (or a leading tab /
+// carriage return) turns the cell back into a formula in whatever opens it
+// next. A leading apostrophe is the standard inert prefix.
+func sanitizeExportCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 func writeYearOverviewSheet(f *excelize.File, headerStyle int, year int, totals []monthTotal) {
@@ -346,7 +427,7 @@ func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, he
 		if kind == "carryover" {
 			kindLabel = "Doorlopend"
 		}
-		f.SetCellValue(sheetName, cellRef("A", row), name)
+		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(name))
 		f.SetCellValue(sheetName, cellRef("B", row), kindLabel)
 		f.SetCellValue(sheetName, cellRef("C", row), float64(balance)/100)
 		row++

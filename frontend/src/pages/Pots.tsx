@@ -44,7 +44,7 @@ export default function Pots() {
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
         {savingsPots.map((p) => {
           const hasTarget = p.targetCents != null && p.targetCents > 0
-          const progress = hasTarget ? Math.min(100, Math.max(0, (p.balanceCents / p.targetCents!) * 100)) : null
+          const progress = hasTarget ? Math.max(0, (p.balanceCents / p.targetCents!) * 100) : null
           return (
             <Paper key={p.potId} component={Link} to={`/pots/${p.potId}`} shadow="xs" p="md" withBorder style={{ textDecoration: 'none', color: 'inherit' }}>
               <Stack gap="xs">
@@ -54,10 +54,10 @@ export default function Pots() {
                 </Group>
                 {hasTarget && (
                   <>
-                    <Progress value={progress!} color={progress! >= 100 ? 'green' : 'blue'} />
+                    <Progress value={Math.min(100, progress!)} color={progress! >= 100 ? 'green' : 'blue'} />
                     <Group justify="space-between" wrap="nowrap">
                       <Text size="xs" c="dimmed">
-                        {t('pots.targetProgress', { percent: Math.round(progress!) })}
+                        {t('pots.targetProgress', { percent: Math.floor(progress!) })}
                         {' · '}
                         <MoneyText cents={p.targetCents!} size="xs" span />
                       </Text>

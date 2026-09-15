@@ -10,7 +10,7 @@ import (
 func (s *Server) handleListYears(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.pool.Query(r.Context(), `SELECT year FROM years ORDER BY year`)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "listYears", err)
 		return
 	}
 	defer rows.Close()
@@ -18,13 +18,13 @@ func (s *Server) handleListYears(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var y int
 		if err := rows.Scan(&y); err != nil {
-			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			dbError(w, "listYears.scan", err)
 			return
 		}
 		out = append(out, y)
 	}
 	if err := rows.Err(); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "listYears", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -35,7 +35,7 @@ func (s *Server) handleCreateYear(w http.ResponseWriter, r *http.Request) {
 		Year int `json:"year"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		badRequest(w, err)
 		return
 	}
 	if body.Year < 2000 || body.Year > 2100 {
@@ -43,9 +43,10 @@ func (s *Server) handleCreateYear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.pool.Exec(r.Context(), `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, body.Year); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "createYear", err)
 		return
 	}
+	s.auditLog(r.Context(), "year.create", "year", int64(body.Year), nil)
 	JSON(w, http.StatusCreated, map[string]any{"year": body.Year})
 }
 
@@ -61,20 +62,31 @@ func (s *Server) handleLockYear(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	if locked, _ := isYearLocked(ctx, s.pool, year); locked {
+	locked, err := isYearLocked(ctx, s.pool, year)
+	if err != nil {
+		dbError(w, "isYearLocked", err)
+		return
+	}
+	if locked {
 		Error(w, http.StatusConflict, "year_already_locked", "year is already locked")
 		return
 	}
 
+	// Discarding this error used to leave openCount at 0, locking a year with
+	// open periods inside it — which then rejects every write and needs an
+	// admin plus a fresh reauth to undo.
 	var openCount int
-	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM periods WHERE year=$1 AND status='open'`, year).Scan(&openCount)
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM periods WHERE year=$1 AND status='open'`, year).Scan(&openCount); err != nil {
+		dbError(w, "countOpenPeriods", err)
+		return
+	}
 	if openCount > 0 {
 		Error(w, http.StatusConflict, "open_periods_exist", "close all periods before locking the year")
 		return
 	}
 
 	if _, err := s.pool.Exec(ctx, `INSERT INTO locked_years (year) VALUES ($1) ON CONFLICT DO NOTHING`, year); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "lockYear", err)
 		return
 	}
 	s.auditLog(ctx, "year.lock", "year", int64(year), nil)
@@ -93,7 +105,7 @@ func (s *Server) handleUnlockYear(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	if _, err := s.pool.Exec(ctx, `DELETE FROM locked_years WHERE year=$1`, year); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "unlockYear", err)
 		return
 	}
 	s.auditLog(ctx, "year.unlock", "year", int64(year), nil)

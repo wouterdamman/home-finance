@@ -36,10 +36,17 @@ func NewSessionManager(pool *pgxpool.Pool, secure bool) *scs.SessionManager {
 	store.startCleanup(sessionCleanupInterval)
 	sm.Store = store
 	sm.Lifetime = 7 * 24 * time.Hour
+	// Absolute lifetime alone lets a session abandoned on a shared or
+	// stolen device stay valid for the full week; IdleTimeout expires it a
+	// day after the last request instead.
+	sm.IdleTimeout = 24 * time.Hour
 	sm.Cookie.HttpOnly = true
 	sm.Cookie.SameSite = http.SameSiteLaxMode
 	sm.Cookie.Secure = secure
-	sm.Cookie.Name = "hf_session"
+	// The __Host- prefix makes the browser refuse the cookie unless it is
+	// Secure, Path=/ and has no Domain — which blocks a compromised sibling
+	// subdomain from tossing in a session cookie of its own.
+	sm.Cookie.Name = "__Host-hf_session"
 	return sm
 }
 

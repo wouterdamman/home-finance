@@ -2,10 +2,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { api } from '../client'
 import i18n from '../../i18n/index'
+import { invalidatePeriodAggregates } from '../../lib/queryInvalidation'
 import type { PotBalance, PotLedgerEntry, KidBalance, KidLedgerEntry } from '../types'
 
 function showSaved() {
   notifications.show({ color: 'green', message: i18n.t('common.saved') })
+}
+
+// categories.parent_id drives the category_rollup view behind the period
+// overview, and default_amount_cents is returned as each budget line's
+// targetCents — invalidating only ['categories'] leaves every derived read
+// stale for the query staleTime.
+function invalidateDerivedTotals(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['period'] })
+  invalidatePeriodAggregates(qc)
 }
 
 export interface Category {
@@ -68,7 +78,7 @@ export function useUpdateCategory() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; parentId?: number | null; autofillActual?: boolean }) =>
       api.put(`/api/categories/${id}`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); invalidateDerivedTotals(qc); showSaved() },
   })
 }
 
@@ -92,7 +102,7 @@ export function useDeleteCategoryAlias() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/api/category-aliases/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['category-aliases'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['category-aliases'] }); showSaved() },
   })
 }
 
@@ -100,7 +110,7 @@ export function useArchiveCategory() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/categories/${id}/archive`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); showSaved() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); invalidateDerivedTotals(qc); showSaved() },
   })
 }
 
@@ -125,7 +135,7 @@ export function useUpdateIncomeSource() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number; name: string; defaultAmountCents: number; isItemized: boolean; includeInTemplate: boolean; sortOrder: number; autofillActual?: boolean }) =>
       api.put(`/api/income-sources/${id}`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); invalidateDerivedTotals(qc); showSaved() },
   })
 }
 
@@ -133,7 +143,7 @@ export function useArchiveIncomeSource() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/income-sources/${id}/archive`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); showSaved() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['income-sources'] }); invalidateDerivedTotals(qc); showSaved() },
   })
 }
 

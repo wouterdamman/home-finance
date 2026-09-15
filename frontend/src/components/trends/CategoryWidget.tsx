@@ -1,10 +1,11 @@
+import { memo } from 'react'
 import { LineChart, BarChart } from '@mantine/charts'
 import { useTranslation } from 'react-i18next'
 import type { TrendsFilter } from '../../lib/trendsFilter'
 import type { CategoryTotals } from '../../api/types'
 import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
-import { niceAxisTicks } from '../../lib/chartAxis'
+import { niceAxisTicks, categoryTickInterval } from '../../lib/chartAxis'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
 
@@ -18,7 +19,7 @@ interface Props {
   catData: CategoryTotals
 }
 
-export default function CategoryWidget({ categoryIds, chartKind, filter, catData }: Props) {
+function CategoryWidget({ categoryIds, chartKind, filter, catData }: Props) {
   const { i18n } = useTranslation()
   const months = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
@@ -41,6 +42,7 @@ export default function CategoryWidget({ categoryIds, chartKind, filter, catData
   const series = selectedCategories.map((cat, idx) => ({ name: cat.name, color: palette.categorical[idx] }))
   const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
+  const xInterval = categoryTickInterval(data.length)
 
   return (
     <>
@@ -57,9 +59,14 @@ export default function CategoryWidget({ categoryIds, chartKind, filter, catData
           withLegend={false}
           valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
           series={series}
+          xAxisProps={{ interval: xInterval }}
           yAxisProps={{ tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks, domain: [0, ticks[ticks.length - 1]] }}
         />
       </div>
     </>
   )
 }
+
+// Memoized so toggling edit mode / opening the config modal / changing the
+// page's year Select doesn't re-render and re-lay-out every chart on the grid.
+export default memo(CategoryWidget)

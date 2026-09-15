@@ -1,11 +1,13 @@
 package importer
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -14,14 +16,33 @@ var sheetRe = regexp.MustCompile(`(?i)^(\d+)[-\s]+(\d{2})[-\s]+(overview|details
 
 var sheetKindNormalize = map[string]string{"overview": "Overview", "details": "Details"}
 
+// openOpts bounds what excelize inflates from an uploaded workbook. Its
+// default UnzipSizeLimit is ~16GB and readFile pre-allocates an entry's
+// *declared* uncompressed size, so a 15MB upload declaring a 15GB entry would
+// OOM the process long before the 20MB upload cap ever mattered.
+var openOpts = excelize.Options{UnzipSizeLimit: 100 << 20, UnzipXMLSizeLimit: 16 << 20}
+
+func openWorkbook(path string) (*excelize.File, error) {
+	f, err := excelize.OpenFile(path, openOpts)
+	if err != nil {
+		return nil, fmt.Errorf("open xlsx: %w", err)
+	}
+	return f, nil
+}
+
 type SheetData struct {
-	Year    int
-	Month   int
-	Kind    string // "Overview" or "Details"
-	Incomes []IncomeRow
-	Lines   []BudgetLineRow
-	Splits  []SplitRow
-	Txs     []TxRow
+	Year      int
+	Month     int
+	Kind      string // "Overview" or "Details"
+	Incomes   []IncomeRow
+	Lines     []BudgetLineRow
+	Splits    []SplitRow
+	Txs       []TxRow
+	IncomeTxs []IncomeTxRow
+	// Problems lists cells this sheet carried that could not be imported
+	// (unreadable or out-of-range amounts). They are surfaced in the import
+	// Report instead of being silently turned into a zero or dropped.
+	Problems []string
 }
 
 type IncomeRow struct {
@@ -50,13 +71,25 @@ type TxRow struct {
 	Date string
 }
 
+// IncomeTxRow is one line item of an itemized income source, the income-side
+// mirror of TxRow. Only this app's own export carries them.
+type IncomeTxRow struct {
+	SourceLabel string
+	AmountCents int64
+	Description string
+	Date        string
+}
+
 func ParseXLSX(path string) ([]SheetData, []string, error) {
-	f, err := excelize.OpenFile(path)
+	f, err := openWorkbook(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open xlsx: %w", err)
+		return nil, nil, err
 	}
 	defer f.Close()
+	return parseLegacyWorkbook(f)
+}
 
+func parseLegacyWorkbook(f *excelize.File) ([]SheetData, []string, error) {
 	var sheets []SheetData
 	var skipped []string
 	for _, sheet := range f.GetSheetList() {
@@ -75,9 +108,9 @@ func ParseXLSX(path string) ([]SheetData, []string, error) {
 		sd := SheetData{Year: year, Month: monthNum, Kind: kind}
 		switch kind {
 		case "Overview":
-			sd.Incomes, sd.Lines, sd.Splits = parseOverview(f, sheet)
+			sd.Incomes, sd.Lines, sd.Splits, sd.Problems = parseOverview(f, sheet)
 		case "Details":
-			sd.Txs = parseDetails(f, sheet)
+			sd.Txs, sd.Problems = parseDetails(f, sheet)
 		}
 		sheets = append(sheets, sd)
 	}
@@ -89,10 +122,28 @@ func cell(f *excelize.File, sheet, col string, row int) string {
 	return strings.TrimSpace(v)
 }
 
-func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow, []SplitRow) {
+// isCarryoverLabel reports whether an income label is one of the
+// "Doorlopen maand <maand>" entries that closing a period generates. They must
+// never be re-imported as ordinary income: close writes its own copy, so an
+// imported one double-counts the carryover and invents an income source for it.
+func isCarryoverLabel(label string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(label)), "doorlopen maand")
+}
+
+func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow, []SplitRow, []string) {
 	var incomes []IncomeRow
 	var lines []BudgetLineRow
 	var splits []SplitRow
+	var problems []string
+
+	// A legacy sheet is a fixed-column scan over rows that are mostly not data,
+	// so an unreadable cell is normal and stays silent; only a value the app
+	// cannot store is worth reporting.
+	report := func(col string, row int, err error) {
+		if errors.Is(err, errAmountRange) {
+			problems = append(problems, fmt.Sprintf("%s!%s%d: %v", sheet, col, row, err))
+		}
+	}
 
 	incomeDone := false
 	for row := 2; row <= 60; row++ {
@@ -109,8 +160,12 @@ func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow
 				incomeDone = true
 			} else if a != "" && b != "" {
 				label := strings.TrimSpace(a)
-				if !strings.HasPrefix(strings.ToLower(label), "doorlopen maand") {
-					if cents := parseCents(b); cents > 0 {
+				if !isCarryoverLabel(label) {
+					cents, err := parseCents(b)
+					switch {
+					case err != nil:
+						report("B", row, err)
+					case cents > 0:
 						incomes = append(incomes, IncomeRow{Label: label, AmountCents: cents})
 					}
 				}
@@ -121,7 +176,11 @@ func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow
 		if c != "" && d != "" {
 			dl := strings.ToLower(d)
 			if !strings.Contains(dl, "totaal af") && !strings.Contains(dl, "totaal over") {
-				if cents := parseCents(c); cents > 0 {
+				cents, err := parseCents(c)
+				switch {
+				case err != nil:
+					report("C", row, err)
+				case cents > 0:
 					lines = append(lines, BudgetLineRow{Label: strings.TrimSpace(d), AmountCents: cents})
 				}
 			}
@@ -132,7 +191,10 @@ func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow
 			name := strings.TrimSpace(ii)
 			if !strings.EqualFold(name, "totaal") {
 				pct := parseFloat(h)
-				if pct > 0 {
+				switch {
+				case math.IsNaN(pct) || math.IsInf(pct, 0):
+					problems = append(problems, fmt.Sprintf("%s!H%d: pot split percentage %q is not a finite number", sheet, row, h))
+				case pct > 0:
 					splits = append(splits, SplitRow{
 						PotName:    normalizePotName(name),
 						Percentage: pct * 100,
@@ -141,10 +203,10 @@ func parseOverview(f *excelize.File, sheet string) ([]IncomeRow, []BudgetLineRow
 			}
 		}
 	}
-	return incomes, lines, splits
+	return incomes, lines, splits, problems
 }
 
-func parseDetails(f *excelize.File, sheet string) []TxRow {
+func parseDetails(f *excelize.File, sheet string) ([]TxRow, []string) {
 	type catDef struct {
 		name    string
 		valCol  string
@@ -171,6 +233,7 @@ func parseDetails(f *excelize.File, sheet string) []TxRow {
 	}
 
 	var txs []TxRow
+	var problems []string
 	for _, cat := range cats {
 		for row := 2; row <= 300; row++ {
 			valStr := cell(f, sheet, cat.valCol, row)
@@ -181,7 +244,13 @@ func parseDetails(f *excelize.File, sheet string) []TxRow {
 			if valStr == "" {
 				continue
 			}
-			cents := parseCents(valStr)
+			cents, err := parseCents(valStr)
+			if err != nil {
+				if errors.Is(err, errAmountRange) {
+					problems = append(problems, fmt.Sprintf("%s!%s%d: %v", sheet, cat.valCol, row, err))
+				}
+				continue
+			}
 			if cents > 0 {
 				desc := strings.TrimSpace(descStr)
 				if desc == "" {
@@ -195,7 +264,7 @@ func parseDetails(f *excelize.File, sheet string) []TxRow {
 			}
 		}
 	}
-	return txs
+	return txs, problems
 }
 
 func normalizePotName(name string) string {
@@ -209,21 +278,83 @@ func normalizePotName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-func parseCents(s string) int64 {
-	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, " ", "")
-	// Handle scientific notation like "2.5e-02"
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		// Try comma as decimal
-		s2 := strings.ReplaceAll(s, ".", "")
-		s2 = strings.ReplaceAll(s2, ",", ".")
-		f, err = strconv.ParseFloat(s2, 64)
-		if err != nil {
-			return 0
+// maxImportAmountCents mirrors httpapi.maxAmountCents (1,000,000.00 in the
+// app's currency). The importer cannot reference that constant directly
+// (httpapi imports this package), but a cell must obey the same bound as an
+// amount typed into the UI: "1e300" otherwise saturates int64, and every
+// aggregate over that month then fails with "bigint out of range", leaving it
+// permanently unloadable with no UI path to delete the row.
+const maxImportAmountCents = 100_000_000
+
+var (
+	// errEmptyAmount means the cell was blank — usually "not a data row",
+	// which callers distinguish from a cell that held something unreadable.
+	errEmptyAmount = errors.New("empty amount cell")
+	// errAmountRange means the cell held a number the app cannot store.
+	errAmountRange = errors.New("amount out of range")
+)
+
+// amountRe finds the numeric core of a cell, skipping any currency prefix
+// ("€ 1.234,56") or suffix ("1 234,56 EUR").
+var amountRe = regexp.MustCompile(`[0-9][0-9.,]*(?:[eE][-+]?[0-9]+)?`)
+
+// parseCents converts a spreadsheet cell to integer cents. GetRows returns
+// *formatted* values, so the same amount reaches us as "1234.56", "1.234,56"
+// or "€ 1 234,56" depending on what the user's Excel locale wrote: whichever
+// of "." or "," comes last is the decimal separator, every other one is a
+// thousands separator. Returns an error rather than 0 for anything it cannot
+// read, so a bad cell is reported instead of silently importing as zero — and
+// bounds the result, so an absurd value can't poison the month's aggregates.
+func parseCents(s string) (int64, error) {
+	t := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
 		}
+		return r
+	}, s)
+	if t == "" {
+		return 0, errEmptyAmount
 	}
-	return int64(math.Round(f * 100))
+
+	loc := amountRe.FindStringIndex(t)
+	if loc == nil {
+		return 0, fmt.Errorf("could not read %q as an amount", s)
+	}
+	num := t[loc[0]:loc[1]]
+	// A minus can sit before the currency symbol ("-€ 5,00") as easily as
+	// after it, and accountants' parentheses mean the same thing.
+	neg := strings.ContainsAny(t[:loc[0]], "-−") ||
+		(strings.HasPrefix(t, "(") && strings.HasSuffix(t, ")"))
+
+	mantissa, exp := num, ""
+	if i := strings.IndexAny(num, "eE"); i >= 0 {
+		mantissa, exp = num[:i], num[i:]
+	}
+	intPart, frac := mantissa, ""
+	if i := strings.LastIndexAny(mantissa, ".,"); i >= 0 {
+		intPart, frac = mantissa[:i], mantissa[i+1:]
+	}
+	intPart = strings.NewReplacer(".", "", ",", "").Replace(intPart)
+	if intPart == "" {
+		intPart = "0"
+	}
+	normalized := intPart
+	if frac != "" {
+		normalized += "." + frac
+	}
+
+	f, err := strconv.ParseFloat(normalized+exp, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, fmt.Errorf("%w: %q", errAmountRange, s)
+	}
+	cents := math.Round(f * 100)
+	if math.Abs(cents) > maxImportAmountCents {
+		return 0, fmt.Errorf("%w: %q", errAmountRange, s)
+	}
+	if neg {
+		cents = -cents
+	}
+	return int64(cents), nil
 }
 
 func parseFloat(s string) float64 {

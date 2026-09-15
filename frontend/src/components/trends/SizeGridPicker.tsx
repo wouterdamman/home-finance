@@ -57,8 +57,8 @@ export default function SizeGridPicker({ width, height, onChange }: Props) {
                     width: CELL,
                     height: CELL,
                     borderRadius: 6,
-                    border: '1px solid var(--mantine-color-gray-4)',
-                    backgroundColor: col <= width && row <= height ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-gray-1)',
+                    border: '1px solid var(--mantine-color-default-border)',
+                    backgroundColor: col <= width && row <= height ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-default)',
                     cursor: 'pointer',
                     padding: 0,
                   }}

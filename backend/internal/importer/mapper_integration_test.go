@@ -4,6 +4,7 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -210,5 +211,211 @@ func TestRunResolvesCategoryAliasAsChild(t *testing.T) {
 	}
 	if catCount != 1 {
 		t.Fatalf("expected exactly 1 category named %q after 2 import runs (alias table only consulted once), got %d", aliasName, catCount)
+	}
+}
+
+// TestRunIsIdempotentOnReimport covers the whole point of re-importing a
+// corrected file: transactions have no natural key, so before the mapper
+// cleared what the sheet rewrites, a second import of the same file doubled
+// every income entry and every tracked expense while the budget-line amounts
+// stayed put.
+func TestRunIsIdempotentOnReimport(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	const year = 2091
+	const incomeLabel = "ZTest Income 2091"
+	const categoryLabel = "ZTest Category 2091"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM income_sources WHERE name=$1`, incomeLabel)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, categoryLabel)
+	})
+
+	sheets := []SheetData{
+		{
+			Year: year, Month: 3, Kind: "Overview",
+			Incomes: []IncomeRow{{Label: incomeLabel, AmountCents: 500000}},
+			Lines:   []BudgetLineRow{{Label: categoryLabel, AmountCents: 120000}},
+		},
+		{
+			Year: year, Month: 3, Kind: "Details",
+			Txs: []TxRow{
+				{CategoryLabel: categoryLabel, AmountCents: 70000, Description: "een", Date: "2091-03-04"},
+				{CategoryLabel: categoryLabel, AmountCents: 50000, Description: "twee", Date: "2091-03-05"},
+			},
+		},
+	}
+
+	for pass := 1; pass <= 3; pass++ {
+		rep, err := Run(ctx, pool, sheets, ImportOptions{Year: year})
+		if err != nil {
+			t.Fatalf("pass %d: Run: %v", pass, err)
+		}
+		mr := rep.Months[0]
+		if mr.IncomeTotalCents != 500000 {
+			t.Errorf("pass %d: income: want 500000, got %d", pass, mr.IncomeTotalCents)
+		}
+		if mr.ExpenseTotalCents != 120000 {
+			t.Errorf("pass %d: expense: want 120000, got %d", pass, mr.ExpenseTotalCents)
+		}
+
+		var incomeRows, txRows int
+		if err := pool.QueryRow(ctx,
+			`SELECT count(*) FROM income_entries ie JOIN periods p ON p.id=ie.period_id WHERE p.year=$1`, year).Scan(&incomeRows); err != nil {
+			t.Fatalf("count income entries: %v", err)
+		}
+		if err := pool.QueryRow(ctx,
+			`SELECT count(*) FROM transactions t JOIN periods p ON p.id=t.period_id WHERE p.year=$1`, year).Scan(&txRows); err != nil {
+			t.Fatalf("count transactions: %v", err)
+		}
+		if incomeRows != 1 {
+			t.Fatalf("pass %d: income entries: want 1, got %d", pass, incomeRows)
+		}
+		if txRows != 2 {
+			t.Fatalf("pass %d: transactions: want 2, got %d", pass, txRows)
+		}
+	}
+}
+
+// TestRunRejectsIncompleteSplits: LargestRemainderSplit assumes the total is
+// already 100% and dumps the whole shortfall onto one arbitrary pot, so a sheet
+// whose splits don't add up has to fail loudly instead of misallocating.
+func TestRunRejectsIncompleteSplits(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	const year = 2090
+	const potName = "ZTest Pot 2090"
+	const categoryLabel = "ZTest Category 2090"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM pots WHERE name=$1`, potName)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, categoryLabel)
+	})
+
+	sheets := []SheetData{{
+		Year: year, Month: 1, Kind: "Overview",
+		Lines:  []BudgetLineRow{{Label: categoryLabel, AmountCents: 1000}},
+		Splits: []SplitRow{{PotName: potName, Percentage: 60}},
+	}}
+
+	_, err := Run(ctx, pool, sheets, ImportOptions{Year: year})
+	if err == nil {
+		t.Fatal("Run: want an error for splits totalling 60%, got nil")
+	}
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("want a *ValidationError the UI can show, got %T: %v", err, err)
+	}
+	if ve.Month != 1 {
+		t.Errorf("validation error month: want 1, got %d", ve.Month)
+	}
+
+	var periodCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM periods WHERE year=$1`, year).Scan(&periodCount); err != nil {
+		t.Fatalf("count periods: %v", err)
+	}
+	if periodCount != 0 {
+		t.Errorf("failed import must roll back: periods for %d want 0, got %d", year, periodCount)
+	}
+}
+
+// TestRunCreatesPotsForEveryMonth: pot creation used to stop after the first
+// month with an Overview, so a pot first appearing later was never created and
+// its split was silently dropped.
+func TestRunCreatesPotsForEveryMonth(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	const year = 2089
+	const potA = "ZTest Pot A 2089"
+	const potB = "ZTest Pot B 2089"
+	const categoryLabel = "ZTest Category 2089"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM pots WHERE name IN ($1,$2)`, potA, potB)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, categoryLabel)
+	})
+
+	sheets := []SheetData{
+		{
+			Year: year, Month: 1, Kind: "Overview",
+			Lines:  []BudgetLineRow{{Label: categoryLabel, AmountCents: 1000}},
+			Splits: []SplitRow{{PotName: potA, Percentage: 100}},
+		},
+		{
+			Year: year, Month: 2, Kind: "Overview",
+			Lines:  []BudgetLineRow{{Label: categoryLabel, AmountCents: 1000}},
+			Splits: []SplitRow{{PotName: potA, Percentage: 40}, {PotName: potB, Percentage: 60}},
+		},
+	}
+
+	if _, err := Run(ctx, pool, sheets, ImportOptions{Year: year}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var potCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pots WHERE name IN ($1,$2)`, potA, potB).Scan(&potCount); err != nil {
+		t.Fatalf("count pots: %v", err)
+	}
+	if potCount != 2 {
+		t.Fatalf("pots created: want 2, got %d", potCount)
+	}
+
+	var splitTotal float64
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(ps.percentage),0) FROM pot_splits ps JOIN periods p ON p.id=ps.period_id WHERE p.year=$1 AND p.month=2`,
+		year).Scan(&splitTotal); err != nil {
+		t.Fatalf("sum splits: %v", err)
+	}
+	if splitTotal != 100 {
+		t.Errorf("month 2 splits total: want 100, got %v", splitTotal)
+	}
+}
+
+// TestCloseThroughDoesNotReClose: pot_ledger has no uniqueness, so importing
+// the same file twice with CloseThrough used to write a second allocation for
+// every pot and silently double the balances.
+func TestCloseThroughDoesNotReClose(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	const year = 2088
+	const potName = "ZTest Pot 2088"
+	const incomeLabel = "ZTest Income 2088"
+	const categoryLabel = "ZTest Category 2088"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM pots WHERE name=$1`, potName)
+		pool.Exec(ctx, `DELETE FROM income_sources WHERE name=$1`, incomeLabel)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, categoryLabel)
+	})
+
+	sheets := []SheetData{{
+		Year: year, Month: 1, Kind: "Overview",
+		Incomes: []IncomeRow{{Label: incomeLabel, AmountCents: 300000}},
+		Lines:   []BudgetLineRow{{Label: categoryLabel, AmountCents: 100000}},
+		Splits:  []SplitRow{{PotName: potName, Percentage: 100}},
+	}}
+
+	for pass := 1; pass <= 2; pass++ {
+		if _, err := Run(ctx, pool, sheets, ImportOptions{Year: year, CloseThrough: 1}); err != nil {
+			t.Fatalf("pass %d: Run: %v", pass, err)
+		}
+		var entries int
+		var balance int64
+		if err := pool.QueryRow(ctx,
+			`SELECT count(*), COALESCE(SUM(pl.amount_cents),0) FROM pot_ledger pl JOIN pots p ON p.id=pl.pot_id WHERE p.name=$1`,
+			potName).Scan(&entries, &balance); err != nil {
+			t.Fatalf("pass %d: read pot ledger: %v", pass, err)
+		}
+		if entries != 1 || balance != 200000 {
+			t.Fatalf("pass %d: pot ledger: want 1 entry of 200000, got %d entries totalling %d", pass, entries, balance)
+		}
 	}
 }

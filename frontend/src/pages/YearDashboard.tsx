@@ -12,7 +12,7 @@ import MoneyText from '../components/MoneyText'
 import ReauthConfirmModal from '../components/ReauthConfirmModal'
 import { getErrorMessage } from '../api/client'
 import { formatCents, formatCentsCompact } from '../lib/money'
-import { niceAxisTicksSigned } from '../lib/chartAxis'
+import { niceAxisTicksSigned, categoryTickInterval } from '../lib/chartAxis'
 import { useChartPalette } from '../contexts/ChartPaletteContext'
 import HeroStat from '../components/mobile/HeroStat'
 import MobileList, { MobileListRow } from '../components/mobile/MobileList'
@@ -60,6 +60,7 @@ export default function YearDashboard() {
   const chartMaxValue = Math.max(...chartValues, 0) / 100
   const chartMinValue = Math.min(...chartValues, 0) / 100
   const chartTicks = niceAxisTicksSigned(chartMinValue, chartMaxValue)
+  const chartXAxisProps = { interval: categoryTickInterval(chartData.length) }
   const chartYAxisProps = { tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale), width: 56, ticks: chartTicks, domain: [chartTicks[0], chartTicks[chartTicks.length - 1]] }
 
   const handleLock = () => {
@@ -117,6 +118,7 @@ export default function YearDashboard() {
               dataKey="month"
               withLegend={false}
               valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+              xAxisProps={chartXAxisProps}
               yAxisProps={chartYAxisProps}
               series={[
                 { name: t('year.income'), color: palette.income, type: 'bar' },
@@ -241,6 +243,7 @@ export default function YearDashboard() {
             data={chartData}
             dataKey="month"
             valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+            xAxisProps={chartXAxisProps}
             yAxisProps={chartYAxisProps}
             series={[
               { name: t('year.income'), color: palette.income, type: 'bar' },
@@ -272,7 +275,7 @@ export default function YearDashboard() {
             <Table.Th ta="right">{t('year.income')}</Table.Th>
             <Table.Th ta="right">{t('year.expenses')}</Table.Th>
             <Table.Th ta="right">{t('year.surplus')}</Table.Th>
-            <Table.Th ta="right">Status</Table.Th>
+            <Table.Th ta="right">{t('common.status')}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>

@@ -34,6 +34,13 @@ type ImportOptions struct {
 type Report struct {
 	Months        []MonthReport `json:"months"`
 	SkippedSheets []string      `json:"skippedSheets,omitempty"`
+	// Problems lists cells that could not be imported (unreadable or
+	// out-of-range amounts, rows missing a category). The rows they name were
+	// skipped; everything else was imported.
+	Problems []string `json:"problems,omitempty"`
+	// ResetCounts is the per-table row count deleted by ResetMaster, captured
+	// before the wipe so the audit record shows its real blast radius.
+	ResetCounts map[string]int64 `json:"resetCounts,omitempty"`
 }
 
 type MonthReport struct {
@@ -42,6 +49,27 @@ type MonthReport struct {
 	ExpenseTotalCents int64 `json:"expenseTotalCents"`
 	SurplusCents      int64 `json:"surplusCents"`
 	Closed            bool  `json:"closed"`
+}
+
+// ValidationError is an import failure the caller can act on. Its Message is
+// written here and never carries database or filesystem internals, and
+// Month/Reference locate the offending row, so a handler can hand it straight
+// back to the user — unlike every other error out of Run, which is a driver or
+// constraint error and must only be logged.
+type ValidationError struct {
+	Month     int    `json:"month,omitempty"`
+	Reference string `json:"reference,omitempty"`
+	Message   string `json:"message"`
+}
+
+func (e *ValidationError) Error() string {
+	switch {
+	case e.Month != 0 && e.Reference != "":
+		return fmt.Sprintf("month %d, %q: %s", e.Month, e.Reference, e.Message)
+	case e.Month != 0:
+		return fmt.Sprintf("month %d: %s", e.Month, e.Message)
+	}
+	return e.Message
 }
 
 // Run imports sheets inside a single transaction spanning the whole
@@ -55,10 +83,14 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 	}
 	defer dbTx.Rollback(ctx)
 
+	var rep Report
+
 	if opts.ResetMaster {
-		if err := resetMasterdata(ctx, dbTx); err != nil {
+		counts, err := resetMasterdata(ctx, dbTx)
+		if err != nil {
 			return nil, fmt.Errorf("reset masterdata: %w", err)
 		}
+		rep.ResetCounts = counts
 	} else if opts.Wipe {
 		if err := wipe(ctx, dbTx, opts.Year); err != nil {
 			return nil, fmt.Errorf("wipe: %w", err)
@@ -68,28 +100,33 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 	// Index sheets by year+month
 	overviews := map[int]*SheetData{}
 	details := map[int][]TxRow{}
+	incomeDetails := map[int][]IncomeTxRow{}
 	for i := range sheets {
 		sd := &sheets[i]
 		if opts.Year != 0 && sd.Year != opts.Year {
 			continue
 		}
+		rep.Problems = append(rep.Problems, sd.Problems...)
 		if sd.Kind == "Overview" {
 			overviews[sd.Month] = sd
 		} else {
 			details[sd.Month] = append(details[sd.Month], sd.Txs...)
 		}
+		incomeDetails[sd.Month] = append(incomeDetails[sd.Month], sd.IncomeTxs...)
 	}
 
 	// Load/create masterdata
 	catIDs := map[string]int64{}
 	srcIDs := map[string]int64{}
 	potIDs := map[string]int64{}
-	potKinds := map[string]string{}
-	if err := loadMasterdata(ctx, dbTx, catIDs, srcIDs, potIDs, potKinds); err != nil {
+	if err := loadMasterdata(ctx, dbTx, catIDs, srcIDs, potIDs, nil); err != nil {
 		return nil, fmt.Errorf("load masterdata: %w", err)
 	}
 
-	// First pass: ensure all pots exist (from first month's splits)
+	// First pass: ensure every pot named by any month's splits exists. Stopping
+	// after the first month left a pot that first appears later uncreated, and
+	// its split silently dropped — which leaves the remaining splits totalling
+	// under 100% and LargestRemainderSplit piling the leftover onto one pot.
 	for monthNum := 1; monthNum <= 12; monthNum++ {
 		ov, ok := overviews[monthNum]
 		if !ok {
@@ -97,35 +134,33 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 		}
 		for _, sp := range ov.Splits {
 			name := sp.PotName
-			if _, exists := potIDs[name]; !exists {
-				kind := "normal"
-				if strings.Contains(strings.ToLower(name), "doorlopen") {
-					kind = "carryover"
-				}
-				var id int64
-				err := dbTx.QueryRow(ctx, `SELECT id FROM pots WHERE name=$1`, name).Scan(&id)
-				if err != nil {
-					if !errors.Is(err, pgx.ErrNoRows) {
-						return nil, fmt.Errorf("lookup pot %q: %w", name, err)
-					}
-					if err := dbTx.QueryRow(ctx,
-						`INSERT INTO pots (name, kind, sort_order) VALUES ($1, $2, $3) RETURNING id`,
-						name, kind, len(potIDs)).Scan(&id); err != nil {
-						return nil, fmt.Errorf("create pot %q: %w", name, err)
-					}
-				}
-				potIDs[name] = id
-				potKinds[name] = kind
+			if _, exists := potIDs[name]; exists {
+				continue
 			}
+			kind := "normal"
+			if strings.Contains(strings.ToLower(name), "doorlopen") {
+				kind = "carryover"
+			}
+			var id int64
+			err := dbTx.QueryRow(ctx, `SELECT id FROM pots WHERE name=$1`, name).Scan(&id)
+			if err != nil {
+				if !errors.Is(err, pgx.ErrNoRows) {
+					return nil, fmt.Errorf("lookup pot %q: %w", name, err)
+				}
+				if err := dbTx.QueryRow(ctx,
+					`INSERT INTO pots (name, kind, sort_order) VALUES ($1, $2, $3) RETURNING id`,
+					name, kind, len(potIDs)).Scan(&id); err != nil {
+					return nil, fmt.Errorf("create pot %q: %w", name, err)
+				}
+			}
+			potIDs[name] = id
 		}
-		break // only need first month's splits to create pots
 	}
 	// Reload to capture all pots including any just created
-	if err := loadMasterdata(ctx, dbTx, catIDs, srcIDs, potIDs, potKinds); err != nil {
+	if err := loadMasterdata(ctx, dbTx, catIDs, srcIDs, potIDs, nil); err != nil {
 		return nil, fmt.Errorf("reload masterdata: %w", err)
 	}
 
-	var rep Report
 	for monthNum := 1; monthNum <= 12; monthNum++ {
 		ov, ok := overviews[monthNum]
 		if !ok {
@@ -134,20 +169,22 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 
 		// Upsert income sources
 		for _, inc := range ov.Incomes {
-			if _, exists := srcIDs[inc.Label]; !exists {
-				var id int64
-				err := dbTx.QueryRow(ctx, `SELECT id FROM income_sources WHERE name=$1`, inc.Label).Scan(&id)
-				if err != nil {
-					if !errors.Is(err, pgx.ErrNoRows) {
-						return nil, fmt.Errorf("month %d: lookup income source %q: %w", monthNum, inc.Label, err)
-					}
-					if err := dbTx.QueryRow(ctx,
-						`INSERT INTO income_sources (name, default_amount_cents, sort_order) VALUES ($1, $2, $3) RETURNING id`,
-						inc.Label, inc.AmountCents, len(srcIDs)).Scan(&id); err != nil {
-						return nil, fmt.Errorf("month %d: create income source %q: %w", monthNum, inc.Label, err)
-					}
-				}
-				srcIDs[inc.Label] = id
+			if err := ensureIncomeSource(ctx, dbTx, srcIDs, monthNum, inc.Label, inc.AmountCents); err != nil {
+				return nil, err
+			}
+		}
+
+		// Upsert income sources named only by itemized line items, and mark
+		// them itemized so EffectiveIncomeCentsSQL sums those rows instead of
+		// reading the (redundant) header amount.
+		for _, itx := range incomeDetails[monthNum] {
+			if err := ensureIncomeSource(ctx, dbTx, srcIDs, monthNum, itx.SourceLabel, 0); err != nil {
+				return nil, err
+			}
+			if _, err := dbTx.Exec(ctx,
+				`UPDATE income_sources SET is_itemized=true WHERE id=$1 AND is_itemized=false`,
+				srcIDs[itx.SourceLabel]); err != nil {
+				return nil, fmt.Errorf("month %d: mark income source %q itemized: %w", monthNum, itx.SourceLabel, err)
 			}
 		}
 
@@ -224,74 +261,116 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 			return nil, fmt.Errorf("month %d: create period: %w", monthNum, err)
 		}
 
-		// Income entries (skip carryover — generated by close)
+		// Re-importing a corrected file must not append a second copy of every
+		// row: transactions carry no natural key (two €5 coffees on one day are
+		// both real), so idempotency comes from clearing what this sheet is
+		// about to rewrite. Scoped to the sources/categories the sheet actually
+		// carries — a category the sheet doesn't mention, and the carryover
+		// entry that close generated, are left untouched.
+		sheetSrcIDs := idsFor(srcIDs, incomeLabels(ov.Incomes))
+		if len(sheetSrcIDs) > 0 {
+			if _, err := dbTx.Exec(ctx,
+				`DELETE FROM income_entries WHERE period_id=$1 AND entry_type='normal' AND source_id = ANY($2)`,
+				periodID, sheetSrcIDs); err != nil {
+				return nil, fmt.Errorf("month %d: clear income entries: %w", monthNum, err)
+			}
+		}
+		itemizedSrcIDs := idsFor(srcIDs, incomeTxLabels(incomeDetails[monthNum]))
+		if len(itemizedSrcIDs) > 0 {
+			if _, err := dbTx.Exec(ctx,
+				`DELETE FROM income_transactions WHERE period_id=$1 AND source_id = ANY($2)`,
+				periodID, itemizedSrcIDs); err != nil {
+				return nil, fmt.Errorf("month %d: clear income transactions: %w", monthNum, err)
+			}
+		}
+		sheetCatIDs := idsFor(catIDs, txLabels(details[monthNum]))
+		if len(sheetCatIDs) > 0 {
+			if _, err := dbTx.Exec(ctx,
+				`DELETE FROM transactions WHERE period_id=$1 AND category_id = ANY($2)`,
+				periodID, sheetCatIDs); err != nil {
+				return nil, fmt.Errorf("month %d: clear transactions: %w", monthNum, err)
+			}
+		}
+
+		// Income entries (carryover entries are generated by close, never imported)
 		for i, inc := range ov.Incomes {
-			srcID := srcIDs[inc.Label]
+			// A sheet that lists the same source twice means two real payments;
+			// income_entries is unique per (period, source), so fold them.
 			if _, err := dbTx.Exec(ctx,
 				`INSERT INTO income_entries (period_id, source_id, label, amount_cents, entry_type, notes, sort_order)
 				 VALUES ($1, $2, $3, $4, 'normal', '', $5)
-				 ON CONFLICT DO NOTHING`,
-				periodID, srcID, inc.Label, inc.AmountCents, i); err != nil {
+				 ON CONFLICT (period_id, source_id) WHERE source_id IS NOT NULL
+				 DO UPDATE SET amount_cents = income_entries.amount_cents + EXCLUDED.amount_cents`,
+				periodID, srcIDs[inc.Label], inc.Label, inc.AmountCents, i); err != nil {
 				return nil, fmt.Errorf("month %d: insert income entry %q: %w", monthNum, inc.Label, err)
+			}
+		}
+
+		// Income transactions (line items of an itemized source)
+		for _, itx := range incomeDetails[monthNum] {
+			txDate := itx.Date
+			if txDate == "" {
+				txDate = firstOfMonth(opts.Year, monthNum)
+			}
+			if _, err := dbTx.Exec(ctx,
+				`INSERT INTO income_transactions (period_id, source_id, amount_cents, description, tx_date)
+				 VALUES ($1, $2, $3, $4, $5)`,
+				periodID, srcIDs[itx.SourceLabel], itx.AmountCents, itx.Description, txDate); err != nil {
+				return nil, fmt.Errorf("month %d: insert income transaction %q: %w", monthNum, itx.Description, err)
 			}
 		}
 
 		// Budget lines
 		for i, bl := range ov.Lines {
-			catID := catIDs[bl.Label]
 			// tracks_transactions = true if a Details category has the same name
 			tracksTransactions := false
-			if _, ok := catIDs[bl.Label]; ok {
-				for _, tx := range details[monthNum] {
-					if strings.EqualFold(tx.CategoryLabel, bl.Label) {
-						tracksTransactions = true
-						break
-					}
+			for _, tx := range details[monthNum] {
+				if strings.EqualFold(tx.CategoryLabel, bl.Label) {
+					tracksTransactions = true
+					break
 				}
 			}
+			// tracks_transactions is deliberately a per-period user choice, so
+			// importing a sheet that happens to carry no transactions for a
+			// tracked line must not silently untrack it.
 			if _, err := dbTx.Exec(ctx,
 				`INSERT INTO budget_lines (period_id, category_id, label, amount_cents, tracks_transactions, sort_order)
 				 VALUES ($1, $2, $3, $4, $5, $6)
-				 ON CONFLICT (period_id, category_id) DO NOTHING`,
-				periodID, catID, bl.Label, bl.AmountCents, tracksTransactions, i); err != nil {
+				 ON CONFLICT (period_id, category_id) DO UPDATE
+				 SET label=EXCLUDED.label,
+				     amount_cents=EXCLUDED.amount_cents,
+				     tracks_transactions = budget_lines.tracks_transactions OR EXCLUDED.tracks_transactions,
+				     sort_order=EXCLUDED.sort_order`,
+				periodID, catIDs[bl.Label], bl.Label, bl.AmountCents, tracksTransactions, i); err != nil {
 				return nil, fmt.Errorf("month %d: insert budget line %q: %w", monthNum, bl.Label, err)
 			}
 		}
 
 		// Transactions from Details
 		for _, tx := range details[monthNum] {
-			catID := catIDs[tx.CategoryLabel]
 			txDate := tx.Date
 			if txDate == "" {
-				txDate = time.Date(opts.Year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+				txDate = firstOfMonth(opts.Year, monthNum)
 			}
 			if _, err := dbTx.Exec(ctx,
 				`INSERT INTO transactions (period_id, category_id, amount_cents, description, tx_date)
 				 VALUES ($1, $2, $3, $4, $5)`,
-				periodID, catID, tx.AmountCents, tx.Description, txDate); err != nil {
+				periodID, catIDs[tx.CategoryLabel], tx.AmountCents, tx.Description, txDate); err != nil {
 				return nil, fmt.Errorf("month %d: insert transaction %q: %w", monthNum, tx.Description, err)
 			}
 		}
 
 		// Pot splits for this period
-		for _, sp := range ov.Splits {
-			potID, ok := potIDs[sp.PotName]
-			if !ok {
-				slog.Warn("pot not found for split", "pot", sp.PotName)
-				continue
-			}
-			if _, err := dbTx.Exec(ctx,
-				`INSERT INTO pot_splits (period_id, pot_id, percentage)
-				 VALUES ($1, $2, $3)
-				 ON CONFLICT (period_id, pot_id) DO UPDATE SET percentage=EXCLUDED.percentage`,
-				periodID, potID, sp.Percentage); err != nil {
-				return nil, fmt.Errorf("month %d: insert pot split %q: %w", monthNum, sp.PotName, err)
-			}
+		if err := storeSplits(ctx, dbTx, periodID, monthNum, potIDs, ov.Splits); err != nil {
+			return nil, err
 		}
 
-		// Calculate totals for report
+		// Calculate totals for report. No entry_type filter: close and every
+		// list endpoint total a period the same way, and filtering here made
+		// the report disagree with what the app shows for any month that
+		// received a carryover during this same run.
 		var incTotal, expTotal int64
-		if err := dbTx.QueryRow(ctx, `SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=$1 AND ie.entry_type='normal'`, periodID).Scan(&incTotal); err != nil {
+		if err := dbTx.QueryRow(ctx, `SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=$1`, periodID).Scan(&incTotal); err != nil {
 			return nil, fmt.Errorf("month %d: compute income total: %w", monthNum, err)
 		}
 		if err := dbTx.QueryRow(ctx, `SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal); err != nil {
@@ -306,10 +385,11 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 		}
 
 		if opts.CloseThrough >= monthNum {
-			if err := closePeriod(ctx, dbTx, periodID, potIDs, potKinds, opts.Year, monthNum); err != nil {
-				return nil, fmt.Errorf("month %d: close period: %w", monthNum, err)
+			closed, err := closePeriod(ctx, dbTx, periodID, opts.Year, monthNum)
+			if err != nil {
+				return nil, err
 			}
-			mr.Closed = true
+			mr.Closed = closed
 		}
 
 		rep.Months = append(rep.Months, mr)
@@ -321,7 +401,139 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 	return &rep, nil
 }
 
-func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, potIDs map[string]int64, potKinds map[string]string, year, month int) error {
+func firstOfMonth(year, month int) string {
+	return time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+}
+
+func incomeLabels(rows []IncomeRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.Label)
+	}
+	return out
+}
+
+func incomeTxLabels(rows []IncomeTxRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.SourceLabel)
+	}
+	return out
+}
+
+func txLabels(rows []TxRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.CategoryLabel)
+	}
+	return out
+}
+
+// idsFor resolves labels to their masterdata ids, deduplicated.
+func idsFor(ids map[string]int64, labels []string) []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	for _, label := range labels {
+		id, ok := ids[label]
+		if !ok || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+func ensureIncomeSource(ctx context.Context, dbTx dbtx, srcIDs map[string]int64, monthNum int, label string, defaultCents int64) error {
+	if _, exists := srcIDs[label]; exists {
+		return nil
+	}
+	var id int64
+	err := dbTx.QueryRow(ctx, `SELECT id FROM income_sources WHERE name=$1`, label).Scan(&id)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("month %d: lookup income source %q: %w", monthNum, label, err)
+		}
+		if err := dbTx.QueryRow(ctx,
+			`INSERT INTO income_sources (name, default_amount_cents, sort_order) VALUES ($1, $2, $3) RETURNING id`,
+			label, defaultCents, len(srcIDs)).Scan(&id); err != nil {
+			return fmt.Errorf("month %d: create income source %q: %w", monthNum, label, err)
+		}
+	}
+	srcIDs[label] = id
+	return nil
+}
+
+// storeSplits replaces a period's pot splits with the sheet's. A split naming a
+// pot that couldn't be resolved, or a set that doesn't total 100%, fails the
+// import: LargestRemainderSplit assumes the total is already 100 and dumps the
+// whole shortfall on one arbitrary pot otherwise, which is silently wrong money.
+func storeSplits(ctx context.Context, dbTx dbtx, periodID int64, monthNum int, potIDs map[string]int64, splits []SplitRow) error {
+	if len(splits) == 0 {
+		return nil
+	}
+	inputs := make([]domain.PotSplitInput, 0, len(splits))
+	potIDList := make([]int64, 0, len(splits))
+	for _, sp := range splits {
+		potID, ok := potIDs[sp.PotName]
+		if !ok {
+			return &ValidationError{Month: monthNum, Reference: sp.PotName,
+				Message: "pot split refers to a pot that does not exist and could not be created"}
+		}
+		inputs = append(inputs, domain.PotSplitInput{PotID: potID, Percentage: sp.Percentage})
+		potIDList = append(potIDList, potID)
+	}
+	if err := domain.ValidateSplits(inputs); err != nil {
+		return &ValidationError{Month: monthNum,
+			Message: fmt.Sprintf("pot splits must total 100%% (%v)", err)}
+	}
+
+	if _, err := dbTx.Exec(ctx,
+		`DELETE FROM pot_splits WHERE period_id=$1 AND pot_id <> ALL($2)`, periodID, potIDList); err != nil {
+		return fmt.Errorf("month %d: clear pot splits: %w", monthNum, err)
+	}
+	for i, in := range inputs {
+		if _, err := dbTx.Exec(ctx,
+			`INSERT INTO pot_splits (period_id, pot_id, percentage)
+			 VALUES ($1, $2, $3)
+			 ON CONFLICT (period_id, pot_id) DO UPDATE SET percentage=EXCLUDED.percentage`,
+			periodID, in.PotID, in.Percentage); err != nil {
+			return fmt.Errorf("month %d: insert pot split %q: %w", monthNum, splits[i].PotName, err)
+		}
+	}
+	return nil
+}
+
+// closePeriod mirrors handleClosePeriod: same guards, same allocation formula.
+// Returns whether the period is closed once it's done — a period that was
+// already closed is left exactly as it is.
+func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, year, month int) (bool, error) {
+	var status string
+	if err := dbTx.QueryRow(ctx, `SELECT status FROM periods WHERE id=$1 FOR UPDATE`, periodID).Scan(&status); err != nil {
+		return false, fmt.Errorf("month %d: read period status: %w", month, err)
+	}
+	if status == "closed" {
+		// pot_ledger has no uniqueness, so re-running an import with
+		// --close-through would otherwise write a second allocation and a
+		// second carryover for every pot and double the balances.
+		slog.Info("period already closed, skipping close", "period_id", periodID, "month", month)
+		return true, nil
+	}
+
+	nextMonth, nextYear := month+1, year
+	if nextMonth > 12 {
+		nextMonth, nextYear = 1, year+1
+	}
+	var nextStatus string
+	if err := dbTx.QueryRow(ctx, `SELECT status FROM periods WHERE year=$1 AND month=$2`, nextYear, nextMonth).
+		Scan(&nextStatus); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("month %d: read next period status: %w", month, err)
+	}
+	if nextStatus == "closed" {
+		return false, &ValidationError{Month: month,
+			Message: "cannot close: the next period is already closed"}
+	}
+
 	type splitRow struct {
 		PotID int64
 		Pct   float64
@@ -332,38 +544,42 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, potIDs map[stri
 		 FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id
 		 WHERE ps.period_id=$1`, periodID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var rawSplits []splitRow
 	for rows.Next() {
 		var sr splitRow
 		if err := rows.Scan(&sr.PotID, &sr.Pct, &sr.Kind); err != nil {
 			rows.Close()
-			return err
+			return false, err
 		}
 		rawSplits = append(rawSplits, sr)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return false, err
 	}
 
 	if len(rawSplits) == 0 {
 		slog.Info("no splits, skipping close", "period_id", periodID)
-		return nil
+		return false, nil
 	}
 
 	inputs := make([]domain.PotSplitInput, len(rawSplits))
 	for i, sr := range rawSplits {
 		inputs[i] = domain.PotSplitInput{PotID: sr.PotID, Percentage: sr.Pct}
 	}
+	if err := domain.ValidateSplits(inputs); err != nil {
+		return false, &ValidationError{Month: month,
+			Message: fmt.Sprintf("cannot close: pot splits must total 100%% (%v)", err)}
+	}
 
 	var incTotal, expTotal int64
 	if err := dbTx.QueryRow(ctx, `SELECT `+domain.EffectiveIncomeCentsSQL+` FROM income_entries ie LEFT JOIN income_sources isrc ON isrc.id=ie.source_id WHERE ie.period_id=$1`, periodID).Scan(&incTotal); err != nil {
-		return err
+		return false, err
 	}
 	if err := dbTx.QueryRow(ctx, `SELECT `+domain.EffectiveExpenseCentsSQL+` FROM budget_lines bl WHERE bl.period_id=$1`, periodID).Scan(&expTotal); err != nil {
-		return err
+		return false, err
 	}
 	surplus := incTotal - expTotal
 
@@ -375,18 +591,12 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, potIDs map[stri
 			`INSERT INTO pot_ledger (pot_id, period_id, source_period_id, entry_type, amount_cents, description, entry_date)
 			 VALUES ($1, $2, $2, 'allocation', $3, 'Maandelijkse allocatie', $4)`,
 			a.PotID, periodID, a.AmountCents, lastDay); err != nil {
-			return err
+			return false, err
 		}
 
 		if rawSplits[i].Kind == "carryover" {
-			nextMonth := month + 1
-			nextYear := year
-			if nextMonth > 12 {
-				nextMonth = 1
-				nextYear++
-			}
 			if _, err := dbTx.Exec(ctx, `INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, nextYear); err != nil {
-				return err
+				return false, err
 			}
 			var nextPeriodID int64
 			if err := dbTx.QueryRow(ctx,
@@ -394,14 +604,14 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, potIDs map[stri
 				 ON CONFLICT (year, month) DO UPDATE SET year=EXCLUDED.year
 				 RETURNING id`,
 				nextYear, nextMonth).Scan(&nextPeriodID); err != nil {
-				return err
+				return false, err
 			}
 
 			if _, err := dbTx.Exec(ctx,
 				`INSERT INTO pot_ledger (pot_id, period_id, source_period_id, entry_type, amount_cents, description, entry_date)
 				 VALUES ($1, $2, $3, 'carryover_out', $4, 'Doorlopen', $5)`,
 				a.PotID, nextPeriodID, periodID, -a.AmountCents, lastDay); err != nil {
-				return err
+				return false, err
 			}
 
 			monthNames := []string{"", "Januari", "Februari", "Maart", "April", "Mei", "Juni",
@@ -411,15 +621,15 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, potIDs map[stri
 				`INSERT INTO income_entries (period_id, source_id, label, amount_cents, entry_type, source_period_id, notes, sort_order)
 				 VALUES ($1, NULL, $2, $3, 'carryover', $4, '', 0)`,
 				nextPeriodID, label, a.AmountCents, periodID); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
 
 	if _, err := dbTx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, periodID); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // wipe deletes every period for the year — pot_ledger, pot_splits,
@@ -430,20 +640,41 @@ func wipe(ctx context.Context, dbTx dbtx, year int) error {
 	return err
 }
 
+// resetCountTables are counted before the wipe so the audit record can state the
+// real blast radius: nothing here is scoped to a year, which the audit row
+// previously implied, and the four explicit deletes cascade into nine further
+// tables. Untouched by a reset: kids, kid_savings_ledger, years, locked_years,
+// users, audit_log, audit_log_export_state, sessions.
+var resetCountTables = []string{
+	"periods", "income_entries", "income_transactions", "budget_lines",
+	"transactions", "pot_splits", "pot_ledger", "pots", "categories",
+	"income_sources", "category_aliases", "category_description_presets",
+	"income_source_description_presets",
+}
+
 // resetMasterdata wipes all periods (cascading to every period-scoped table:
 // income_entries, income_transactions, budget_lines, transactions, pot_splits,
-// pot_ledger) plus the masterdata tables themselves. pgx v5's extended query
+// pot_ledger) plus the masterdata tables themselves, for every year — the
+// year the import was requested for does not scope it. pgx v5's extended query
 // protocol rejects multiple semicolon-separated statements in one Exec, so each
 // DELETE runs as its own statement; the caller's transaction (Run's dbTx) makes
 // a failure partway through roll back everything, not leave masterdata
 // half-wiped.
-func resetMasterdata(ctx context.Context, dbTx dbtx) error {
+func resetMasterdata(ctx context.Context, dbTx dbtx) (map[string]int64, error) {
+	counts := make(map[string]int64, len(resetCountTables))
+	for _, table := range resetCountTables {
+		var n int64
+		if err := dbTx.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
+			return nil, fmt.Errorf("count %s: %w", table, err)
+		}
+		counts[table] = n
+	}
 	for _, table := range []string{"periods", "pots", "categories", "income_sources"} {
 		if _, err := dbTx.Exec(ctx, `DELETE FROM `+table); err != nil {
-			return fmt.Errorf("delete %s: %w", table, err)
+			return nil, fmt.Errorf("delete %s: %w", table, err)
 		}
 	}
-	return nil
+	return counts, nil
 }
 
 func loadMasterdata(ctx context.Context, dbTx dbtx, catIDs, srcIDs, potIDs map[string]int64, potKinds map[string]string) error {

@@ -12,7 +12,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/wouterdamman/home-finance/internal/auth"
 )
 
 // maxAmountCents caps a single money amount at 1,000,000.00 in the app's
@@ -88,11 +91,25 @@ func validateSignedAmountCents(cents int64) error {
 // ever set on the INSERT branch (via INITIAL_ADMIN_EMAILS) — an existing
 // user's role is deliberately left untouched here so a login never
 // silently reverts an admin's role change made via Settings > Users.
+//
+// The INITIAL_ADMIN_EMAILS grant is additionally gated on "no admin exists
+// yet", so it can only ever bootstrap the very first account. Previously any
+// first-time login presenting a matching email claim was minted as an admin —
+// and because the upsert conflicts on oidc_subject rather than email, a second
+// identity claiming the same address took the INSERT branch and was granted
+// admin instead of colliding with the existing row.
 func (s *Server) upsertUserCtx(ctx context.Context, sub, email, name string) (int64, error) {
 	role := "user"
 	for _, e := range s.cfg.InitialAdminEmails {
 		if strings.EqualFold(e, email) {
-			role = "admin"
+			var adminExists bool
+			if err := s.pool.QueryRow(ctx,
+				`SELECT EXISTS(SELECT 1 FROM users WHERE role='admin')`).Scan(&adminExists); err != nil {
+				return 0, err
+			}
+			if !adminExists {
+				role = "admin"
+			}
 			break
 		}
 	}
@@ -125,16 +142,41 @@ func pathInt64(r *http.Request, key string) (int64, bool) {
 	return v, err == nil
 }
 
+// auditLogTimeout bounds the detached audit insert. Long enough to survive a
+// slow write, short enough that a wedged pool can't accumulate goroutines.
+const auditLogTimeout = 5 * time.Second
+
+// auditLog records a state-changing action. It runs on a context explicitly
+// detached from the request's, because the insert happens *after* the mutation
+// has already committed: on the request context, a caller who disconnects at
+// the right moment cancels the audit write while the effect stands, and a
+// failed attempt costs them nothing to retry until it lands. The record is
+// still best-effort with respect to database failures (a hiccup must never
+// fail a user-facing request) — it simply can no longer be suppressed by the
+// caller.
+//
+// user_id is the stable identifier; user_email is kept denormalized for
+// display and filtering, but it is a mutable claim refreshed on every login,
+// so it must not be the only thing tying a row to an account.
 func (s *Server) auditLog(ctx context.Context, action, entityType string, entityID int64, details any) {
 	email, _ := s.sm.Get(ctx, "userEmail").(string)
+	var userID *int64
+	if uid, ok := auth.UserIDFromCtx(ctx); ok && uid != 0 {
+		userID = &uid
+	}
 	var detJSON []byte
 	if details != nil {
 		detJSON, _ = json.Marshal(details)
 	}
-	if _, err := s.pool.Exec(ctx,
-		`INSERT INTO audit_log (user_email, action, entity_type, entity_id, details) VALUES ($1,$2,$3,$4,$5)`,
-		email, action, entityType, entityID, detJSON); err != nil {
-		slog.Warn("audit_log insert failed", "err", err)
+
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditLogTimeout)
+	defer cancel()
+	if _, err := s.pool.Exec(writeCtx,
+		`INSERT INTO audit_log (user_id, user_email, action, entity_type, entity_id, details) VALUES ($1,$2,$3,$4,$5,$6)`,
+		userID, email, action, entityType, entityID, detJSON); err != nil {
+		// Include enough context to reconstruct the lost record from logs.
+		slog.Warn("audit_log insert failed",
+			"err", err, "action", action, "entityType", entityType, "entityID", entityID, "userEmail", email)
 	}
 }
 
@@ -153,12 +195,49 @@ func isYearLocked(ctx context.Context, pool *pgxpool.Pool, year int) (bool, erro
 	return locked, err
 }
 
+// isPeriodWritable is the only gate protecting a closed period or a locked
+// financial year from further writes, so it must fail *closed*. It previously
+// discarded both error returns, which collapsed any database failure — a
+// connection reset, a pool-acquire timeout, a cancelled context — into
+// "writable" and let the write through. Combined with an unbounded pool that
+// made exhaustion reachable, that turned the immutability guarantee of a
+// locked year into something an attacker could shake loose under load.
 func isPeriodWritable(ctx context.Context, pool *pgxpool.Pool, w http.ResponseWriter, periodID int64) bool {
-	if closed, _ := isPeriodClosed(ctx, pool, periodID); closed {
+	closed, err := isPeriodClosed(ctx, pool, periodID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		Error(w, http.StatusNotFound, "not_found", "period not found")
+		return false
+	}
+	if err != nil {
+		dbError(w, "isPeriodClosed", err)
+		return false
+	}
+	if closed {
 		Error(w, http.StatusConflict, "period_closed", "period is closed")
 		return false
 	}
-	if locked, _ := isYearLockedForPeriod(ctx, pool, periodID); locked {
+	locked, err := isYearLockedForPeriod(ctx, pool, periodID)
+	if err != nil {
+		dbError(w, "isYearLockedForPeriod", err)
+		return false
+	}
+	if locked {
+		Error(w, http.StatusConflict, "year_locked", "year is locked")
+		return false
+	}
+	return true
+}
+
+// isYearWritable guards writes keyed on a calendar year rather than a period —
+// pot and kid ledger entries carry their own entry_date and have no period
+// linkage, so they were never covered by the locked-year check at all.
+func isYearWritable(ctx context.Context, pool *pgxpool.Pool, w http.ResponseWriter, year int) bool {
+	locked, err := isYearLocked(ctx, pool, year)
+	if err != nil {
+		dbError(w, "isYearLocked", err)
+		return false
+	}
+	if locked {
 		Error(w, http.StatusConflict, "year_locked", "year is locked")
 		return false
 	}

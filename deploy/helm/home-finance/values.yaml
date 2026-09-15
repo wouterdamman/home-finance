@@ -10,6 +10,68 @@ imagePullSecrets: []
 
 replicaCount: 1
 
+# --- ServiceAccount ----------------------------------------------------------
+# The app makes zero Kubernetes API calls, so it gets its own ServiceAccount
+# with no RoleBindings and no token mounted. Using `default` instead would hand
+# an internet-facing process a live cluster credential, and would silently
+# inherit any future ClusterRoleBinding aimed at system:authenticated.
+serviceAccount:
+  create: true
+  # Leave empty to use "<release name>". Set a name (with create: false) to
+  # reuse a ServiceAccount you manage elsewhere.
+  name: ""
+  annotations: {}
+  # Neither the server nor the migrate Job talks to the API server. Only flip
+  # this if you add something that genuinely needs a token.
+  automountToken: false
+
+# --- Pod / container hardening ----------------------------------------------
+# These values satisfy the Pod Security "restricted" profile that
+# templates/namespace.yaml enforces, and apply to both the Deployment and the
+# migrate Job. The image is distroless-static running as numeric UID 65532, so
+# runAsNonRoot/runAsUser mostly restate what the base image already does — the
+# point is that the kubelet now *checks* it, so a base-image tag change that
+# starts shipping root fails the pod instead of silently running as root.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  # Without this the container runs seccomp Unconfined under containerd — the
+  # full syscall surface is reachable from any app-level RCE.
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# readOnlyRootFilesystem above leaves the app no writable path at all, and it
+# needs one: xlsx import writes os.CreateTemp("", "import-*.xlsx"), and both
+# xlsx import and avatar upload spill ParseMultipartForm to os.TempDir() once
+# the body exceeds the in-memory threshold. An emptyDir at /tmp covers both;
+# sizeLimit keeps a runaway upload from filling the node's disk.
+tmpVolume:
+  sizeLimit: 256Mi
+
+# --- Migration Job -----------------------------------------------------------
+# Runs `--migrate-only` as a pre-install/pre-upgrade hook (ArgoCD PreSync), so
+# a failed migration fails the sync before the new Deployment is applied.
+migrateJob:
+  # A migration blocked on a Postgres lock would otherwise hang forever, and
+  # because this is a PreSync hook the whole ArgoCD sync hangs with it.
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 env:
   ENV: production
   # Migrations run via the pre-install/pre-upgrade Job (migrate-job.yaml),
@@ -72,6 +134,16 @@ httproutes:
     backend:
       name: home-finance
       port: 80
+    # Companion route on the same Gateway's plaintext listener that 301s every
+    # request to https://. Off by default because the HTTP listener's
+    # sectionName is cluster-specific — set it and flip enabled to get what
+    # classic-Ingress mode already gets from nginx's force-ssl-redirect.
+    httpRedirect:
+      enabled: false
+      # Defaults to "<route name>-http-redirect".
+      name: ""
+      sectionName: app-http-listener
+      statusCode: 301
 
 # --- Cilium network policy --------------------------------------------------
 # On by default (this stack runs Cilium): a default-deny-friendly policy —
@@ -88,6 +160,29 @@ networkPolicy:
   cilium:
     enabled: true
     prometheusNamespace: monitoring
+    # Who may reach the app on :8080. This used to be `fromEntities: [cluster]`,
+    # i.e. every managed endpoint plus host/remote-node/unmanaged — any pod in
+    # the cluster could hit the app directly and bypass the Gateway (TLS, rate
+    # limiting, IP allowlisting, request logging). Same shape as dbEgress
+    # below: point it at the Gateway's data plane, or at the nginx controller
+    # when running classic-Ingress mode.
+    #
+    # REQUIRED when networkPolicy.cilium.enabled=true — with namespaceLabel
+    # empty no ingress rule is rendered and only Prometheus can reach the app.
+    # Defaults match the placeholder httproutes[0].gateway above (Cilium labels
+    # a Gateway's pods io.cilium.gateway/owning-gateway: <gateway name>).
+    # CHECK THIS AGAINST YOUR CLUSTER BEFORE ROLLING OUT — if these labels miss
+    # the real Gateway pods the app simply stops being reachable:
+    #   kubectl get pods -n <gateway namespace> --show-labels
+    # Narrows :8080 ingress to the Gateway's own pods. Left empty by default
+    # because the correct labels differ per cluster and a wrong selector makes
+    # the app unreachable rather than merely unhardened. Confirm with
+    # `kubectl get pods -n <gateway ns> --show-labels`, then set both fields —
+    # until then the policy falls back to allowing any in-cluster endpoint.
+    gatewayIngress:
+      namespaceLabel: ""
+      podLabels: {}
+      port: 8080
     # REQUIRED when postgres.cnpg.enabled=false (external DB) and
     # networkPolicy.cilium.enabled=true — otherwise the app can't reach it.
     dbEgress:
@@ -104,6 +199,13 @@ networkPolicy:
 # already run. Set cnpg.enabled true to have this chart provision its own
 # dedicated CNPG Cluster (classic/portable mode, no external DB required).
 postgres:
+  # sslmode appended to the DATABASE_URL that externalsecret.yaml assembles.
+  # `require` (not `disable`) because prod talks to the shared CNPG cluster in
+  # another namespace — every query and result set, the whole ledger plus the
+  # sessions table backing authentication, crosses the pod network. CNPG serves
+  # TLS out of the box. Use verify-full with a CA bundle if you want the server
+  # identity checked too; `disable` only if your Postgres has no TLS at all.
+  sslMode: require
   cnpg:
     enabled: false
     clusterName: home-finance-pg
@@ -143,7 +245,7 @@ externalSecrets:
 # Classic-mode reference: if externalSecrets.enabled is false, create
 # `secrets.name` yourself with:
 #   kubectl create secret generic home-finance-secrets \
-#     --from-literal=DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=disable' \
+#     --from-literal=DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=require' \
 #     --from-literal=OIDC_CLIENT_SECRET='...'
 
 # Application-level S3-compatible object storage — separate from postgres.backup

@@ -23,5 +23,37 @@ spec:
       backendRefs:
         - name: {{ .backend.name }}
           port: {{ .backend.port }}
+{{- if and .httpRedirect .httpRedirect.enabled }}
+---
+# Companion route on the same Gateway's plaintext listener: nothing else in
+# this chart attaches to it, so without this, whether http:// gets redirected
+# or simply served in the clear depends entirely on Gateway config living
+# outside this repo. Classic-Ingress mode already gets this from nginx's
+# force-ssl-redirect annotation (see ingress.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .httpRedirect.name | default (printf "%s-http-redirect" .name) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $.Release.Name }}
+spec:
+  parentRefs:
+    - name: {{ .gateway.name }}
+      namespace: {{ .gateway.namespace }}
+      sectionName: {{ .httpRedirect.sectionName | default .gateway.sectionName }}
+  hostnames:
+    - {{ .hostname | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .path | default "/" }}
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: {{ .httpRedirect.statusCode | default 301 }}
+{{- end }}
 {{- end }}
 {{- end }}

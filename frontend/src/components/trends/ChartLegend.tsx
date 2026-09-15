@@ -1,4 +1,5 @@
 import { Group, Text } from '@mantine/core'
+import { paletteColorValue } from '../../lib/chartPalette'
 
 interface LegendSeries {
   name: string
@@ -21,7 +22,7 @@ export default function ChartLegend({ series }: { series: LegendSeries[] }) {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: s.color.includes('.') ? `var(--mantine-color-${s.color.replace('.', '-')})` : s.color,
+              backgroundColor: paletteColorValue(s.color),
               flexShrink: 0,
             }}
           />

@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // ── Kids savings ─────────────────────────────────────────────────
@@ -18,7 +21,7 @@ func (s *Server) handleListKids(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `SELECT id,name,sort_order,archived_at,reported_balance_cents,reported_balance_date FROM kids WHERE archived_at IS NULL ORDER BY sort_order,id`)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "listKids", err)
 		return
 	}
 	defer rows.Close()
@@ -28,7 +31,7 @@ func (s *Server) handleListKids(w http.ResponseWriter, r *http.Request) {
 		var aa *time.Time
 		var rbd *time.Time
 		if err := rows.Scan(&ro.ID, &ro.Name, &ro.SortOrder, &aa, &ro.ReportedBalanceCents, &rbd); err != nil {
-			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			dbError(w, "listKids.scan", err)
 			return
 		}
 		if aa != nil {
@@ -42,7 +45,7 @@ func (s *Server) handleListKids(w http.ResponseWriter, r *http.Request) {
 		out = append(out, ro)
 	}
 	if err := rows.Err(); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "listKids", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -70,7 +73,7 @@ func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
 		GROUP BY k.id, k.name, k.sort_order, k.reported_balance_cents, k.reported_balance_date
 		ORDER BY k.sort_order, k.id`)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "getKidBalances", err)
 		return
 	}
 	defer rows.Close()
@@ -79,7 +82,7 @@ func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
 		var ro row
 		var rbd *time.Time
 		if err := rows.Scan(&ro.KidID, &ro.Name, &ro.OursCents, &ro.TheirsCents, &ro.TotalCents, &ro.ReportedBalanceCents, &rbd); err != nil {
-			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			dbError(w, "getKidBalances.scan", err)
 			return
 		}
 		if rbd != nil {
@@ -89,7 +92,7 @@ func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
 		out = append(out, ro)
 	}
 	if err := rows.Err(); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "getKidBalances", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -106,7 +109,7 @@ func (s *Server) handleUpdateKidReportedBalance(w http.ResponseWriter, r *http.R
 		ReportedBalanceDate  *string `json:"reportedBalanceDate"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		badRequest(w, err)
 		return
 	}
 	if body.ReportedBalanceCents != nil {
@@ -121,8 +124,13 @@ func (s *Server) handleUpdateKidReportedBalance(w http.ResponseWriter, r *http.R
 	} else {
 		body.ReportedBalanceDate = nil
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE kids SET reported_balance_cents=$2, reported_balance_date=$3 WHERE id=$1`, id, body.ReportedBalanceCents, body.ReportedBalanceDate); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+	tag, err := s.pool.Exec(r.Context(), `UPDATE kids SET reported_balance_cents=$2, reported_balance_date=$3 WHERE id=$1`, id, body.ReportedBalanceCents, body.ReportedBalanceDate)
+	if err != nil {
+		mapDBError(w, "updateKidReportedBalance", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		Error(w, http.StatusNotFound, "not_found", "kid not found")
 		return
 	}
 	s.auditLog(r.Context(), "kid.reported_balance.update", "kid", id, map[string]any{"reportedBalanceCents": body.ReportedBalanceCents, "reportedBalanceDate": body.ReportedBalanceDate})
@@ -153,7 +161,7 @@ func (s *Server) handleGetKidLedger(w http.ResponseWriter, r *http.Request) {
 		  description, entry_date
 		FROM kid_savings_ledger WHERE kid_id=$1 ORDER BY entry_date, id`, kidID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "getKidLedger", err)
 		return
 	}
 	defer rows.Close()
@@ -163,7 +171,7 @@ func (s *Server) handleGetKidLedger(w http.ResponseWriter, r *http.Request) {
 		var ed time.Time
 		var runOurs, runTheirs *int64
 		if err := rows.Scan(&ro.ID, &ro.KidID, &ro.Owner, &ro.EntryType, &ro.AmountCents, &runOurs, &runTheirs, &ro.Description, &ed); err != nil {
-			Error(w, http.StatusInternalServerError, "scan_error", err.Error())
+			dbError(w, "getKidLedger.scan", err)
 			return
 		}
 		if runOurs != nil {
@@ -176,7 +184,7 @@ func (s *Server) handleGetKidLedger(w http.ResponseWriter, r *http.Request) {
 		out = append(out, ro)
 	}
 	if err := rows.Err(); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		dbError(w, "getKidLedger", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -196,7 +204,7 @@ func (s *Server) handleCreateKidLedgerEntry(w http.ResponseWriter, r *http.Reque
 		EntryDate   *string `json:"entryDate"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		badRequest(w, err)
 		return
 	}
 	switch body.Owner {
@@ -218,15 +226,26 @@ func (s *Server) handleCreateKidLedgerEntry(w http.ResponseWriter, r *http.Reque
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	// Kid ledger entries carry their own entry_date and have no period
+	// linkage, so the locked-year guard has to be applied against that date.
+	year, ok := entryYear(body.EntryDate)
+	if !ok {
+		Error(w, http.StatusBadRequest, "bad_request", "entryDate must be YYYY-MM-DD")
+		return
+	}
+	if !isYearWritable(r.Context(), s.pool, w, year) {
+		return
+	}
 	var id int64
+	var storedDate time.Time
 	if err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO kid_savings_ledger (kid_id,owner,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,$4,$5,COALESCE($6,CURRENT_DATE)) RETURNING id`,
-		kidID, body.Owner, body.EntryType, body.AmountCents, body.Description, body.EntryDate).Scan(&id); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+		`INSERT INTO kid_savings_ledger (kid_id,owner,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,$3,$4,$5,COALESCE($6,CURRENT_DATE)) RETURNING id, entry_date`,
+		kidID, body.Owner, body.EntryType, body.AmountCents, body.Description, body.EntryDate).Scan(&id, &storedDate); err != nil {
+		mapDBError(w, "createKidLedgerEntry", err)
 		return
 	}
 	s.auditLog(r.Context(), "kid.entry", "kid", kidID, map[string]any{"owner": body.Owner, "entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description})
-	JSON(w, http.StatusCreated, map[string]any{"id": id, "kidId": kidID, "owner": body.Owner, "entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description, "entryDate": body.EntryDate})
+	JSON(w, http.StatusCreated, map[string]any{"id": id, "kidId": kidID, "owner": body.Owner, "entryType": body.EntryType, "amountCents": body.AmountCents, "description": body.Description, "entryDate": storedDate.Format("2006-01-02")})
 }
 
 func (s *Server) handleUpdateKidLedgerEntry(w http.ResponseWriter, r *http.Request) {
@@ -240,13 +259,21 @@ func (s *Server) handleUpdateKidLedgerEntry(w http.ResponseWriter, r *http.Reque
 		AmountCents int64  `json:"amountCents"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		badRequest(w, err)
 		return
 	}
 	var kidID int64
 	var entryType string
-	if err := s.pool.QueryRow(r.Context(), `SELECT kid_id, entry_type FROM kid_savings_ledger WHERE id=$1`, id).Scan(&kidID, &entryType); err != nil {
-		Error(w, http.StatusNotFound, "not_found", "entry not found")
+	var entryDate time.Time
+	if err := s.pool.QueryRow(r.Context(), `SELECT kid_id, entry_type, entry_date FROM kid_savings_ledger WHERE id=$1`, id).Scan(&kidID, &entryType, &entryDate); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			Error(w, http.StatusNotFound, "not_found", "entry not found")
+			return
+		}
+		dbError(w, "updateKidLedgerEntry.lookup", err)
+		return
+	}
+	if !isYearWritable(r.Context(), s.pool, w, entryDate.Year()) {
 		return
 	}
 	switch body.Owner {
@@ -263,8 +290,13 @@ func (s *Server) handleUpdateKidLedgerEntry(w http.ResponseWriter, r *http.Reque
 		Error(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE kid_savings_ledger SET owner=$2, amount_cents=$3 WHERE id=$1`, id, body.Owner, amount); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+	tag, err := s.pool.Exec(r.Context(), `UPDATE kid_savings_ledger SET owner=$2, amount_cents=$3 WHERE id=$1`, id, body.Owner, amount)
+	if err != nil {
+		mapDBError(w, "updateKidLedgerEntry", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		Error(w, http.StatusNotFound, "not_found", "entry not found")
 		return
 	}
 	s.auditLog(r.Context(), "kid.entry.update", "kid", kidID, map[string]any{"entryId": id, "owner": body.Owner, "amountCents": amount})
@@ -278,12 +310,25 @@ func (s *Server) handleDeleteKidLedgerEntry(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var kidID int64
-	if err := s.pool.QueryRow(r.Context(), `SELECT kid_id FROM kid_savings_ledger WHERE id=$1`, id).Scan(&kidID); err != nil {
-		Error(w, http.StatusNotFound, "not_found", "entry not found")
+	var entryDate time.Time
+	if err := s.pool.QueryRow(r.Context(), `SELECT kid_id, entry_date FROM kid_savings_ledger WHERE id=$1`, id).Scan(&kidID, &entryDate); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			Error(w, http.StatusNotFound, "not_found", "entry not found")
+			return
+		}
+		dbError(w, "deleteKidLedgerEntry.lookup", err)
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `DELETE FROM kid_savings_ledger WHERE id=$1`, id); err != nil {
-		Error(w, http.StatusInternalServerError, "db_error", err.Error())
+	if !isYearWritable(r.Context(), s.pool, w, entryDate.Year()) {
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `DELETE FROM kid_savings_ledger WHERE id=$1`, id)
+	if err != nil {
+		dbError(w, "deleteKidLedgerEntry", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		Error(w, http.StatusNotFound, "not_found", "entry not found")
 		return
 	}
 	s.auditLog(r.Context(), "kid.entry.delete", "kid", kidID, map[string]any{"entryId": id})

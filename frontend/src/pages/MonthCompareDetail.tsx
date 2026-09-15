@@ -12,6 +12,7 @@ import { useTrendsCategoryTotals } from '../api/hooks/usePeriods'
 import { formatCents, formatCentsCompact } from '../lib/money'
 import { niceAxisTicksSigned } from '../lib/chartAxis'
 import { useChartPalette } from '../contexts/ChartPaletteContext'
+import { paletteColorValue } from '../lib/chartPalette'
 import ChartLegend from '../components/trends/ChartLegend'
 import { MobileListRow } from '../components/mobile/MobileList'
 import EmptyState from '../components/EmptyState'
@@ -110,6 +111,7 @@ function BiggestMoversChart({ rows, locale }: { rows: { name: string; trend: num
   const top = [...rows].sort((a, b) => Math.abs(b.trend) - Math.abs(a.trend)).slice(0, 8)
   const maxAbs = Math.max(...top.map((r) => Math.abs(r.trend)), 1)
   const { t } = useTranslation()
+  const { palette } = useChartPalette()
   return (
     <Paper withBorder p="md">
       <Text size="sm" fw={600} mb="sm">{t('trends.biggestMovers')}</Text>
@@ -121,9 +123,9 @@ function BiggestMoversChart({ rows, locale }: { rows: { name: string; trend: num
             <Group key={row.name} gap="sm" wrap="nowrap">
               <Text size="xs" style={{ width: 140, flexShrink: 0 }} truncate>{row.name}</Text>
               <Box style={{ flex: 1, height: 8, background: 'var(--mantine-color-default-border)', borderRadius: 4, overflow: 'hidden' }}>
-                <Box style={{ width: `${pct}%`, height: '100%', background: `var(--mantine-color-${bad ? 'red' : 'teal'}-6)`, borderRadius: 4 }} />
+                <Box style={{ width: `${pct}%`, height: '100%', background: paletteColorValue(bad ? palette.expenses : palette.income), borderRadius: 4 }} />
               </Box>
-              <Text size="xs" c={bad ? 'red' : 'teal'} fw={600} style={{ width: 90, textAlign: 'right', flexShrink: 0 }}>
+              <Text size="xs" c={bad ? palette.expenses : palette.income} fw={600} style={{ width: 90, textAlign: 'right', flexShrink: 0 }}>
                 {row.trend >= 0 ? '+' : ''}{formatCents(row.trend, locale)}
               </Text>
             </Group>
@@ -194,6 +196,10 @@ export default function MonthCompareDetail() {
 
   const searchLower = search.trim().toLowerCase()
   const sortMultiplier = sortDir === 'asc' ? 1 : -1
+  // Removing periods from the MultiSelect can leave a column-index sort key
+  // pointing past the end of every row, which made the comparator call every
+  // pair equal and froze the table in a meaningless order.
+  const effectiveSortKey: SortKey = typeof sortKey === 'number' && sortKey >= periods.length ? 'trend' : sortKey
 
   const categoryRows = categoryQuery.data.categories
     .map((cat) => {
@@ -204,9 +210,9 @@ export default function MonthCompareDetail() {
     .filter((row) => !hiddenIds.has(row.id))
     .filter((row) => searchLower === '' || row.name.toLowerCase().includes(searchLower))
     .sort((a, b) => {
-      if (sortKey === 'name') return a.name.localeCompare(b.name) * sortMultiplier
-      if (sortKey === 'trend') return (Math.abs(a.trend) - Math.abs(b.trend)) * sortMultiplier
-      return (a.values[sortKey] - b.values[sortKey]) * sortMultiplier
+      if (effectiveSortKey === 'name') return a.name.localeCompare(b.name) * sortMultiplier
+      if (effectiveSortKey === 'trend') return (Math.abs(a.trend) - Math.abs(b.trend)) * sortMultiplier
+      return ((a.values[effectiveSortKey] ?? 0) - (b.values[effectiveSortKey] ?? 0)) * sortMultiplier
     })
 
   const toggleSort = (key: SortKey) => {
@@ -319,11 +325,11 @@ export default function MonthCompareDetail() {
               <Table striped>
                 <Table.Thead>
                   <Table.Tr>
-                    <SortableTh label={t('settings.categories')} active={sortKey === 'name'} dir={sortDir} onClick={() => toggleSort('name')} />
+                    <SortableTh label={t('settings.categories')} active={effectiveSortKey === 'name'} dir={sortDir} onClick={() => toggleSort('name')} />
                     {periodLabels.map((label, i) => (
-                      <SortableTh key={label} label={label} active={sortKey === i} dir={sortDir} align="right" onClick={() => toggleSort(i)} />
+                      <SortableTh key={label} label={label} active={effectiveSortKey === i} dir={sortDir} align="right" onClick={() => toggleSort(i)} />
                     ))}
-                    <SortableTh label={t('trends.trend')} active={sortKey === 'trend'} dir={sortDir} align="right" onClick={() => toggleSort('trend')} />
+                    <SortableTh label={t('trends.trend')} active={effectiveSortKey === 'trend'} dir={sortDir} align="right" onClick={() => toggleSort('trend')} />
                     <Table.Th w={40} />
                   </Table.Tr>
                 </Table.Thead>

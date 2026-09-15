@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -9,12 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/minio/minio-go/v7"
 
 	"github.com/wouterdamman/home-finance/internal/auth"
 	"github.com/wouterdamman/home-finance/internal/avatarstorage"
 	"github.com/wouterdamman/home-finance/internal/config"
-	"github.com/wouterdamman/home-finance/internal/s3client"
 )
 
 type Server struct {
@@ -22,12 +21,11 @@ type Server struct {
 	pool          *pgxpool.Pool
 	sm            *scs.SessionManager
 	oidc          *auth.Provider
-	s3            *minio.Client
 	avatarStorage avatarstorage.Storage
 }
 
 func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, oidcProvider *auth.Provider) http.Handler {
-	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, s3: s3client.New(cfg), avatarStorage: avatarstorage.NewPostgres(pool)}
+	s := &Server{cfg: cfg, pool: pool, sm: sm, oidc: oidcProvider, avatarStorage: avatarstorage.NewPostgres(pool)}
 	if cfg.DevFakeAuth {
 		// Callers that hit the API directly (integration tests, curl) never
 		// go through /auth/login, so the dev admin row must exist up front —
@@ -37,8 +35,15 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 	}
 	authFlowLimiter := newAuthFlowLimiter()
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
+	// No middleware.RealIP: chi's own source deprecates it as spoofable (it
+	// rewrites RemoteAddr from caller-supplied X-Forwarded-For / X-Real-IP /
+	// True-Client-IP with no trusted-proxy list). The rate limiter keys on the
+	// session user id instead, so nothing here needs a client IP. Adding a
+	// limiter to an unauthenticated route would need a trusted-proxy-aware
+	// client IP first — not this.
 	r.Use(middleware.Recoverer)
+	r.Use(securityHeaders)
+	r.Use(bodyLimit)
 	r.Use(sm.LoadAndSave)
 
 	// healthz is pure liveness (process alive) — no DB check, so a flaky DB
@@ -50,7 +55,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := pool.Ping(ctx); err != nil {
-			Error(w, http.StatusServiceUnavailable, "db_unreachable", err.Error())
+			slog.Warn("readyz db ping failed", "err", err)
+			Error(w, http.StatusServiceUnavailable, "db_unreachable", "database unreachable")
 			return
 		}
 		w.WriteHeader(200)
@@ -58,7 +64,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 
 	r.Get("/auth/login", s.handleAuthLogin)
 	r.Get("/auth/callback", s.handleAuthCallback)
-	r.Post("/auth/logout", s.handleAuthLogout)
+	r.With(auth.RequireCSRF).Post("/auth/logout", s.handleAuthLogout)
 
 	requireAuth := auth.Require(sm, cfg.DevFakeAuth)
 	requireAdmin := auth.RequireAdmin(pool)
@@ -67,6 +73,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.RequireCSRF)
+		r.NotFound(apiNotFound)
+		r.MethodNotAllowed(apiMethodNotAllowed)
 		r.With(requireAuth).Get("/me", s.handleMe)
 		r.With(requireAuth).Get("/reauth-status", s.handleReauthStatus)
 		r.With(requireAuth).Patch("/me", s.handleUpdateMe)
@@ -170,7 +178,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.With(requireAdmin).Post("/years/{year}/unlock", s.handleUnlockYear)
 
 			// Export
-			r.Get("/export/years/{year}", s.handleExportYear)
+			r.With(requireAdmin).Get("/export/years/{year}", s.handleExportYear)
 
 			// Import
 			r.With(requireAdmin).Post("/import/xlsx", s.handleImportXLSX)

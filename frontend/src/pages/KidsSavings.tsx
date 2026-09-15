@@ -8,6 +8,8 @@ import { useKidBalances } from '../api/hooks/useSettings'
 import MoneyText from '../components/MoneyText'
 import EmptyState from '../components/EmptyState'
 import { useChartPalette } from '../contexts/ChartPaletteContext'
+import { formatCents, formatCentsCompact } from '../lib/money'
+import { niceAxisTicksSigned } from '../lib/chartAxis'
 
 export default function KidsSavings() {
   const { t, i18n } = useTranslation()
@@ -20,6 +22,17 @@ export default function KidsSavings() {
     [t('kids.ours')]: k.oursCents / 100,
     [t('kids.theirs')]: k.theirsCents / 100,
   }))
+  // Stacked bars: the visible top of a bar is ours + theirs.
+  const chartStackedMax = kids.reduce((max, k) => Math.max(max, (k.oursCents + k.theirsCents) / 100), 0)
+  const chartStackedMin = kids.reduce((min, k) => Math.min(min, k.oursCents / 100, k.theirsCents / 100), 0)
+  const chartTicks = niceAxisTicksSigned(chartStackedMin, chartStackedMax)
+  const chartYAxisProps = {
+    tickFormatter: (v: number) => formatCentsCompact(Math.round(v * 100), locale),
+    width: 56,
+    ticks: chartTicks,
+    domain: [chartTicks[0], chartTicks[chartTicks.length - 1]] as [number, number],
+  }
+  const chartXAxisProps = { interval: Math.max(0, Math.ceil(chartData.length / 6) - 1) }
 
   if (isLoading) return <Skeleton h={200} mt="md" />
   if (error) return <Alert color="red">{t('common.error')}</Alert>
@@ -42,7 +55,9 @@ export default function KidsSavings() {
               { name: t('kids.ours'), color: palette.categorical[0] },
               { name: t('kids.theirs'), color: palette.categorical[1] },
             ]}
-            valueFormatter={(v) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(v)}
+            valueFormatter={(v) => formatCents(Math.round(v * 100), locale)}
+            xAxisProps={chartXAxisProps}
+            yAxisProps={chartYAxisProps}
           />
         </Paper>
       )}

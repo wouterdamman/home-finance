@@ -1,6 +1,7 @@
-# Environment
-.env
-.env.local
+# Environment — glob, not a list: a future .env.prod / .env.staging must not be
+# committable just because nobody remembered to add it here.
+.env*
+!.env.example
 
 # Go
 backend/bin/
@@ -12,6 +13,7 @@ backend/internal/store/gen/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+*.tsbuildinfo
 
 # Docker
 *.log

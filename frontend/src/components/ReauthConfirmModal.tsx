@@ -21,17 +21,28 @@ export default function ReauthConfirmModal({
   const { state, start, reset } = useReauth()
   const firedRef = useRef(false)
 
+  // The modal stays mounted at every call site (they pass `opened`), so the
+  // poll must be torn down whenever it is dismissed — otherwise a popup that
+  // completes later fires the destructive action the user just cancelled.
   useEffect(() => {
-    if (state === 'fresh' && !firedRef.current) {
+    if (!opened) {
+      firedRef.current = false
+      reset()
+    }
+  }, [opened, reset])
+
+  useEffect(() => {
+    if (opened && state === 'fresh' && !firedRef.current) {
       firedRef.current = true
       onConfirm()
     }
     if (state !== 'fresh') {
       firedRef.current = false
     }
-  }, [state, onConfirm])
+  }, [opened, state, onConfirm])
 
   const handleClose = () => {
+    firedRef.current = false
     reset()
     onClose()
   }

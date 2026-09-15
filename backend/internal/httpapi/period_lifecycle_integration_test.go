@@ -350,12 +350,12 @@ func TestCreatePeriodCopiesItemizedIncomeTransactions(t *testing.T) {
 	// true — autofillActual is what actually gates copying the itemized
 	// transactions forward (see copyPeriodTemplate).
 	resp := c.do(http.MethodPost, "/api/income-sources", map[string]any{
-		"name":              "Test Itemized Source XYZ",
+		"name":               "Test Itemized Source XYZ",
 		"defaultAmountCents": 0,
-		"isItemized":        true,
-		"includeInTemplate": true,
-		"autofillActual":    true,
-		"sortOrder":         999,
+		"isItemized":         true,
+		"includeInTemplate":  true,
+		"autofillActual":     true,
+		"sortOrder":          999,
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create income source: want 201, got %d", resp.StatusCode)
@@ -371,11 +371,11 @@ func TestCreatePeriodCopiesItemizedIncomeTransactions(t *testing.T) {
 
 	// Create a second income source with includeInTemplate: false for negative testing.
 	resp = c.do(http.MethodPost, "/api/income-sources", map[string]any{
-		"name":              "Non-Template Itemized Source",
+		"name":               "Non-Template Itemized Source",
 		"defaultAmountCents": 0,
-		"isItemized":        true,
-		"includeInTemplate": false,
-		"sortOrder":         998,
+		"isItemized":         true,
+		"includeInTemplate":  false,
+		"sortOrder":          998,
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create non-template source: want 201, got %d", resp.StatusCode)

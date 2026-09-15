@@ -39,8 +39,10 @@ func (p *Provider) AuthCodeURL(state, nonce string, opts ...oauth2.AuthCodeOptio
 	return p.config.AuthCodeURL(state, append([]oauth2.AuthCodeOption{oidc.Nonce(nonce)}, opts...)...)
 }
 
-func (p *Provider) Exchange(ctx context.Context, code string) (*oidc.IDToken, error) {
-	token, err := p.config.Exchange(ctx, code)
+// Exchange redeems the authorization code. opts carries the PKCE verifier
+// (oauth2.VerifierOption) matching the challenge sent to AuthCodeURL.
+func (p *Provider) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oidc.IDToken, error) {
+	token, err := p.config.Exchange(ctx, code, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("exchange: %w", err)
 	}

@@ -1,7 +1,12 @@
+{{- $saName := .Values.serviceAccount.name | default .Release.Name }}
+{{- if not .Values.serviceAccount.create }}
+{{- $saName = .Values.serviceAccount.name | default "default" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
   labels:
     app: {{ .Release.Name }}
 spec:
@@ -16,17 +21,51 @@ spec:
       labels:
         app: {{ .Release.Name }}
     spec:
+      serviceAccountName: {{ $saName }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      volumes:
+        # Required by securityContext.readOnlyRootFilesystem — see tmpVolume
+        # in values.yaml for what actually writes here.
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
       containers:
         - name: server
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - containerPort: 8080
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           env:
+            # Free-form env FIRST, on purpose: Kubernetes keeps the *last*
+            # duplicate, so rendering this after the secretKeyRef entries below
+            # would let `--set env.DATABASE_URL=...` silently replace a Secret
+            # reference with a plaintext literal baked into the Deployment spec
+            # (and, in this GitOps setup, committed to git). Ordering alone
+            # would make that a confusing no-op, so the reserved keys are a hard
+            # failure instead.
+            {{- $reserved := list "DATABASE_URL" "OIDC_CLIENT_SECRET" "S3_ACCESS_KEY_ID" "S3_SECRET_ACCESS_KEY" }}
+            {{- range $key, $val := .Values.env }}
+            {{- if has $key $reserved }}
+            {{- fail (printf "env.%s is secret-backed and must not be set through .Values.env — put it in the %s Secret (or the s3/oidc existingSecret) instead" $key $.Values.secrets.name) }}
+            {{- end }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -79,10 +118,6 @@ spec:
             - name: AUDIT_EXPORT_INTERVAL
               value: {{ .Values.auditExport.interval | quote }}
             {{- end }}
-            {{- end }}
-            {{- range $key, $val := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $val | quote }}
             {{- end }}
           livenessProbe:
             httpGet:

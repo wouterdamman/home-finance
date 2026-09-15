@@ -54,3 +54,45 @@ export function useDeleteIncomeSourceDescriptionPreset(sourceId: number) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['income-source-description-presets', sourceId] }),
   })
 }
+
+// Auto-derived from typed history (GROUP BY description), deliberately kept
+// separate from the curated presets above — the transaction-entry
+// Autocomplete merges the two client-side, presets pinned first.
+export interface TransactionDescription {
+  description: string
+  lastUsed: string
+  count: number
+}
+
+export function useCategoryTransactionDescriptions(categoryId: number) {
+  return useQuery<TransactionDescription[]>({
+    queryKey: ['category-transaction-descriptions', categoryId],
+    queryFn: () => api.get<TransactionDescription[]>(`/api/categories/${categoryId}/transaction-descriptions`),
+    enabled: categoryId > 0,
+  })
+}
+
+export function useIncomeSourceTransactionDescriptions(sourceId: number) {
+  return useQuery<TransactionDescription[]>({
+    queryKey: ['income-source-transaction-descriptions', sourceId],
+    queryFn: () => api.get<TransactionDescription[]>(`/api/income-sources/${sourceId}/transaction-descriptions`),
+    enabled: sourceId > 0,
+  })
+}
+
+// Presets first (curated, pinned), then typed history minus anything already
+// covered by a preset — exact-string dedupe, per AGENTS.md.
+export function mergeDescriptionSuggestions(
+  presets: DescriptionPreset[] | undefined,
+  history: TransactionDescription[] | undefined,
+): string[] {
+  const pinned = (presets ?? []).map((p) => p.description)
+  const seen = new Set(pinned)
+  const rest: string[] = []
+  for (const h of history ?? []) {
+    if (h.description === '' || seen.has(h.description)) continue
+    seen.add(h.description)
+    rest.push(h.description)
+  }
+  return [...pinned, ...rest]
+}
