@@ -11,7 +11,21 @@ spec:
 
   ingress:
     {{- with .Values.networkPolicy.cilium.gatewayIngress }}
-    {{- if .namespaceLabel }}
+    {{- if .hostNetwork }}
+    # Gateway data plane runs hostNetwork (e.g. a shared node-local Envoy
+    # DaemonSet) — Cilium classifies that traffic as host/remote-node, never
+    # as a labelled endpoint, so fromEndpoints can't match it at any label.
+    # This is coarser than a pod selector (any host-networked process on any
+    # node may reach :8080), but still narrower than fromEntities:[cluster]
+    # below, which additionally allows every regular pod in the cluster too.
+    - fromEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: {{ .port | default 8080 | quote }}
+              protocol: TCP
+    {{- else if .namespaceLabel }}
     # Gateway data plane only — the hardened form. Set gatewayIngress.namespaceLabel
     # and .podLabels to the labels the real Gateway's pods carry (confirm with
     # `kubectl get pods -n <gateway ns> --show-labels`) and this replaces the

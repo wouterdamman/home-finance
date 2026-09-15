@@ -180,16 +180,28 @@ networkPolicy:
     # `kubectl get pods -n <gateway ns> --show-labels`, then set both fields —
     # until then the policy falls back to allowing any in-cluster endpoint.
     gatewayIngress:
-      # REVERTED 2026-09-15: this cluster's Cilium Gateway API runs as a
-      # node-local Envoy DaemonSet with hostNetwork: true (podIP == hostIP).
-      # Cilium classifies hostNetwork pod traffic as the `host`/`remote-node`
-      # entity, not as a pod-labeled endpoint — a `fromEndpoints` selector on
-      # k8s-app=cilium-envoy can never match it. Setting namespaceLabel here
-      # previously took down prod: the old fromEntities:[cluster] catch-all
-      # was replaced by a rule that matches nothing, so ALL gateway traffic
-      # to :8080 was silently dropped. Fix properly with `fromEntities:
-      # [host, remote-node]` (not namespaceLabel/podLabels) before narrowing
-      # this again — verify with a real request before trusting it.
+      # Two narrowing modes, because a Gateway's data plane is either a normal
+      # pod (has labels Cilium can match) or a node-local hostNetwork process
+      # (Cilium sees it as the host/remote-node entity, never as a labelled
+      # endpoint — a fromEndpoints selector can NEVER match it, no matter how
+      # correct the labels are). Picking the wrong mode for your cluster fails
+      # the same way as a wrong label: silently unreachable on the next sync.
+      #
+      # hostNetwork: true   — e.g. this cluster's Cilium Gateway API, which
+      #   runs as a shared node-local Envoy DaemonSet (confirm with
+      #   `kubectl get pods -n <gateway ns> -o jsonpath='{.items[0].spec.hostNetwork}'`).
+      #   Uses fromEntities:[host, remote-node] below — coarser than a pod
+      #   selector (any host-networked process on any node), but it's the
+      #   only thing Cilium can match for hostNetwork traffic at all.
+      # hostNetwork: false (default) — a Gateway with normal per-Gateway
+      #   pods. Set namespaceLabel/podLabels to those pods' labels (confirm
+      #   with `kubectl get pods -n <gateway ns> --show-labels`); this uses
+      #   fromEndpoints, a real pod-identity match.
+      #
+      # REQUIRED when networkPolicy.cilium.enabled=true — with hostNetwork
+      # false and namespaceLabel empty, no ingress rule is rendered and only
+      # Prometheus can reach the app.
+      hostNetwork: false
       namespaceLabel: ""
       podLabels: {}
       port: 8080
