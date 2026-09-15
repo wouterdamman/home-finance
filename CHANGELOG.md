@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/wouterdamman/home-finance/compare/v1.19.0...v1.19.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deploy:** stop digest-pinning our own release image ([85aef0f](https://github.com/wouterdamman/home-finance/commit/85aef0f12a58bf4abe94ce0da0e19cd12619055d))
+
 ## [1.19.0](https://github.com/wouterdamman/home-finance/compare/v1.18.3...v1.19.0) (2026-09-15)
 
 
