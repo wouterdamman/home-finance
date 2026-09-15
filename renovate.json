@@ -11,6 +11,12 @@
       "matchManagers": ["gomod"],
       "matchDepTypes": ["indirect"],
       "enabled": true
+    },
+    {
+      "description": "Our own release image's tag is already fully immutable per release — release.yml builds and pushes it exactly once, right after release-please cuts the version. Digest-pinning it on top races release-please's version bump: the bump only rewrites the version text (the x-release-please-version marker doesn't know the new digest yet), so values.yaml briefly points at a plausible-looking but stale digest until Renovate's next scan catches up and re-pins. That gap deployed a stale image under a new version label once already — don't pin this one.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/wouterdamman/home-finance"],
+      "pinDigests": false
     }
   ]
 }
