@@ -5,6 +5,7 @@
     "docker:pinDigests",
     "helpers:pinGitHubActionDigests"
   ],
+  "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
       "description": "The gomod manager ignores indirect dependencies by default, so transitive modules never get security bumps (this is why golang.org/x/crypto sat three advisories behind).",
