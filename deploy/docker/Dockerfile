@@ -1,7 +1,7 @@
 # All three base images are pinned tag@digest: a tag is mutable, so without the
 # digest a rebuild of an identical commit can silently pull different bits.
 # Renovate keeps both halves current (docker:pinDigests in renovate.json).
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS frontend
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS frontend
 WORKDIR /app/frontend
 # .npmrc comes along explicitly (package*.json doesn't glob it) so the image
 # build honours ignore-scripts=true exactly like CI and local installs do —
