@@ -6,7 +6,14 @@
     "helpers:pinGitHubActionDigests"
   ],
   "postUpdateOptions": ["gomodTidy"],
+  "schedule": ["before 6am on monday"],
   "packageRules": [
+    {
+      "description": "Auto-merge patch/minor bumps once CI is green — keeps routine dependency churn off Wouter's plate. Majors stay manual PRs since they can carry breaking changes.",
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
     {
       "description": "The gomod manager ignores indirect dependencies by default, so transitive modules never get security bumps (this is why golang.org/x/crypto sat three advisories behind).",
       "matchManagers": ["gomod"],
