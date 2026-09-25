@@ -91,7 +91,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 
 	// ── Export through the real handler ─────────────────────────────
 	cfg := &config.Config{DevFakeAuth: true, Env: "development", SessionSecure: false}
-	sm := auth.NewSessionManager(pool, false)
+	sm := auth.NewSessionManager(pool, false, auth.DefaultSessionLifetime, auth.DefaultSessionIdleTimeout)
 	srv := httptest.NewServer(httpapi.NewServer(cfg, pool, sm, nil))
 	t.Cleanup(srv.Close)
 
