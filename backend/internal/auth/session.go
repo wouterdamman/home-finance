@@ -30,16 +30,26 @@ const sessionUserKey = "userID"
 // grows one row per login forever.
 const sessionCleanupInterval = 1 * time.Hour
 
-func NewSessionManager(pool *pgxpool.Pool, secure bool) *scs.SessionManager {
+// Defaults for the two session TTLs — the values this used to hardcode.
+// SESSION_LIFETIME and SESSION_IDLE_TIMEOUT override them for deployments
+// that want to stay signed in longer.
+const (
+	DefaultSessionLifetime    = 7 * 24 * time.Hour
+	DefaultSessionIdleTimeout = 24 * time.Hour
+)
+
+// NewSessionManager wires up the session store. lifetime is the absolute
+// cap on a session; idleTimeout expires it that long after the last
+// request. Absolute lifetime alone lets a session abandoned on a shared or
+// stolen device stay valid for its full length, which is why both exist —
+// raising one is a reason to think about the other.
+func NewSessionManager(pool *pgxpool.Pool, secure bool, lifetime, idleTimeout time.Duration) *scs.SessionManager {
 	sm := scs.New()
 	store := &pgxStore{pool: pool}
 	store.startCleanup(sessionCleanupInterval)
 	sm.Store = store
-	sm.Lifetime = 7 * 24 * time.Hour
-	// Absolute lifetime alone lets a session abandoned on a shared or
-	// stolen device stay valid for the full week; IdleTimeout expires it a
-	// day after the last request instead.
-	sm.IdleTimeout = 24 * time.Hour
+	sm.Lifetime = lifetime
+	sm.IdleTimeout = idleTimeout
 	sm.Cookie.HttpOnly = true
 	sm.Cookie.SameSite = http.SameSiteLaxMode
 	sm.Cookie.Secure = secure

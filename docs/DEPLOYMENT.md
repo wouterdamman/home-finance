@@ -17,6 +17,8 @@
 | `INITIAL_ADMIN_EMAILS` | — | Comma-separated emails granted `role=admin` on first login (upsert only — doesn't override a role changed later in Settings > Users) |
 | `STATIC_DIR` | — | Path to frontend dist (empty = no SPA serving) |
 | `SESSION_SECURE` | `true` | `Secure` flag on the session cookie — `false` only for plain-HTTP local dev |
+| `SESSION_LIFETIME` | `168h` | Absolute cap on a session, as a Go duration. Must be positive |
+| `SESSION_IDLE_TIMEOUT` | `24h` | Expires a session this long after the last request. Must be positive and not exceed `SESSION_LIFETIME` |
 | `S3_ENDPOINT` | — | S3-compatible object storage endpoint (audit-log export only). Empty disables it |
 | `S3_BUCKET` | — | Bucket name |
 | `S3_ACCESS_KEY_ID` | — | Access key |

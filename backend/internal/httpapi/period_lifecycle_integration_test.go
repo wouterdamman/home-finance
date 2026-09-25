@@ -39,7 +39,7 @@ func newIntegrationServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	t.Cleanup(pool.Close)
 
 	cfg := &config.Config{DevFakeAuth: true, Env: "development", SessionSecure: false}
-	sm := auth.NewSessionManager(pool, false)
+	sm := auth.NewSessionManager(pool, false, auth.DefaultSessionLifetime, auth.DefaultSessionIdleTimeout)
 	handler := httpapi.NewServer(cfg, pool, sm, nil)
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)

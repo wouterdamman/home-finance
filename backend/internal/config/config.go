@@ -25,6 +25,13 @@ type Config struct {
 	StaticDir          string   `env:"STATIC_DIR"`
 	SessionSecure      bool     `env:"SESSION_SECURE"  envDefault:"true"`
 
+	// Session TTLs. SessionLifetime is the absolute cap, SessionIdleTimeout
+	// expires a session that long after the last request. Defaults match
+	// auth.DefaultSessionLifetime / auth.DefaultSessionIdleTimeout — kept as
+	// literals here because a struct tag can't reference a constant.
+	SessionLifetime    time.Duration `env:"SESSION_LIFETIME"      envDefault:"168h"`
+	SessionIdleTimeout time.Duration `env:"SESSION_IDLE_TIMEOUT"  envDefault:"24h"`
+
 	S3Endpoint  string `env:"S3_ENDPOINT"`
 	S3Bucket    string `env:"S3_BUCKET"`
 	S3AccessKey string `env:"S3_ACCESS_KEY_ID"`
@@ -55,6 +62,20 @@ func Load() (*Config, error) {
 	// anything other than an explicit ENV=development must refuse it.
 	if cfg.DevFakeAuth && cfg.Env != "development" {
 		return nil, fmt.Errorf("DEV_FAKE_AUTH must not be enabled unless ENV=development (ENV=%q)", cfg.Env)
+	}
+	// scs treats a non-positive Lifetime or IdleTimeout as "already
+	// expired", so a typo like SESSION_LIFETIME=0 would log every user out
+	// on their next request instead of failing loudly at boot.
+	if cfg.SessionLifetime <= 0 {
+		return nil, fmt.Errorf("SESSION_LIFETIME must be positive (got %s)", cfg.SessionLifetime)
+	}
+	if cfg.SessionIdleTimeout <= 0 {
+		return nil, fmt.Errorf("SESSION_IDLE_TIMEOUT must be positive (got %s)", cfg.SessionIdleTimeout)
+	}
+	// An idle timeout above the absolute lifetime can never fire, which
+	// silently removes the protection it was added for.
+	if cfg.SessionIdleTimeout > cfg.SessionLifetime {
+		return nil, fmt.Errorf("SESSION_IDLE_TIMEOUT (%s) must not exceed SESSION_LIFETIME (%s)", cfg.SessionIdleTimeout, cfg.SessionLifetime)
 	}
 	// AUDIT_EXPORT_INTERVAL reaches time.NewTicker, which panics on a
 	// non-positive duration — and the exporter runs in a bare goroutine that
