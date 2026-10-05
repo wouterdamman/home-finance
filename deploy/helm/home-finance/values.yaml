@@ -81,6 +81,16 @@ env:
   PORT: "8080"
   # ALLOWED_EMAILS: ""                  # comma-separated allowlist, empty = anyone the IdP authenticates
   # INITIAL_ADMIN_EMAILS: "you@example.com"  # comma-separated, granted role=admin on first login
+  # The idle timeout is the one that signs people out, and the app's own 24h
+  # default is too aggressive for a household budget app: anyone opening it
+  # less often than daily paid a fresh OIDC round-trip every single visit.
+  # A week matches how often people actually check their finances.
+  SESSION_IDLE_TIMEOUT: "168h"
+  # Absolute cap, unset here so the app's 168h default applies. Raise it if
+  # you raise the idle timeout: the idle timeout may not exceed the lifetime
+  # (the pod refuses to boot rather than silently never expiring a session),
+  # so at equal values the idle timeout can never fire first.
+  # SESSION_LIFETIME: "720h"
 
 # Name of the Secret the app reads DATABASE_URL / OIDC_CLIENT_SECRET from at
 # runtime. Populated either by externalSecrets.enabled (default) or by you
