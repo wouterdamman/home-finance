@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.20.0](https://github.com/wouterdamman/home-finance/compare/v1.19.2...v1.20.0) (2026-10-05)
+
+
+### Features
+
+* **auth:** make session lifetime and idle timeout configurable ([#156](https://github.com/wouterdamman/home-finance/issues/156)) ([44ba1b4](https://github.com/wouterdamman/home-finance/commit/44ba1b49934f6fb8ac9766bea64e17b7a5c6a93e))
+
+
+### Bug Fixes
+
+* **deploy:** raise session TTLs so people stop re-authenticating every visit ([#164](https://github.com/wouterdamman/home-finance/issues/164)) ([90edc95](https://github.com/wouterdamman/home-finance/commit/90edc959f411ff6369e870e5a64dd0dc651d35e6))
+
 ## [1.19.2](https://github.com/wouterdamman/home-finance/compare/v1.19.1...v1.19.2) (2026-09-15)
 
 
