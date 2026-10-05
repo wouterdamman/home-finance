@@ -90,7 +90,7 @@ func run() error {
 		return err
 	}
 
-	sm := auth.NewSessionManager(pool, cfg.SessionSecure)
+	sm := auth.NewSessionManager(pool, cfg.SessionSecure, cfg.SessionLifetime, cfg.SessionIdleTimeout)
 
 	var oidcProvider *auth.Provider
 	if !cfg.DevFakeAuth && cfg.OIDCIssuerURL != "" {
