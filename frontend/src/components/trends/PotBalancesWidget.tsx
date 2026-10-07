@@ -34,7 +34,19 @@ function PotBalancesWidget({ potIds, chartKind, filter, potData }: Props) {
   // no pot ledger mutations at all still has to render flat, never dropping
   // to zero. If an entry for a given month is ever missing outright, carry
   // the previous month's balance forward instead of defaulting to 0.
+  // Seed the carry-forward from the last month BEFORE the filter year: a
+  // pot funded in an earlier year that sees no mutation until mid-year
+  // would otherwise render at 0 until its first entry and then jump.
   const lastBalance: Record<string, number> = {}
+  const priorEntries = potData.entries.filter((e) => e.year < filter.year)
+  if (priorEntries.length > 0) {
+    const prior = priorEntries[priorEntries.length - 1]
+    for (const pot of selectedPots) {
+      const key = String(pot.id)
+      const raw = prior.balances[key]
+      if (raw != null) lastBalance[key] = raw
+    }
+  }
   const data = months.map((label, i) => {
     const entry = potData.entries.find((e) => e.year === filter.year && e.month === i + 1)
     const row: Record<string, string | number> = { month: label }
