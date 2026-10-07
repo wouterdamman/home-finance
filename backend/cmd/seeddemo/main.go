@@ -16,12 +16,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -68,31 +68,51 @@ func main() {
 
 // requireLocalHost is the hard safety gate: this tool deletes and inserts
 // bulk rows, and must never be pointed at anything but a disposable local
-// dev database. It accepts both URL-style ("postgres://...") and libpq
-// keyword-style ("host=... port=...") DSNs, since both are valid for --dsn
-// and DATABASE_URL.
+// dev database.
+//
+// It deliberately asks pgx itself which hosts the DSN resolves to, rather
+// than parsing the string a second time. Hand-parsing with net/url checks a
+// different thing than pgx connects to: in a "postgres://" URI, libpq (and
+// therefore pgx) lets a "?host=" query parameter override the host in the
+// authority, so "postgres://user:pass@localhost/db?host=prod.internal"
+// looks local to net/url and connects to prod.internal. Using
+// pgconn.ParseConfig removes that parser disagreement, and covers
+// keyword-style ("host=... port=...") DSNs in the same step.
 func requireLocalHost(dsn string) error {
-	host := ""
-	if strings.Contains(dsn, "://") {
-		u, err := url.Parse(dsn)
-		if err != nil {
-			return fmt.Errorf("parse dsn: %w", err)
-		}
-		host = u.Hostname()
-	} else {
-		for _, field := range strings.Fields(dsn) {
-			if v, ok := strings.CutPrefix(field, "host="); ok {
-				host = v
-			}
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		return fmt.Errorf("parse dsn: %w", err)
+	}
+	hosts := make([]string, 0, len(cfg.Fallbacks)+1)
+	if cfg.Host != "" {
+		hosts = append(hosts, cfg.Host)
+	}
+	for _, fb := range cfg.Fallbacks {
+		if fb.Host != "" {
+			hosts = append(hosts, fb.Host)
 		}
 	}
-	if host == "" {
+	if len(hosts) == 0 {
 		return fmt.Errorf("could not determine host from DSN; refusing to run")
 	}
-	if host != "localhost" && host != "127.0.0.1" {
-		return fmt.Errorf("DSN host %q is not localhost/127.0.0.1; this tool only runs against a local dev database", host)
+	// Every candidate must be local: pgx tries the fallbacks in turn, so a
+	// single non-local entry is enough to end up connected to it.
+	for _, host := range hosts {
+		if !isLocalHost(host) {
+			return fmt.Errorf("DSN host %q is not localhost/127.0.0.1; this tool only runs against a local dev database", host)
+		}
 	}
 	return nil
+}
+
+// isLocalHost accepts the loopback names and addresses, plus a Unix socket
+// directory (pgx reports those as a path starting with "/"), which cannot
+// reach another machine.
+func isLocalHost(host string) bool {
+	if strings.HasPrefix(host, "/") {
+		return true
+	}
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func run(ctx context.Context, pool *pgxpool.Pool, wipe bool) error {
