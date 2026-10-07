@@ -185,7 +185,8 @@ func run(ctx context.Context, pool *pgxpool.Pool, wipe bool) error {
 // pot_splits, and any pot_ledger rows carrying one of those period_ids.
 // What's left after that — pot_ledger rows with period_id NULL (manual
 // deposit/withdrawal/opening_balance/adjustment entries) belonging to our
-// named pots, and kid_savings_ledger rows dated within demoYear — have no
+// named pots and dated within demoYear, and kid_savings_ledger rows dated
+// within demoYear — have no
 // cascade from periods and are deleted explicitly, in FK-safe order
 // (children before parent categories; periods/ledger rows before the
 // masterdata rows they reference). kids itself is never touched: those
@@ -197,9 +198,19 @@ func wipeExisting(ctx context.Context, tx pgx.Tx) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM periods WHERE year = $1`, demoYear); err != nil {
 		return fmt.Errorf("delete periods: %w", err)
 	}
+	// Scoped to this tool's own rows, not to every row of a same-named pot:
+	// deleting the periods above already cascaded the demo allocations, so
+	// what is left to remove is the manual (period_id NULL) entries this
+	// seeder writes, all of which are dated inside demoYear. Matching on the
+	// pot name alone would wipe a real same-named pot's entire history across
+	// every year — and would then also defeat the NOT EXISTS guard on the
+	// `pots` delete below, dropping that pot too.
 	if _, err := tx.Exec(ctx,
-		`DELETE FROM pot_ledger WHERE pot_id IN (SELECT id FROM pots WHERE name = ANY($1))`,
-		potNames(),
+		`DELETE FROM pot_ledger
+		 WHERE period_id IS NULL
+		   AND entry_date >= $2 AND entry_date < $3
+		   AND pot_id IN (SELECT id FROM pots WHERE name = ANY($1))`,
+		potNames(), yearStart, yearEnd,
 	); err != nil {
 		return fmt.Errorf("delete pot_ledger: %w", err)
 	}
