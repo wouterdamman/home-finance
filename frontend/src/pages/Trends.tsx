@@ -33,6 +33,7 @@ import TopDescriptionsWidget from '../components/trends/TopDescriptionsWidget'
 import SankeyFlowWidget from '../components/trends/SankeyFlowWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
+import { incomeSourceLabel } from '../lib/incomeSourceLabel'
 
 const MONTH_NAMES_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
 const MONTH_NAMES_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -62,7 +63,10 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
     return category ? t('trends.topDescriptionsTitle', { category: category.name }) : t('trends.unknownCategory')
   }
   if (config.type === 'incomeSources') {
-    const names = config.sourceIds.map((id) => sources.find((s) => s.id === id)?.name).filter((n): n is string => n != null)
+    const names = config.sourceIds
+      .map((id) => sources.find((s) => s.id === id))
+      .filter((s): s is NonNullable<typeof s> => s != null)
+      .map((s) => incomeSourceLabel(s, t))
     if (names.length === 0) return t('trends.unknownIncomeSource')
     // Up to 8 sources fit in this widget, and their full names joined run far
     // past the card header's width — the legend below the title already names
@@ -74,7 +78,7 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
   }
   if (config.type === 'itemizedIncome') {
     const source = sources.find((s) => s.id === config.sourceId)
-    return source ? t('trends.itemizedIncomeTitle', { source: source.name }) : t('trends.unknownIncomeSource')
+    return source ? t('trends.itemizedIncomeTitle', { source: incomeSourceLabel(source, t) }) : t('trends.unknownIncomeSource')
   }
   if (config.type === 'potBalances' || config.type === 'potFlow') {
     const names = config.potIds.map((id) => pots.find((p) => p.id === id)?.name).filter((n): n is string => n != null)

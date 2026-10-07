@@ -9,6 +9,7 @@ import { niceAxisTicks, categoryTickInterval } from '../../lib/chartAxis'
 import { monthNames } from '../../lib/monthNames'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
+import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
 
 interface Props {
   sourceIds: number[]
@@ -22,7 +23,7 @@ interface Props {
 // instead of a plain LineChart — a set of per-source lines wouldn't stack,
 // and stacking is the whole point of this widget.
 function IncomeSourcesWidget({ sourceIds, chartKind, filter, incomeData }: Props) {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const months = monthNames(i18n.language)
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
@@ -42,7 +43,7 @@ function IncomeSourcesWidget({ sourceIds, chartKind, filter, incomeData }: Props
 
   // Keyed by source id, labelled by name: income_sources.name is not unique
   // and archived sources appear here too, so a name key could collide.
-  const series = selectedSources.map((source, idx) => ({ name: String(source.id), label: source.name, color: palette.categorical[idx] }))
+  const series = selectedSources.map((source, idx) => ({ name: String(source.id), label: incomeSourceLabel(source, t), color: palette.categorical[idx] }))
   const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
   const xInterval = categoryTickInterval(data.length)

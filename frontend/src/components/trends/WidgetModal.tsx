@@ -7,6 +7,7 @@ import { MAX_COMPARE_YEARS } from '../../lib/trendsFilter'
 import type { CategoryTotalsCategory, TrendsIncomeSourcesSource, TrendsPotBalancesPot } from '../../api/types'
 import { useIncomeSources } from '../../api/hooks/useSettings'
 import SizeGridPicker from './SizeGridPicker'
+import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
 
 type BaseType = WidgetConfig['type']
 
@@ -383,7 +384,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
           <>
             <MultiSelect
               label={t('trends.incomeSourcesLabel')}
-              data={incomeSources.map((s) => ({ value: String(s.id), label: s.name }))}
+              data={incomeSources.map((s) => ({ value: String(s.id), label: incomeSourceLabel(s, t) }))}
               value={incomeSourceIds}
               onChange={setIncomeSourceIds}
               maxValues={MAX_INCOME_SOURCE_SLOTS}

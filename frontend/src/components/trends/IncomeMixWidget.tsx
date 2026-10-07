@@ -7,6 +7,7 @@ import type { TrendsIncomeSources } from '../../api/types'
 import { formatCents, formatCentsCompact } from '../../lib/money'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
+import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
 
 interface Props {
   filter: TrendsFilter
@@ -29,7 +30,7 @@ function IncomeMixWidget({ filter, incomeData }: Props) {
 
   const totals = incomeData.sources
     .map((source) => ({
-      name: source.name,
+      name: incomeSourceLabel(source, t),
       totalCents: incomeData.entries
         .filter((e) => e.year === filter.year)
         .reduce((sum, e) => sum + (e.values[String(source.id)] ?? 0), 0),

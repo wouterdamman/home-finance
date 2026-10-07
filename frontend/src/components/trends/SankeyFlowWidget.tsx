@@ -9,6 +9,7 @@ import { useTrendsIncomeSources, useTrendsCategoryTotals, useTrendsPotBalances, 
 import { formatCents } from '../../lib/money'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import { paletteColorValue } from '../../lib/chartPalette'
+import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
 
 interface Props {
   year: number
@@ -164,7 +165,7 @@ function SankeyFlowWidget({ year }: Props) {
   }
 
   const sourceEntries = incomeData.sources.map((s) => ({
-    name: s.name,
+    name: incomeSourceLabel(s, t),
     cents: incomeData.entries.filter((e) => e.year === year).reduce((sum, e) => sum + (e.values[String(s.id)] ?? 0), 0),
   }))
   const { kept: keptSources, otherCents: otherSourceCents } = foldSmallEntries(sourceEntries)

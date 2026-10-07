@@ -102,6 +102,7 @@
     "incomeMixHint": "Toont de inkomstenverdeling per bron voor het filterjaar.",
     "itemizedIncomeSourceLabel": "Inkomstenbron",
     "noItemizedIncomeSources": "Nog geen gespecificeerde inkomstenbronnen",
+    "carryoverSource": "Doorlopen",
     "otherSource": "Overig",
     "widgetType_potBalances": "Pot-saldi",
     "widgetType_potFlow": "Pot in/uit",
