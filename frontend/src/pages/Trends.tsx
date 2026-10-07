@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Title, Skeleton, Alert, Stack, SimpleGrid, Group, Select, ActionIcon, Tooltip, Button, Chip } from '@mantine/core'
+import { Title, Skeleton, Alert, Stack, SimpleGrid, Group, Select, ActionIcon, Tooltip, Button, Chip, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -247,11 +247,16 @@ export default function Trends() {
     }
     if (config.type === 'categoryShare') {
       if (monthlyTotalsQuery.isLoading) return <Skeleton h="100%" />
+      if (monthlyTotalsQuery.error) return <Text size="sm" c="dimmed">{t('common.error')}</Text>
       if (!monthlyTotalsQuery.data) return null
       return <CategoryShareWidget filter={filter} catData={catData} monthlyTotals={monthlyTotalsQuery.data} />
     }
     return <CategoryWidget categoryIds={config.categoryIds} chartKind={config.chartKind} filter={filter} catData={catData} />
-  }, [filter, catData, incomeData, potData, allYears, monthlyTotalsQuery.data])
+    // isLoading belongs in the deps as much as data does: with only `data`
+    // listed, a failed /api/trends/monthly-totals leaves data undefined
+    // forever, the callback is never rebuilt, and it keeps the captured
+    // isLoading === true — pinning the widget to a Skeleton for good.
+  }, [filter, catData, incomeData, potData, allYears, monthlyTotalsQuery.data, monthlyTotalsQuery.isLoading, monthlyTotalsQuery.error])
 
   // Error first: `registeredYears` stays empty when /api/years fails, which
   // used to leave the page on a skeleton the Alert below could never replace.
