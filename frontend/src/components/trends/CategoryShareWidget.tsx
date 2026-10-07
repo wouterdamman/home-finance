@@ -49,15 +49,23 @@ function CategoryShareWidget({ filter, catData, monthlyTotals }: Props) {
         .filter((e) => e.year === filter.year)
         .reduce((sum, e) => sum + (e.values[String(cat.id)] ?? 0), 0),
     }))
-    .filter((c) => c.totalCents > 0)
     .sort((a, b) => b.totalCents - a.totalCents)
 
-  const top = categoryTotals.slice(0, MAX_REAL_SLICES)
-  const otherCents = categoryTotals.slice(MAX_REAL_SLICES).reduce((sum, c) => sum + c.totalCents, 0)
+  // A donut cannot draw a negative slice, so categories that net out at or
+  // below zero for the year (refunds, correction lines) are not shown — but
+  // their value still has to come off the "uncategorised" gap below, which
+  // is derived from the year total they are part of. Dropping them before
+  // computing the gap understated it and could clamp it to 0, hiding real
+  // uncategorised spend.
+  const categorizedCents = categoryTotals.reduce((sum, c) => sum + c.totalCents, 0)
+  const positiveTotals = categoryTotals.filter((c) => c.totalCents > 0)
+
+  const top = positiveTotals.slice(0, MAX_REAL_SLICES)
+  const otherCents = positiveTotals.slice(MAX_REAL_SLICES).reduce((sum, c) => sum + c.totalCents, 0)
   // Rounding/timing differences between the two endpoints could in theory
   // push the computed gap slightly negative — clamp rather than render a
   // slice with a negative value.
-  const uncategorizedCents = Math.max(0, yearExpenseTotalCents - top.reduce((sum, c) => sum + c.totalCents, 0) - otherCents)
+  const uncategorizedCents = Math.max(0, yearExpenseTotalCents - categorizedCents)
 
   const chartData = top.map((c, idx) => ({ name: c.name, value: c.totalCents / 100, color: palette.categorical[idx] }))
   if (otherCents > 0) {
