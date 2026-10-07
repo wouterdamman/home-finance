@@ -58,6 +58,8 @@ tags:
     description: Spreadsheet import.
   - name: Export
     description: Spreadsheet export.
+  - name: Trends
+    description: Cross-year/cross-period analytics for the /trends dashboard.
 
 security:
   - cookieAuth: []
@@ -2304,6 +2306,115 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/trends/income-sources:
+    get:
+      operationId: getTrendsIncomeSources
+      tags: [Trends]
+      summary: Per-source income over time - the income mirror of /api/trends/category-totals.
+      description: >-
+        Effective amount per source per period mirrors domain.EffectiveIncomeCentsSQL exactly
+        (itemized sources sum income_transactions, others use income_entries.amount_cents), so
+        summing a period's values across all sources reproduces that period's incomeTotalCents
+        from /api/trends/monthly-totals. A carryover income_entries row (entry_type=carryover,
+        source_id NULL) is bucketed under synthetic source id 0, named "Carryover".
+      responses:
+        "200":
+          description: Income sources and their per-period values.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrendsIncomeSources"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/trends/pot-balances:
+    get:
+      operationId: getTrendsPotBalances
+      tags: [Trends]
+      summary: Per-pot closing balance, inflow, and outflow over time.
+      description: >-
+        A pot_ledger row is bucketed into the month of its period (joining periods on
+        pot_ledger.period_id) when period_id is set, and only falls back to its own entry_date
+        when period_id is NULL - real allocation/carryover_out rows carry a period_id but often
+        share one meaningless import entry_date, so entry_date alone is not a valid time axis.
+        balances is the cumulative signed closing balance per pot at the end of each month
+        (months with no ledger activity for a pot carry its previous balance forward, starting
+        once that pot has had its first ledger row). inflow sums entry_type allocation+deposit;
+        outflow sums withdrawal+carryover_out+adjustment, keeping adjustment's own sign since a
+        manual correction can go either way. entry_type opening_balance counts toward balances
+        but is excluded from both inflow and outflow, as a one-time historical seed rather than a
+        monthly flow. Archived pots are included as long as they have ledger history.
+      responses:
+        "200":
+          description: Pots and their per-period balances/inflow/outflow.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrendsPotBalances"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/trends/descriptions:
+    get:
+      operationId: getTrendsDescriptions
+      tags: [Trends]
+      summary: Most-used transaction descriptions, grouped case/whitespace-insensitively.
+      description: >-
+        Groups on lower(btrim(description)) - real data has the same description typed as
+        "MTC", "MTC " and "Mtc" - and reports back whichever original spelling occurred most
+        often. With neither categoryId nor sourceId: over all expense transactions. With
+        categoryId: expense transactions filtered through category_rollup, so a parent category
+        also includes its children's rows. With sourceId: switches to income_transactions
+        instead (categoryId is ignored if both are given).
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: sourceId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          description: Default 20, max 100.
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Description rows, descending by totalCents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendsDescriptionRow"
+        "400":
+          description: Invalid categoryId/sourceId/limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/years/{year}/lock:
     post:
       operationId: lockYear
@@ -3205,6 +3316,117 @@ components:
           type: [string, "null"]
           format: date
       required: [entryType, amountCents]
+
+    TrendsIncomeSources:
+      type: object
+      properties:
+        sources:
+          type: array
+          description: Descending by all-time total. Id 0 ("Carryover") appears only if any carryover income_entries row exists.
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+              name:
+                type: string
+            required: [id, name]
+        entries:
+          type: array
+          description: Ascending by year, month.
+          items:
+            type: object
+            properties:
+              year:
+                type: integer
+              month:
+                type: integer
+              values:
+                type: object
+                description: Map of source id (as a JSON string key) to effective income cents for that period.
+                additionalProperties:
+                  type: integer
+                  format: int64
+            required: [year, month, values]
+      required: [sources, entries]
+
+    TrendsPotBalances:
+      type: object
+      properties:
+        pots:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+              name:
+                type: string
+              kind:
+                type: string
+                enum: [normal, carryover]
+              targetCents:
+                type: integer
+                format: int64
+                nullable: true
+              targetDate:
+                type: string
+                format: date
+                nullable: true
+            required: [id, name, kind]
+        entries:
+          type: array
+          description: Ascending by year, month.
+          items:
+            type: object
+            properties:
+              year:
+                type: integer
+              month:
+                type: integer
+              balances:
+                type: object
+                description: Map of pot id (as a JSON string key) to its cumulative closing balance cents at the end of this month.
+                additionalProperties:
+                  type: integer
+                  format: int64
+              inflow:
+                type: object
+                description: Map of pot id to allocation+deposit cents credited this month.
+                additionalProperties:
+                  type: integer
+                  format: int64
+              outflow:
+                type: object
+                description: Map of pot id to withdrawal+carryover_out+adjustment cents this month (adjustment keeps its own sign).
+                additionalProperties:
+                  type: integer
+                  format: int64
+            required: [year, month, balances, inflow, outflow]
+      required: [pots, entries]
+
+    TrendsDescriptionRow:
+      type: object
+      properties:
+        description:
+          type: string
+          description: The most frequently used original spelling within the trimmed/lowercased group.
+        totalCents:
+          type: integer
+          format: int64
+        count:
+          type: integer
+        firstYear:
+          type: integer
+        firstMonth:
+          type: integer
+        lastYear:
+          type: integer
+        lastMonth:
+          type: integer
+      required: [description, totalCents, count, firstYear, firstMonth, lastYear, lastMonth]
 
     YearSummary:
       type: object

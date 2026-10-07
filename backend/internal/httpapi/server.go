@@ -174,6 +174,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 			r.Get("/trends/years", s.handleTrendsYears)
 			r.Get("/trends/category-totals", s.handleTrendsCategoryTotals)
 			r.Get("/trends/monthly-totals", s.handleTrendsMonthlyTotals)
+			r.Get("/trends/income-sources", s.handleTrendsIncomeSources)
+			r.Get("/trends/pot-balances", s.handleTrendsPotBalances)
+			r.Get("/trends/descriptions", s.handleTrendsDescriptions)
 			r.With(requireAdmin).Post("/years/{year}/lock", s.handleLockYear)
 			r.With(requireAdmin).Post("/years/{year}/unlock", s.handleUnlockYear)
 
