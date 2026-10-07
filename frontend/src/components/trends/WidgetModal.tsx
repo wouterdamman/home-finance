@@ -147,7 +147,17 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
     setWidth(initialWidth ?? 1)
     setHeight(initialHeight ?? 2)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, initial, initialWidth, initialHeight, itemizedSourceOptions.length])
+  }, [opened, initial, initialWidth, initialHeight])
+
+  // The itemized-source list arrives asynchronously, so its default has to
+  // be filled in once it loads. This deliberately does NOT live in the
+  // reset effect above: having that effect depend on the list's length made
+  // it re-run when the query resolved while the modal was already open,
+  // wiping every field the user had configured in the meantime.
+  useEffect(() => {
+    if (!opened) return
+    setItemizedSourceId((current) => current ?? (itemizedSourceOptions[0] ? String(itemizedSourceOptions[0].id) : null))
+  }, [opened, itemizedSourceOptions])
 
   const canSubmit = (type !== 'categoryChart' || categoryIds.length >= 1)
     && (type !== 'monthCompare' || (monthYear != null && selectedMonths.length >= 1))
