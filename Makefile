@@ -1,4 +1,4 @@
-.PHONY: dev db-up db-down migrate sqlc test test-integration import build-image lint e2e generate
+.PHONY: dev db-up db-down migrate sqlc test test-integration import seed-demo build-image lint e2e generate
 
 # ── Local dev ────────────────────────────────────────────────────
 dev:
@@ -30,6 +30,12 @@ test-integration:
 
 import:
 	cd backend && go run ./cmd/importer $(ARGS)
+
+# Deterministic demo dataset (year 2026) for local dev. Refuses to run
+# against anything but a localhost/127.0.0.1 DSN. Pass ARGS=--wipe to
+# replace an existing demo dataset.
+seed-demo:
+	cd backend && go run ./cmd/seeddemo $(ARGS)
 
 # ── Frontend ─────────────────────────────────────────────────────
 frontend-build:

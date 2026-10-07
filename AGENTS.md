@@ -121,6 +121,13 @@ lock/unlock year, import wipe/reset), which is then granted automatically with n
 Authentik round trip. `config.Load` refuses to start with `DEV_FAKE_AUTH=true`
 unless `ENV=development`, and `ENV` defaults to `production` when unset.
 
+To fill the local database with a deterministic, realistic-looking demo
+dataset (year 2026 — income, categories, ~900 transactions, pots, kid
+savings), run `make seed-demo` (add `ARGS=--wipe` to replace an existing
+demo dataset). It's `backend/cmd/seeddemo`, refuses to run against anything
+but a localhost/127.0.0.1 `DATABASE_URL`/`--dsn`, and always runs inside one
+transaction.
+
 ## Testing
 
 ```bash
