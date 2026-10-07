@@ -1,32 +1,46 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
-// seedKidSavings adds ledger activity for the two existing kids rows,
-// covering both owners ('ours'/'theirs') and a reported balance snapshot.
-// It does not create or rename kid rows — those predate this tool and are
-// real data, not something this seeder invents.
+// demoKidNames are this seeder's own kid rows. It used to borrow whatever
+// kids already existed, which both required a non-empty database and left a
+// fabricated reported balance on a real child's row that the wipe never
+// undid — the savings screen then showed a permanent reported-vs-ledger
+// mismatch. Owning the rows keeps every write reversible.
+var demoKidNames = []string{"Mees", "Fenna"}
+
+func kidNames() []string { return demoKidNames }
+
+// seedKidSavings creates this seeder's kid rows (if they are not there yet)
+// and gives each one ledger activity for both owners ('ours'/'theirs') plus
+// a reported balance snapshot. Kid rows it does not own are never touched.
 func (s *seeder) seedKidSavings() error {
-	rows, err := s.tx.Query(s.ctx,
-		`SELECT id FROM kids WHERE archived_at IS NULL ORDER BY sort_order, id LIMIT 2`)
-	if err != nil {
-		return fmt.Errorf("query kids: %w", err)
-	}
-	var kidIDs []int64
-	for rows.Next() {
+	kidIDs := make([]int64, 0, len(demoKidNames))
+	for order, name := range demoKidNames {
+		// kids.name has no unique constraint, so ON CONFLICT cannot be used:
+		// look the row up first and only insert when it is really missing,
+		// otherwise every run would add another duplicate child.
 		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
+		err := s.tx.QueryRow(s.ctx,
+			`SELECT id FROM kids WHERE name=$1 ORDER BY id LIMIT 1`, name,
+		).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			if err := s.tx.QueryRow(s.ctx,
+				`INSERT INTO kids (name, sort_order) VALUES ($1,$2) RETURNING id`,
+				name, 100+order,
+			).Scan(&id); err != nil {
+				return fmt.Errorf("insert kid %q: %w", name, err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("resolve kid %q: %w", name, err)
 		}
 		kidIDs = append(kidIDs, id)
-	}
-	rows.Close()
-	if len(kidIDs) < 2 {
-		return fmt.Errorf("expected at least 2 kids rows to seed savings for, found %d", len(kidIDs))
 	}
 
 	type entry struct {

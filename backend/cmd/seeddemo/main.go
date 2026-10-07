@@ -189,8 +189,8 @@ func run(ctx context.Context, pool *pgxpool.Pool, wipe bool) error {
 // within demoYear — have no
 // cascade from periods and are deleted explicitly, in FK-safe order
 // (children before parent categories; periods/ledger rows before the
-// masterdata rows they reference). kids itself is never touched: those
-// rows predate this tool and are not demo data.
+// masterdata rows they reference). The kid rows this tool creates are
+// removed too, but only when nothing else references them.
 func wipeExisting(ctx context.Context, tx pgx.Tx) error {
 	yearStart := time.Date(demoYear, 1, 1, 0, 0, 0, 0, time.UTC)
 	yearEnd := time.Date(demoYear+1, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -219,6 +219,15 @@ func wipeExisting(ctx context.Context, tx pgx.Tx) error {
 		yearStart, yearEnd,
 	); err != nil {
 		return fmt.Errorf("delete kid_savings_ledger: %w", err)
+	}
+	// Same NOT EXISTS guard as the masterdata below: a kid row that still
+	// has ledger history is somebody else's, not ours, and stays.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM kids k WHERE k.name = ANY($1)
+		   AND NOT EXISTS (SELECT 1 FROM kid_savings_ledger WHERE kid_id = k.id)`,
+		kidNames(),
+	); err != nil {
+		return fmt.Errorf("delete kids: %w", err)
 	}
 	if _, err := tx.Exec(ctx,
 		`DELETE FROM category_aliases WHERE alias_name = ANY($1)`,
