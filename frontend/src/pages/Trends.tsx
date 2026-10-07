@@ -9,18 +9,28 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable'
-import { useTrendsYears, useTrendsCategoryTotals, useYears } from '../api/hooks/usePeriods'
+import { useTrendsYears, useTrendsCategoryTotals, useTrendsIncomeSources, useTrendsPotBalances, useTrendsMonthlyTotals, useYears } from '../api/hooks/usePeriods'
 import type { TrendsFilter } from '../lib/trendsFilter'
 import { loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
 import type { Widget, WidgetConfig, WidgetWidth, WidgetHeight } from '../lib/trendsDashboard'
 import { loadDashboard, saveDashboard, defaultWidgets, newWidget } from '../lib/trendsDashboard'
-import type { CategoryTotalsCategory } from '../api/types'
+import type { CategoryTotalsCategory, TrendsIncomeSourcesSource, TrendsPotBalancesPot } from '../api/types'
 import WidgetFrame from '../components/trends/WidgetFrame'
 import KpiWidget from '../components/trends/KpiWidget'
 import CategoryWidget from '../components/trends/CategoryWidget'
 import MonthCompareWidget from '../components/trends/MonthCompareWidget'
 import AllTimeTrendWidget from '../components/trends/AllTimeTrendWidget'
 import MonthAcrossYearsWidget from '../components/trends/MonthAcrossYearsWidget'
+import IncomeSourcesWidget from '../components/trends/IncomeSourcesWidget'
+import IncomeMixWidget from '../components/trends/IncomeMixWidget'
+import ItemizedIncomeWidget from '../components/trends/ItemizedIncomeWidget'
+import PotBalancesWidget from '../components/trends/PotBalancesWidget'
+import PotFlowWidget from '../components/trends/PotFlowWidget'
+import PotTargetsWidget from '../components/trends/PotTargetsWidget'
+import SavingsRateWidget from '../components/trends/SavingsRateWidget'
+import CategoryShareWidget from '../components/trends/CategoryShareWidget'
+import TopDescriptionsWidget from '../components/trends/TopDescriptionsWidget'
+import SankeyFlowWidget from '../components/trends/SankeyFlowWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
 
@@ -33,11 +43,47 @@ const MONTH_NAMES_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','O
 // shorter siblings with dead space instead of stacking anything.
 const ROW_UNIT_PX = 90
 
-function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], t: (key: string, opts?: Record<string, unknown>) => string, monthNames: string[]): string {
+// How many entity names a widget header lists before falling back to "+N".
+const TITLE_NAME_LIMIT = 2
+
+function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], sources: TrendsIncomeSourcesSource[], pots: TrendsPotBalancesPot[], t: (key: string, opts?: Record<string, unknown>) => string, monthNames: string[]): string {
   if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
   if (config.type === 'monthCompare') return t('trends.monthsTitle', { year: config.year })
   if (config.type === 'allTimeTrend') return t('trends.allTimeTrendTitle', { fromYear: config.fromYear, toYear: config.toYear })
   if (config.type === 'monthAcrossYears') return t('trends.monthAcrossYearsTitle', { month: monthNames[config.month - 1] })
+  if (config.type === 'incomeMix') return t('trends.widgetType_incomeMix')
+  if (config.type === 'potTargets') return t('trends.widgetType_potTargets')
+  if (config.type === 'savingsRate') return t('trends.savingsRateTitle', { year: config.year })
+  if (config.type === 'categoryShare') return t('trends.widgetType_categoryShare')
+  if (config.type === 'sankeyFlow') return t('trends.sankeyFlowTitle', { year: config.year })
+  if (config.type === 'topDescriptions') {
+    if (config.categoryId == null) return t('trends.topDescriptionsTitleAll')
+    const category = categories.find((c) => c.id === config.categoryId)
+    return category ? t('trends.topDescriptionsTitle', { category: category.name }) : t('trends.unknownCategory')
+  }
+  if (config.type === 'incomeSources') {
+    const names = config.sourceIds.map((id) => sources.find((s) => s.id === id)?.name).filter((n): n is string => n != null)
+    if (names.length === 0) return t('trends.unknownIncomeSource')
+    // Up to 8 sources fit in this widget, and their full names joined run far
+    // past the card header's width — the legend below the title already names
+    // every series, so the header only needs the first few plus a count.
+    if (names.length > TITLE_NAME_LIMIT) {
+      return `${names.slice(0, TITLE_NAME_LIMIT).join(', ')} +${names.length - TITLE_NAME_LIMIT}`
+    }
+    return names.join(', ')
+  }
+  if (config.type === 'itemizedIncome') {
+    const source = sources.find((s) => s.id === config.sourceId)
+    return source ? t('trends.itemizedIncomeTitle', { source: source.name }) : t('trends.unknownIncomeSource')
+  }
+  if (config.type === 'potBalances' || config.type === 'potFlow') {
+    const names = config.potIds.map((id) => pots.find((p) => p.id === id)?.name).filter((n): n is string => n != null)
+    if (names.length === 0) return t('trends.unknownPot')
+    if (names.length > TITLE_NAME_LIMIT) {
+      return `${names.slice(0, TITLE_NAME_LIMIT).join(', ')} +${names.length - TITLE_NAME_LIMIT}`
+    }
+    return names.join(', ')
+  }
   const names = config.categoryIds.map((id) => categories.find((c) => c.id === id)?.name).filter((n): n is string => n != null)
   return names.length > 0 ? names.join(', ') : t('trends.unknownCategory')
 }
@@ -55,6 +101,9 @@ export default function Trends() {
   const maxWidgetWidth: WidgetWidth = isMobile ? 1 : isMediumWidth ? 2 : 4
   const yearsQuery = useTrendsYears()
   const categoryQuery = useTrendsCategoryTotals()
+  const incomeQuery = useTrendsIncomeSources()
+  const potBalancesQuery = useTrendsPotBalances()
+  const monthlyTotalsQuery = useTrendsMonthlyTotals()
   const registeredYearsQuery = useYears()
 
   const [dashboard, setDashboard] = useState<Widget[] | null>(() => loadDashboard())
@@ -148,10 +197,12 @@ export default function Trends() {
   }, [commitDashboard, editingWidgetId])
 
   const catData = categoryQuery.data
+  const incomeData = incomeQuery.data
+  const potData = potBalancesQuery.data
 
   const renderWidgetBody = useCallback((config: WidgetConfig) => {
-    // Self-contained — each has its own year/month(s), doesn't depend on the
-    // page-level year filter at all.
+    // Self-contained — each has its own year/month(s)/source, doesn't depend
+    // on the page-level year filter at all.
     if (config.type === 'monthCompare') {
       return <MonthCompareWidget year={config.year} months={config.months} chartKind={config.chartKind} />
     }
@@ -161,18 +212,50 @@ export default function Trends() {
     if (config.type === 'monthAcrossYears') {
       return <MonthAcrossYearsWidget month={config.month} years={config.years} chartKind={config.chartKind} />
     }
-    if (!filter || !catData) return null
+    if (config.type === 'itemizedIncome') {
+      return <ItemizedIncomeWidget sourceId={config.sourceId} />
+    }
+    if (config.type === 'potTargets') {
+      return <PotTargetsWidget />
+    }
+    if (config.type === 'savingsRate') {
+      return <SavingsRateWidget year={config.year} />
+    }
+    if (config.type === 'topDescriptions') {
+      return <TopDescriptionsWidget categoryId={config.categoryId} limit={config.limit} />
+    }
+    if (config.type === 'sankeyFlow') {
+      return <SankeyFlowWidget year={config.year} />
+    }
+    if (!filter || !catData || !incomeData || !potData) return null
     if (config.type === 'kpi') return <KpiWidget metric={config.metric} filter={filter} allYears={allYears} />
+    if (config.type === 'incomeSources') {
+      return <IncomeSourcesWidget sourceIds={config.sourceIds} chartKind={config.chartKind} filter={filter} incomeData={incomeData} />
+    }
+    if (config.type === 'incomeMix') {
+      return <IncomeMixWidget filter={filter} incomeData={incomeData} />
+    }
+    if (config.type === 'potBalances') {
+      return <PotBalancesWidget potIds={config.potIds} chartKind={config.chartKind} filter={filter} potData={potData} />
+    }
+    if (config.type === 'potFlow') {
+      return <PotFlowWidget potIds={config.potIds} filter={filter} potData={potData} />
+    }
+    if (config.type === 'categoryShare') {
+      if (monthlyTotalsQuery.isLoading) return <Skeleton h="100%" />
+      if (!monthlyTotalsQuery.data) return null
+      return <CategoryShareWidget filter={filter} catData={catData} monthlyTotals={monthlyTotalsQuery.data} />
+    }
     return <CategoryWidget categoryIds={config.categoryIds} chartKind={config.chartKind} filter={filter} catData={catData} />
-  }, [filter, catData, allYears])
+  }, [filter, catData, incomeData, potData, allYears, monthlyTotalsQuery.data])
 
   // Error first: `registeredYears` stays empty when /api/years fails, which
   // used to leave the page on a skeleton the Alert below could never replace.
-  if (yearsQuery.error || categoryQuery.error || registeredYearsQuery.error) return <Alert color="red">{t('common.error')}</Alert>
-  if (yearsQuery.isLoading || categoryQuery.isLoading || registeredYearsQuery.isLoading) {
+  if (yearsQuery.error || categoryQuery.error || incomeQuery.error || potBalancesQuery.error || registeredYearsQuery.error) return <Alert color="red">{t('common.error')}</Alert>
+  if (yearsQuery.isLoading || categoryQuery.isLoading || incomeQuery.isLoading || potBalancesQuery.isLoading || registeredYearsQuery.isLoading) {
     return <Skeleton h={400} />
   }
-  if (!catData) return null
+  if (!catData || !incomeData || !potData) return null
   if (dashboard === null || filter === null) return <Skeleton h={400} />
 
   const visibleWidgets = dashboard.filter((w) => w.visible)
@@ -215,7 +298,7 @@ export default function Trends() {
                 <WidgetFrame
                   key={w.id}
                   id={w.id}
-                  title={widgetTitle(w.config, catData.categories, t, monthNames)}
+                  title={widgetTitle(w.config, catData.categories, incomeData.sources, potData.pots, t, monthNames)}
                   editMode={editMode}
                   width={Math.min(w.width, maxWidgetWidth) as WidgetWidth}
                   height={w.height}
@@ -238,7 +321,7 @@ export default function Trends() {
               {hiddenWidgets.map((w) => (
                 <Group key={w.id} gap={2} wrap="nowrap">
                   <Chip checked={false} icon={<IconEye size={14} />} onChange={() => handleSetVisible(w.id, true)}>
-                    {widgetTitle(w.config, catData.categories, t, monthNames)}
+                    {widgetTitle(w.config, catData.categories, incomeData.sources, potData.pots, t, monthNames)}
                   </Chip>
                   <Tooltip label={t('trends.deleteWidget')}>
                     <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('trends.deleteWidget')} onClick={() => handleDeleteWidget(w.id)}>
@@ -265,6 +348,8 @@ export default function Trends() {
         onClose={() => setModalOpened(false)}
         onSubmit={editingWidget ? handleSaveWidgetConfig : handleAddWidget}
         categories={catData.categories}
+        incomeSources={incomeData.sources}
+        pots={potData.pots}
         years={registeredYears}
         initial={editingWidget?.config}
         initialWidth={editingWidget?.width}
