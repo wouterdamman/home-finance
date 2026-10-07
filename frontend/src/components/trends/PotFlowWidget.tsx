@@ -33,13 +33,13 @@ function PotFlowWidget({ potIds, filter, potData }: Props) {
     const row: Record<string, string | number> = { month: label }
     for (const pot of selectedPots) {
       const key = String(pot.id)
-      row[`${pot.name}__in`] = (entry?.inflow[key] ?? 0) / 100
+      row[`${key}__in`] = (entry?.inflow[key] ?? 0) / 100
       // pot_ledger amounts are signed, so the API's outflow sum arrives
       // negative (withdrawals) — but an `adjustment` entry keeps its own sign
       // and can be positive. Normalising to -|x| is what guarantees outflow
       // always renders below the zero line, on the same signed y-axis as
       // inflow above it. NEVER a second y-axis for this.
-      row[`${pot.name}__out`] = -Math.abs((entry?.outflow[key] ?? 0) / 100)
+      row[`${key}__out`] = -Math.abs((entry?.outflow[key] ?? 0) / 100)
     }
     return row
   })
@@ -47,11 +47,14 @@ function PotFlowWidget({ potIds, filter, potData }: Props) {
   // Two series per pot (same color — identity is the pot, not the
   // direction), each on its own stackId so inflow stacks upward and outflow
   // stacks downward independently.
+  // Keyed by pot id rather than name: pot names are not unique (an archived
+  // pot and a recreated namesake both appear here) and a name key would make
+  // one pot's bars overwrite the other's.
   const series = selectedPots.flatMap((pot, idx) => [
-    { name: `${pot.name}__in`, color: palette.categorical[idx], stackId: 'inflow' },
-    { name: `${pot.name}__out`, color: palette.categorical[idx], stackId: 'outflow' },
+    { name: `${pot.id}__in`, label: `${pot.name} +`, color: palette.categorical[idx], stackId: 'inflow' },
+    { name: `${pot.id}__out`, label: `${pot.name} −`, color: palette.categorical[idx], stackId: 'outflow' },
   ])
-  const legendSeries = selectedPots.map((pot, idx) => ({ name: pot.name, color: palette.categorical[idx] }))
+  const legendSeries = selectedPots.map((pot, idx) => ({ name: String(pot.id), label: pot.name, color: palette.categorical[idx] }))
 
   const values = data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0))
   const ticks = niceAxisTicksSigned(Math.min(...values, 0), Math.max(...values, 0))

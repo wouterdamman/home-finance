@@ -2,7 +2,12 @@ import { Group, Text } from '@mantine/core'
 import { paletteColorValue } from '../../lib/chartPalette'
 
 interface LegendSeries {
+  // `name` is the chart's data key, which is not always human-readable:
+  // series keyed by entity id (pots, income sources — their names are not
+  // unique) pass the display text in `label`, mirroring Mantine's own
+  // ChartSeries shape.
   name: string
+  label?: string
   color: string
 }
 
@@ -26,7 +31,7 @@ export default function ChartLegend({ series }: { series: LegendSeries[] }) {
               flexShrink: 0,
             }}
           />
-          <Text size="xs" c="dimmed">{s.name}</Text>
+          <Text size="xs" c="dimmed">{s.label ?? s.name}</Text>
         </Group>
       ))}
     </Group>

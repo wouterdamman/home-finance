@@ -43,12 +43,15 @@ function PotBalancesWidget({ potIds, chartKind, filter, potData }: Props) {
       const raw = entry?.balances[key]
       const cents = raw != null ? raw : (lastBalance[key] ?? 0)
       lastBalance[key] = cents
-      row[pot.name] = cents / 100
+      // Keyed by id, labelled by name: pot names are not unique (an
+      // archived pot and its recreated namesake both appear here), and a
+      // name key would silently overwrite one series with the other.
+      row[key] = cents / 100
     }
     return row
   })
 
-  const series = selectedPots.map((pot, idx) => ({ name: pot.name, color: palette.categorical[idx] }))
+  const series = selectedPots.map((pot, idx) => ({ name: String(pot.id), label: pot.name, color: palette.categorical[idx] }))
   const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
   const xInterval = categoryTickInterval(data.length)

@@ -35,12 +35,14 @@ function IncomeSourcesWidget({ sourceIds, chartKind, filter, incomeData }: Props
     const entry = incomeData.entries.find((e) => e.year === filter.year && e.month === i + 1)
     const row: Record<string, string | number> = { month: label }
     for (const source of selectedSources) {
-      row[source.name] = (entry?.values[String(source.id)] ?? 0) / 100
+      row[String(source.id)] = (entry?.values[String(source.id)] ?? 0) / 100
     }
     return row
   })
 
-  const series = selectedSources.map((source, idx) => ({ name: source.name, color: palette.categorical[idx] }))
+  // Keyed by source id, labelled by name: income_sources.name is not unique
+  // and archived sources appear here too, so a name key could collide.
+  const series = selectedSources.map((source, idx) => ({ name: String(source.id), label: source.name, color: palette.categorical[idx] }))
   const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
   const ticks = niceAxisTicks(maxValue)
   const xInterval = categoryTickInterval(data.length)
