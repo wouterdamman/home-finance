@@ -3,7 +3,18 @@ import type { QueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { api } from '../client'
 import i18n from '../../i18n/index'
-import type { Period, MonthOverview, YearSummary, ImportReport, CategoryTotals, YearTrend, TrendsMonthlyTotal } from '../types'
+import type {
+  Period,
+  MonthOverview,
+  YearSummary,
+  ImportReport,
+  CategoryTotals,
+  YearTrend,
+  TrendsMonthlyTotal,
+  TrendsIncomeSources,
+  TrendsPotBalances,
+  TrendsDescription,
+} from '../types'
 
 export function usePeriods(year: number) {
   return useQuery<Period[]>({
@@ -37,6 +48,40 @@ export function useTrendsMonthlyTotals() {
   return useQuery<TrendsMonthlyTotal[]>({
     queryKey: ['trends-monthly-totals'],
     queryFn: () => api.get<TrendsMonthlyTotal[]>('/api/trends/monthly-totals'),
+  })
+}
+
+export function useTrendsIncomeSources() {
+  return useQuery<TrendsIncomeSources>({
+    queryKey: ['trends-income-sources'],
+    queryFn: () => api.get<TrendsIncomeSources>('/api/trends/income-sources'),
+  })
+}
+
+export function useTrendsPotBalances() {
+  return useQuery<TrendsPotBalances>({
+    queryKey: ['trends-pot-balances'],
+    queryFn: () => api.get<TrendsPotBalances>('/api/trends/pot-balances'),
+  })
+}
+
+export interface TrendsDescriptionsParams {
+  categoryId?: number
+  sourceId?: number
+  limit?: number
+}
+
+export function useTrendsDescriptions(params: TrendsDescriptionsParams = {}) {
+  return useQuery<TrendsDescription[]>({
+    queryKey: ['trends-descriptions', params],
+    queryFn: () => {
+      const search = new URLSearchParams()
+      if (params.categoryId != null) search.set('categoryId', String(params.categoryId))
+      if (params.sourceId != null) search.set('sourceId', String(params.sourceId))
+      if (params.limit != null) search.set('limit', String(params.limit))
+      const qs = search.toString()
+      return api.get<TrendsDescription[]>(`/api/trends/descriptions${qs ? `?${qs}` : ''}`)
+    },
   })
 }
 
