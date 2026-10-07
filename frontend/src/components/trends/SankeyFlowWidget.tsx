@@ -46,6 +46,13 @@ const MAX_REAL_NODES_PER_SIDE = 7
 const OTHER_CATEGORIES_COLOR = 'gray.5'
 const UNCATEGORIZED_COLOR = 'gray.7'
 const OTHER_SOURCES_COLOR = 'gray.5'
+// Pots are a different kind of destination from expense categories — money
+// kept, not money spent — so they share one dedicated hue instead of
+// drawing from the categorical slots. Those slots are already taken twice
+// over (income sources count up from 0, categories count down from 6), so
+// reusing them put a pot and a category in the same column in the same
+// colour; the pots' own labels tell them apart.
+const POT_COLOR = 'teal.7'
 
 function truncate(label: string): string {
   return label.length > MAX_LABEL_CHARS ? `${label.slice(0, MAX_LABEL_CHARS - 1)}…` : label
@@ -213,8 +220,8 @@ function SankeyFlowWidget({ year }: Props) {
     const idx = nodes.push({ name: t('trends.uncategorizedCategory'), color: UNCATEGORIZED_COLOR, layer: 2 }) - 1
     links.push({ source: hubIdx, target: idx, value: uncategorizedCents / 100 })
   }
-  potEntries.forEach((p, idx) => {
-    const potIdx = nodes.push({ name: truncate(p.name), color: palette.categorical[idx], layer: 2 }) - 1
+  potEntries.forEach((p) => {
+    const potIdx = nodes.push({ name: truncate(p.name), color: POT_COLOR, layer: 2 }) - 1
     links.push({ source: hubIdx, target: potIdx, value: p.cents / 100 })
   })
 
