@@ -228,11 +228,16 @@ export default function MonthOverview() {
   const sortedIncomes = sortByMode(incomes, incomeSort, inc => inc.label ?? t('month.unknownSource', { id: inc.sourceId }), inc => inc.effectiveCents)
   const sortedBudgetLines = sortByMode(budgetLines, expenseSort, budgetLineLabel, bl => bl.effectiveCents)
   const sortedSplitPotIds = sortByMode(splitPotIds, splitSort, potSplitName, potSplitAmount)
-  const nonCarryoverTotal = carryoverPot
-    ? Object.entries(currentSplits).reduce((sum, [potId, pct]) => Number(potId) === carryoverPot.id ? sum : sum + (Number(pct) || 0), 0)
-    : 0
+  const nonCarryoverTotal = Object.entries(currentSplits).reduce(
+    (sum, [potId, pct]) => (carryoverPot && Number(potId) === carryoverPot.id) ? sum : sum + (Number(pct) || 0),
+    0,
+  )
   const carryoverRemainder = 100 - nonCarryoverTotal
   const carryoverOverAllocated = !!carryoverPot && carryoverRemainder < -0.005
+  // Without a carryover pot the server requires the submitted total to be
+  // exactly 100% (±0.01) — mirror that guard client-side so Save disables
+  // and the user sees the running total instead of a generic server reject.
+  const noCarryoverTotalInvalid = !carryoverPot && Math.abs(nonCarryoverTotal - 100) > 0.01
 
   const currentAmountEdits = splitAmountEdits ?? Object.fromEntries(splits.map(s => [s.potId, String((s.projectedCents ?? 0) / 100)]))
   const pctToProjectedCents = (pct: number) => Math.round((surplusCents * pct) / 100)
@@ -534,6 +539,13 @@ export default function MonthOverview() {
 
         <BottomSheet opened={!!splitEdits} onClose={cancelSplitEdit} title={t('month.splitSection')}>
           {carryoverOverAllocated && <Text size="xs" c="red">{t('month.splitOverAllocated')}</Text>}
+          {noCarryoverTotalInvalid && <Text size="xs" c="red">{t('month.splitTotalMustBe100')}</Text>}
+          {!carryoverPot && (
+            <Group gap={6}>
+              <Text size="xs" c="dimmed">{t('month.splitTotalLabel')}</Text>
+              <Text size="xs" fw={600} c={noCarryoverTotalInvalid ? 'red' : 'dimmed'}>{nonCarryoverTotal.toFixed(2)}%</Text>
+            </Group>
+          )}
           {amountSplitDisabled && <Text size="xs" c="dimmed">{t('month.splitAmountNeedsSurplus')}</Text>}
           <Stack gap="sm">
             {splitPotIds.map(potId => {
@@ -596,7 +608,7 @@ export default function MonthOverview() {
               </Group>
             )}
             <Group grow>
-              <Button onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
+              <Button onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated || noCarryoverTotalInvalid}>{t('common.save')}</Button>
               <Button variant="subtle" onClick={cancelSplitEdit}>{t('common.cancel')}</Button>
             </Group>
           </Stack>
@@ -902,7 +914,7 @@ export default function MonthOverview() {
             {!isClosed && (
               splitEdits
                 ? <Group gap="xs">
-                    <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated}>{t('common.save')}</Button>
+                    <Button size="xs" onClick={handleSaveSplits} loading={replaceSplits.isPending} disabled={carryoverOverAllocated || noCarryoverTotalInvalid}>{t('common.save')}</Button>
                     <Button size="xs" variant="subtle" onClick={cancelSplitEdit}>{t('common.cancel')}</Button>
                   </Group>
                 : <Button size="xs" variant="subtle" onClick={startSplitEdit}>
@@ -913,6 +925,15 @@ export default function MonthOverview() {
         </Group>
         {carryoverOverAllocated && (
           <Text size="xs" c="red" mb="sm">{t('month.splitOverAllocated')}</Text>
+        )}
+        {splitEdits && noCarryoverTotalInvalid && (
+          <Text size="xs" c="red" mb="sm">{t('month.splitTotalMustBe100')}</Text>
+        )}
+        {splitEdits && !carryoverPot && (
+          <Group gap={6} mb="sm">
+            <Text size="xs" c="dimmed">{t('month.splitTotalLabel')}</Text>
+            <Text size="xs" fw={600} c={noCarryoverTotalInvalid ? 'red' : 'dimmed'}>{nonCarryoverTotal.toFixed(2)}%</Text>
+          </Group>
         )}
         {splitEdits && amountSplitDisabled && (
           <Text size="xs" c="dimmed" mb="sm">{t('month.splitAmountNeedsSurplus')}</Text>
