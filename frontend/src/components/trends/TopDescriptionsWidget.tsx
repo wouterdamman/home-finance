@@ -25,9 +25,13 @@ function TopDescriptionsWidget({ categoryId, limit }: Props) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
-  const { data, isLoading } = useTrendsDescriptions({ categoryId: categoryId ?? undefined, limit })
+  const { data, isLoading, error } = useTrendsDescriptions({ categoryId: categoryId ?? undefined, limit })
 
   if (isLoading) return <Skeleton h="100%" />
+  // A failed request is not the same as an empty result: without this the
+  // widget told the user there was nothing to show when the call had in
+  // fact errored.
+  if (error) return <Text size="sm" c="dimmed">{t('common.error')}</Text>
   if (!data || data.length === 0) return <Text size="sm" c="dimmed">{t('trends.noData')}</Text>
 
   const rows = [...data].sort((a, b) => b.totalCents - a.totalCents)

@@ -16,9 +16,13 @@ function PotTargetsWidget() {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const months = monthNames(i18n.language)
-  const { data, isLoading } = useTrendsPotBalances()
+  const { data, isLoading, error } = useTrendsPotBalances()
 
   if (isLoading) return <Skeleton h="100%" />
+  // A failed request is not the same as an empty result: without this the
+  // widget told the user there was nothing to show when the call had in
+  // fact errored.
+  if (error) return <Text size="sm" c="dimmed">{t('common.error')}</Text>
 
   // Archived pots are excluded: the endpoint returns them so their history
   // can be charted, but this widget is about goals still being saved for.
