@@ -54,6 +54,8 @@ DEL   /api/kid-entries/:id
 PATCH /api/kids/:id/reported-balance                                            (admin)
 
 GET  /api/trends/years, /api/trends/category-totals, /api/trends/monthly-totals
+GET  /api/trends/income-sources, /api/trends/pot-balances
+GET  /api/trends/descriptions?categoryId=&sourceId=&limit=  (limit default 20, max 100)
 
 GET  /api/export/years/:year?months=1,2,3   (whole year if months omitted)      (admin)
 POST /api/import/xlsx          (multipart: file, year, wipe, resetMaster, closeThrough)  (admin)
