@@ -526,6 +526,24 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// domain.LargestRemainderSplit returns nothing for an empty or
+	// under-/over-100% split set, so without these guards the allocation loop
+	// below simply never runs: the period closes with 204 while the whole
+	// surplus disappears — no pot_ledger rows, no carryover income entry in
+	// the next month. The importer's close has always refused both (see
+	// importer.closePeriod); the HTTP close has to as well.
+	if len(rawSplits) == 0 {
+		if surplus != 0 {
+			Error(w, http.StatusConflict, "no_pot_splits",
+				"cannot close: this period has a surplus but no pot splits to allocate it to")
+			return
+		}
+	} else if err := domain.ValidateSplits(inputs); err != nil {
+		Error(w, http.StatusConflict, "split_percentage_not_100",
+			"cannot close: pot splits must total 100%")
+		return
+	}
+
 	// A December close writes its carryover into January of the *next* year,
 	// which locks independently of this one — a year can be locked while it
 	// still has no periods at all, and the check above only covered this
