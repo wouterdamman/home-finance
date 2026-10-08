@@ -62,7 +62,14 @@ export default function WidgetFrame({ id, title, editMode, width, height, onHide
           </Group>
         )}
       </Group>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* overflow hidden: recharts leaves its tooltip wrapper in the DOM
+          after the pointer leaves, still positioned where it last rendered.
+          For a chart in the right-hand column that position sticks out past
+          the viewport, and a hidden element still counts towards the
+          document's scroll width — so the whole page became scrollable
+          sideways by a few dozen pixels. Tooltips themselves are kept inside
+          the chart's own viewbox by recharts, so nothing visible is clipped. */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {children}
       </div>
     </Paper>
