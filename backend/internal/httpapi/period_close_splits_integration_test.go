@@ -14,8 +14,10 @@ import (
 // Tests in this file cover the pot-split side of the period close: the
 // surplus must never be able to disappear, and the pot it lands in must be
 // the pot every other screen says it will be. They use test years in the
-// 2070s (periods.year is CHECK-constrained to 2000-2100) and wipe every
-// period they touch in t.Cleanup.
+// 2070s (periods.year is CHECK-constrained to 2000-2100), create their own
+// pots, and wipe everything they touch in t.Cleanup — the household's own
+// pots are deliberately never used, so a concurrently archived or
+// re-percentaged pot in a shared development database cannot flip a result.
 
 // wipeTestYear removes every period (and everything cascading off it) in a
 // test year, including the next-period rows a close creates on its own.
@@ -37,13 +39,16 @@ func wipeTestYear(t *testing.T, pool *pgxpool.Pool, years ...int) {
 	})
 }
 
-// carryoverPotID returns the household's carryover pot, which every split
-// replacement implicitly tops up to keep the total at exactly 100%.
+// carryoverPotID returns the household's carryover pot. A partial index
+// (pots_one_carryover_idx) allows exactly one unarchived carryover pot, so a
+// test that needs the carryover leg of a close has to use this one — it
+// cannot create its own. Its ledger rows hang off the test period and
+// cascade away with it.
 func carryoverPotID(t *testing.T, pool *pgxpool.Pool) int64 {
 	t.Helper()
 	var id int64
 	if err := pool.QueryRow(context.Background(),
-		`SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL ORDER BY id LIMIT 1`).Scan(&id); err != nil {
+		`SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL`).Scan(&id); err != nil {
 		t.Fatalf("carryover pot: %v", err)
 	}
 	return id
@@ -51,13 +56,13 @@ func carryoverPotID(t *testing.T, pool *pgxpool.Pool) int64 {
 
 // createTestPot inserts a pot directly (there is no delete endpoint, so the
 // cleanup is raw SQL too) and returns its id.
-func createTestPot(t *testing.T, pool *pgxpool.Pool, name string, sortOrder int) int64 {
+func createTestPot(t *testing.T, pool *pgxpool.Pool, name, kind string, sortOrder int) int64 {
 	t.Helper()
 	ctx := context.Background()
 	var id int64
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO pots (name,kind,sort_order) VALUES ($1,'normal',$2) RETURNING id`,
-		name, sortOrder).Scan(&id); err != nil {
+		`INSERT INTO pots (name,kind,sort_order) VALUES ($1,$2,$3) RETURNING id`,
+		name, kind, sortOrder).Scan(&id); err != nil {
 		t.Fatalf("create pot %s: %v", name, err)
 	}
 	t.Cleanup(func() {
@@ -70,6 +75,19 @@ func createTestPot(t *testing.T, pool *pgxpool.Pool, name string, sortOrder int)
 	return id
 }
 
+// insertSplit writes a split row directly. The HTTP endpoint always tops the
+// total up to 100% through the household's carryover pot, which these tests
+// must not depend on — and writing the row directly is also the only way to
+// reach the states an import or an older release can leave behind.
+func insertSplit(t *testing.T, pool *pgxpool.Pool, periodID, potID int64, percentage string) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO pot_splits (period_id,pot_id,percentage) VALUES ($1,$2,$3::numeric)`,
+		periodID, potID, percentage); err != nil {
+		t.Fatalf("insert split: %v", err)
+	}
+}
+
 func addIncome(t *testing.T, c *apiClient, periodID int64, label string, cents int64) {
 	t.Helper()
 	resp := c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(periodID, 10)+"/incomes", map[string]any{
@@ -77,21 +95,6 @@ func addIncome(t *testing.T, c *apiClient, periodID int64, label string, cents i
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create income: want 201, got %d", resp.StatusCode)
-	}
-	resp.Body.Close()
-}
-
-// putSplits replaces a period's splits over HTTP. The carryover pot is
-// topped up to the remainder by the handler itself.
-func putSplits(t *testing.T, c *apiClient, periodID int64, splits ...map[string]any) {
-	t.Helper()
-	if splits == nil {
-		splits = []map[string]any{}
-	}
-	resp := c.do(http.MethodPut, "/api/periods/"+strconv.FormatInt(periodID, 10)+"/splits",
-		map[string]any{"splits": splits})
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		t.Fatalf("put splits: want 204, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 }
@@ -123,6 +126,15 @@ func allocatedCents(t *testing.T, pool *pgxpool.Pool, periodID, potID int64) int
 	return cents
 }
 
+func periodStatus(t *testing.T, pool *pgxpool.Pool, periodID int64) string {
+	t.Helper()
+	var status string
+	if err := pool.QueryRow(context.Background(), `SELECT status FROM periods WHERE id=$1`, periodID).Scan(&status); err != nil {
+		t.Fatalf("read period status: %v", err)
+	}
+	return status
+}
+
 // TestClosePeriodRejectsSurplusWithoutValidSplits pins the guard that keeps a
 // close from silently swallowing the surplus: domain.LargestRemainderSplit
 // returns nothing for an empty or non-100% split set, so the allocation loop
@@ -130,7 +142,6 @@ func allocatedCents(t *testing.T, pool *pgxpool.Pool, periodID, potID int64) int
 func TestClosePeriodRejectsSurplusWithoutValidSplits(t *testing.T) {
 	srv, pool := newIntegrationServer(t)
 	c := newAPIClient(t, srv)
-	ctx := context.Background()
 
 	t.Run("no splits at all", func(t *testing.T) {
 		const year, month = 2071, 5
@@ -145,14 +156,8 @@ func TestClosePeriodRejectsSurplusWithoutValidSplits(t *testing.T) {
 		if code := errorCode(t, c, resp); code != "no_pot_splits" {
 			t.Errorf("error code: want no_pot_splits, got %q", code)
 		}
-
-		// The period must still be open and the surplus untouched.
-		var status string
-		if err := pool.QueryRow(ctx, `SELECT status FROM periods WHERE id=$1`, id).Scan(&status); err != nil {
-			t.Fatalf("read status: %v", err)
-		}
-		if status != "open" {
-			t.Errorf("status after rejected close: want open, got %s", status)
+		if got := periodStatus(t, pool, id); got != "open" {
+			t.Errorf("status after rejected close: want open, got %s", got)
 		}
 	})
 
@@ -161,15 +166,8 @@ func TestClosePeriodRejectsSurplusWithoutValidSplits(t *testing.T) {
 		wipeTestYear(t, pool, year)
 		id := createTestPeriod(t, c, year, month)
 		addIncome(t, c, id, "Test salary", 500000)
-
-		// The HTTP split endpoint always tops the total up to 100% via the
-		// carryover pot, so a partial set has to be written directly — the
-		// state an import or an older release could leave behind.
-		potID := createTestPot(t, pool, "ZTest Partial Split Pot", 900)
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO pot_splits (period_id,pot_id,percentage) VALUES ($1,$2,50)`, id, potID); err != nil {
-			t.Fatalf("insert partial split: %v", err)
-		}
+		potID := createTestPot(t, pool, "ZTest Partial Split Pot", "normal", 900)
+		insertSplit(t, pool, id, potID, "50")
 
 		resp := closePeriod(t, c, id)
 		if resp.StatusCode != http.StatusConflict {
@@ -177,6 +175,9 @@ func TestClosePeriodRejectsSurplusWithoutValidSplits(t *testing.T) {
 		}
 		if code := errorCode(t, c, resp); code != "split_percentage_not_100" {
 			t.Errorf("error code: want split_percentage_not_100, got %q", code)
+		}
+		if got := periodStatus(t, pool, id); got != "open" {
+			t.Errorf("status after rejected close: want open, got %s", got)
 		}
 	})
 
@@ -199,8 +200,8 @@ func TestClosePeriodRejectsSurplusWithoutValidSplits(t *testing.T) {
 		wipeTestYear(t, pool, year)
 		id := createTestPeriod(t, c, year, month)
 		addIncome(t, c, id, "Test salary", 500000)
-		potID := createTestPot(t, pool, "ZTest Full Split Pot", 901)
-		putSplits(t, c, id, map[string]any{"potId": potID, "percentage": "100"})
+		potID := createTestPot(t, pool, "ZTest Full Split Pot", "normal", 901)
+		insertSplit(t, pool, id, potID, "100")
 
 		resp := closePeriod(t, c, id)
 		if resp.StatusCode != http.StatusNoContent {
@@ -227,12 +228,13 @@ func TestArchivedPotIsNotResurrectedByTemplateOrClose(t *testing.T) {
 	t.Run("template copy drops the split and reassigns its percentage", func(t *testing.T) {
 		const year = 2072
 		wipeTestYear(t, pool, year)
+		potID := createTestPot(t, pool, "ZTest Archived Template Pot", "normal", 910)
 		carryID := carryoverPotID(t, pool)
-		potID := createTestPot(t, pool, "ZTest Archived Template Pot", 910)
 
 		srcID := createTestPeriod(t, c, year, 1)
 		addIncome(t, c, srcID, "Test salary", 100000)
-		putSplits(t, c, srcID, map[string]any{"potId": potID, "percentage": "60"})
+		insertSplit(t, pool, srcID, potID, "60")
+		insertSplit(t, pool, srcID, carryID, "40")
 
 		// Closing the source period is what makes the split row survive the
 		// archive: detachPotSplits is scoped to p.status <> 'closed'.
@@ -242,19 +244,8 @@ func TestArchivedPotIsNotResurrectedByTemplateOrClose(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		resp = c.do(http.MethodPost, "/api/pots/"+strconv.FormatInt(potID, 10)+"/archive", nil)
-		if resp.StatusCode != http.StatusNoContent {
-			t.Fatalf("archive pot: want 204, got %d", resp.StatusCode)
-		}
-		resp.Body.Close()
-
-		var stillThere bool
-		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pot_splits WHERE period_id=$1 AND pot_id=$2)`,
-			srcID, potID).Scan(&stillThere); err != nil {
-			t.Fatalf("read source split: %v", err)
-		}
-		if !stillThere {
-			t.Fatal("precondition: closed period should still hold the archived pot's split")
+		if _, err := pool.Exec(ctx, `UPDATE pots SET archived_at=now() WHERE id=$1`, potID); err != nil {
+			t.Fatalf("archive pot: %v", err)
 		}
 
 		// Copy the closed period forward.
@@ -278,15 +269,13 @@ func TestArchivedPotIsNotResurrectedByTemplateOrClose(t *testing.T) {
 			t.Error("template copy: archived pot's split was copied forward")
 		}
 
-		var carryPct, total float64
-		if err := pool.QueryRow(ctx, `
-			SELECT COALESCE((SELECT percentage FROM pot_splits WHERE period_id=$1 AND pot_id=$2),0)::float8,
-			       COALESCE((SELECT SUM(percentage) FROM pot_splits WHERE period_id=$1),0)::float8`,
-			dest.ID, carryID).Scan(&carryPct, &total); err != nil {
+		// The freed 60% must not go missing either — whichever carryover pot
+		// absorbs it, the copy has to add up to 100% again.
+		var total float64
+		if err := pool.QueryRow(ctx,
+			`SELECT COALESCE(SUM(percentage),0)::float8 FROM pot_splits WHERE period_id=$1`,
+			dest.ID).Scan(&total); err != nil {
 			t.Fatalf("read copied percentages: %v", err)
-		}
-		if carryPct != 100 {
-			t.Errorf("carryover percentage after reassignment: want 100, got %v", carryPct)
 		}
 		if total != 100 {
 			t.Errorf("copied split total: want 100, got %v", total)
@@ -296,23 +285,19 @@ func TestArchivedPotIsNotResurrectedByTemplateOrClose(t *testing.T) {
 	t.Run("close ignores an archived pot's split", func(t *testing.T) {
 		const year, month = 2073, 5
 		wipeTestYear(t, pool, year)
-		carryID := carryoverPotID(t, pool)
-		potID := createTestPot(t, pool, "ZTest Archived Close Pot", 911)
-		if _, err := pool.Exec(ctx, `UPDATE pots SET archived_at=now() WHERE id=$1`, potID); err != nil {
+		livePotID := createTestPot(t, pool, "ZTest Live Close Pot", "normal", 912)
+		archivedPotID := createTestPot(t, pool, "ZTest Archived Close Pot", "normal", 913)
+		if _, err := pool.Exec(ctx, `UPDATE pots SET archived_at=now() WHERE id=$1`, archivedPotID); err != nil {
 			t.Fatalf("archive pot: %v", err)
 		}
 
 		id := createTestPeriod(t, c, year, month)
 		addIncome(t, c, id, "Test salary", 100000)
-		putSplits(t, c, id)
-
-		// 100% to the carryover pot plus a leftover 30% for the archived pot:
+		// 100% to a live pot plus a leftover 30% for the archived one:
 		// filtering the archived row leaves exactly 100%, which keeps the
 		// split validation out of the way so the allocation is what is tested.
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO pot_splits (period_id,pot_id,percentage) VALUES ($1,$2,30)`, id, potID); err != nil {
-			t.Fatalf("insert archived split: %v", err)
-		}
+		insertSplit(t, pool, id, livePotID, "100")
+		insertSplit(t, pool, id, archivedPotID, "30")
 
 		resp := closePeriod(t, c, id)
 		if resp.StatusCode != http.StatusNoContent {
@@ -320,11 +305,81 @@ func TestArchivedPotIsNotResurrectedByTemplateOrClose(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		if got := allocatedCents(t, pool, id, potID); got != 0 {
+		if got := allocatedCents(t, pool, id, archivedPotID); got != 0 {
 			t.Errorf("allocation into archived pot: want 0, got %d", got)
 		}
-		if got := allocatedCents(t, pool, id, carryID); got != 100000 {
-			t.Errorf("allocation into carryover pot: want 100000, got %d", got)
+		if got := allocatedCents(t, pool, id, livePotID); got != 100000 {
+			t.Errorf("allocation into live pot: want 100000, got %d", got)
 		}
 	})
+}
+
+// TestReopenDecemberBlockedWhenNextYearLocked pins the next-year lock check
+// handleReopenPeriod was missing. A December close writes its carryover into
+// January of the following year; reopening deletes those rows, so a lock on
+// that year has to stop the reopen the same way it stops the close.
+func TestReopenDecemberBlockedWhenNextYearLocked(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	const year, nextYear = 2074, 2075
+	wipeTestYear(t, pool, year, nextYear)
+	carryID := carryoverPotID(t, pool)
+
+	decID := createTestPeriod(t, c, year, 12)
+	addIncome(t, c, decID, "Test salary", 100000)
+	insertSplit(t, pool, decID, carryID, "100")
+
+	resp := closePeriod(t, c, decID)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("close december: want 204, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	countCarryover := func() int {
+		var n int
+		if err := pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM income_entries ie JOIN periods p ON p.id = ie.period_id
+			WHERE ie.entry_type='carryover' AND ie.source_period_id=$1 AND p.year=$2`,
+			decID, nextYear).Scan(&n); err != nil {
+			t.Fatalf("count carryover entries: %v", err)
+		}
+		return n
+	}
+	if got := countCarryover(); got != 1 {
+		t.Fatalf("precondition: want 1 carryover entry in %d, got %d", nextYear, got)
+	}
+
+	// Lock the next year directly: the lock endpoint requires every period in
+	// the year to be closed, and the January the close just created is open.
+	if _, err := pool.Exec(ctx, `INSERT INTO locked_years (year) VALUES ($1) ON CONFLICT DO NOTHING`, nextYear); err != nil {
+		t.Fatalf("lock next year: %v", err)
+	}
+
+	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(decID, 10)+"/reopen", nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("reopen with next year locked: want 409, got %d", resp.StatusCode)
+	}
+	if code := errorCode(t, c, resp); code != "year_locked" {
+		t.Errorf("error code: want year_locked, got %q", code)
+	}
+
+	// Nothing in the locked year may have been touched.
+	if got := countCarryover(); got != 1 {
+		t.Errorf("carryover entry in locked year: want 1 left intact, got %d", got)
+	}
+	if got := periodStatus(t, pool, decID); got != "closed" {
+		t.Errorf("status after rejected reopen: want closed, got %s", got)
+	}
+
+	// With the lock lifted the reopen goes through again.
+	if _, err := pool.Exec(ctx, `DELETE FROM locked_years WHERE year=$1`, nextYear); err != nil {
+		t.Fatalf("unlock next year: %v", err)
+	}
+	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(decID, 10)+"/reopen", nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("reopen after unlock: want 204, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
 }

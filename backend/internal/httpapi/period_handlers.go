@@ -738,6 +738,34 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusConflict, "period_already_open", "period is already open")
 		return
 	}
+	// A December close writes its carryover into January of the *next* year,
+	// and the deletes below reach into it. That year locks independently of
+	// this one, so the check above on this period's own year does not cover
+	// it — handleClosePeriod guards the same destination explicitly.
+	if nextYear != year {
+		var carryRowsInNextYear bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM income_entries ie JOIN periods p ON p.id = ie.period_id
+				WHERE ie.entry_type='carryover' AND ie.source_period_id=$1 AND p.year=$2
+				UNION ALL
+				SELECT 1 FROM pot_ledger pl JOIN periods p ON p.id = pl.period_id
+				WHERE pl.source_period_id=$1 AND p.year=$2)`, id, nextYear).Scan(&carryRowsInNextYear); err != nil {
+			dbError(w, "handleReopenPeriod next year carryover", err)
+			return
+		}
+		if carryRowsInNextYear {
+			var nextYearLocked bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM locked_years WHERE year=$1)`, nextYear).Scan(&nextYearLocked); err != nil {
+				dbError(w, "handleReopenPeriod next year lock", err)
+				return
+			}
+			if nextYearLocked {
+				Error(w, http.StatusConflict, "year_locked", "cannot reopen: the next year is locked")
+				return
+			}
+		}
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM pot_ledger WHERE source_period_id=$1`, id); err != nil {
 		dbError(w, "handleReopenPeriod", err)
 		return

@@ -158,7 +158,7 @@ func TestPeriodCloseReopenLifecycle(t *testing.T) {
 
 	// A surplus needs somewhere to go: closing a period that has one but no
 	// pot splits is rejected (see TestClosePeriodRejectsSurplusWithoutValidSplits).
-	putSplits(t, c, id)
+	insertSplit(t, pool, id, createTestPot(t, pool, "ZTest Lifecycle Pot 2098", "normal", 930), "100")
 
 	// Close.
 	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/close", nil)
