@@ -53,6 +53,13 @@ type IncomeRow struct {
 type BudgetLineRow struct {
 	Label       string
 	AmountCents int64
+	// TracksTransactions carries the export format's Type column
+	// (Vast/Boekingen) so a reimport restores the period's own
+	// tracks_transactions value instead of inferring it from whether some
+	// transaction happens to share the line's label. nil means the sheet
+	// didn't say — the legacy Fam_Finance layout has no such column — and
+	// mapper.Run then falls back to label matching.
+	TracksTransactions *bool
 }
 
 type SplitRow struct {

@@ -85,6 +85,21 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 
 	var rep Report
 
+	// Every single-row write endpoint goes through isPeriodWritable /
+	// isYearWritable (httpapi/helpers.go); the bulk import path had no
+	// equivalent at all. Without this check a workbook could rewrite a closed
+	// period inside a locked year while leaving periods.status and the lock
+	// itself untouched — after which the pot allocations the close wrote no
+	// longer reconcile with the period they were derived from. The year check
+	// runs before wipe/reset so a locked year can't be emptied either.
+	if locked, err := yearIsLocked(ctx, dbTx, opts.Year); err != nil {
+		return nil, fmt.Errorf("check locked year: %w", err)
+	} else if locked {
+		return nil, &ValidationError{
+			Message: fmt.Sprintf("year %d is locked; unlock it before importing", opts.Year),
+		}
+	}
+
 	if opts.ResetMaster {
 		counts, err := resetMasterdata(ctx, dbTx)
 		if err != nil {
@@ -113,6 +128,33 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 			details[sd.Month] = append(details[sd.Month], sd.Txs...)
 		}
 		incomeDetails[sd.Month] = append(incomeDetails[sd.Month], sd.IncomeTxs...)
+	}
+
+	// A closed period is immutable for the same reason isPeriodWritable exists:
+	// its totals have already been turned into pot allocations and a carryover
+	// income entry in the next period, so rewriting its rows leaves those
+	// unreconcilable with the period they came from. Checked after wipe/reset,
+	// which legally remove the period outright rather than editing it in place.
+	// Reported and skipped per month, like every other per-month problem: the
+	// remaining months of the workbook are still worth importing, and
+	// re-running the same import must stay a no-op rather than start failing.
+	sheetMonths := make([]int, 0, len(overviews))
+	for monthNum := 1; monthNum <= 12; monthNum++ {
+		if _, ok := overviews[monthNum]; ok {
+			sheetMonths = append(sheetMonths, monthNum)
+		}
+	}
+	closed, err := closedMonths(ctx, dbTx, opts.Year, sheetMonths)
+	if err != nil {
+		return nil, fmt.Errorf("check closed periods: %w", err)
+	}
+	for _, monthNum := range closed {
+		delete(overviews, monthNum)
+		delete(details, monthNum)
+		delete(incomeDetails, monthNum)
+		rep.Problems = append(rep.Problems, fmt.Sprintf(
+			"%04d-%02d: period is closed, month skipped (reopen it to import this month)",
+			opts.Year, monthNum))
 	}
 
 	// Load/create masterdata
@@ -322,26 +364,39 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 
 		// Budget lines
 		for i, bl := range ov.Lines {
-			// tracks_transactions = true if a Details category has the same name
+			// This app's own export carries the line's Type column, so the
+			// sheet states tracks_transactions outright and is authoritative:
+			// the label-matching guess below flipped an untracked line to
+			// tracked the moment any transaction sat under it, after which
+			// its effective amount switched from amount_cents to the
+			// transaction sum and the round trip changed the period's total.
+			// The legacy Fam_Finance layout has no such column, so there the
+			// guess (plus the OR, which keeps a user's per-period toggle from
+			// being silently undone by a sheet carrying no transactions) is
+			// still the best available answer.
+			explicitTracking := bl.TracksTransactions != nil
 			tracksTransactions := false
-			for _, tx := range details[monthNum] {
-				if strings.EqualFold(tx.CategoryLabel, bl.Label) {
-					tracksTransactions = true
-					break
+			if explicitTracking {
+				tracksTransactions = *bl.TracksTransactions
+			} else {
+				for _, tx := range details[monthNum] {
+					if strings.EqualFold(tx.CategoryLabel, bl.Label) {
+						tracksTransactions = true
+						break
+					}
 				}
 			}
-			// tracks_transactions is deliberately a per-period user choice, so
-			// importing a sheet that happens to carry no transactions for a
-			// tracked line must not silently untrack it.
 			if _, err := dbTx.Exec(ctx,
 				`INSERT INTO budget_lines (period_id, category_id, label, amount_cents, tracks_transactions, sort_order)
 				 VALUES ($1, $2, $3, $4, $5, $6)
 				 ON CONFLICT (period_id, category_id) DO UPDATE
 				 SET label=EXCLUDED.label,
 				     amount_cents=EXCLUDED.amount_cents,
-				     tracks_transactions = budget_lines.tracks_transactions OR EXCLUDED.tracks_transactions,
+				     tracks_transactions = CASE WHEN $7
+				       THEN EXCLUDED.tracks_transactions
+				       ELSE budget_lines.tracks_transactions OR EXCLUDED.tracks_transactions END,
 				     sort_order=EXCLUDED.sort_order`,
-				periodID, catIDs[bl.Label], bl.Label, bl.AmountCents, tracksTransactions, i); err != nil {
+				periodID, catIDs[bl.Label], bl.Label, bl.AmountCents, tracksTransactions, i, explicitTracking); err != nil {
 				return nil, fmt.Errorf("month %d: insert budget line %q: %w", monthNum, bl.Label, err)
 			}
 		}
@@ -399,6 +454,41 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 	return &rep, nil
+}
+
+// yearIsLocked mirrors httpapi.isYearLocked. It fails closed: Run turns any
+// error here into a rolled-back import rather than treating an unreadable
+// locked_years row as "not locked".
+func yearIsLocked(ctx context.Context, dbTx dbtx, year int) (bool, error) {
+	var locked bool
+	err := dbTx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM locked_years WHERE year=$1)`, year).Scan(&locked)
+	return locked, err
+}
+
+// closedMonths returns which of months already have a closed period. One
+// query instead of one per month, so a twelve-sheet workbook still costs a
+// single round trip.
+func closedMonths(ctx context.Context, dbTx dbtx, year int, months []int) ([]int, error) {
+	if len(months) == 0 {
+		return nil, nil
+	}
+	rows, err := dbTx.Query(ctx,
+		`SELECT month FROM periods
+		 WHERE year=$1 AND month = ANY($2) AND status='closed'
+		 ORDER BY month`, year, months)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var month int
+		if err := rows.Scan(&month); err != nil {
+			return nil, err
+		}
+		out = append(out, month)
+	}
+	return out, rows.Err()
 }
 
 func firstOfMonth(year, month int) string {
@@ -626,6 +716,17 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, year, month int
 		}
 	}
 
+	// Freeze each line's target, exactly as handleClosePeriod does. Without
+	// this the snapshot stays NULL and handleGetPeriodOverview falls back to
+	// the category's live default_amount_cents, so a period closed by the
+	// importer showed a target that drifted every time the category default
+	// was edited afterwards.
+	if _, err := dbTx.Exec(ctx,
+		`UPDATE budget_lines
+		 SET target_cents_at_close = COALESCE((SELECT default_amount_cents FROM categories WHERE id = budget_lines.category_id), 0)
+		 WHERE period_id = $1`, periodID); err != nil {
+		return false, err
+	}
 	if _, err := dbTx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, periodID); err != nil {
 		return false, err
 	}

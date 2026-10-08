@@ -181,7 +181,11 @@ func parseExportSheet(sheet string, rows [][]string) exportSheetContent {
 				problem("A", rowNum, "expense row has no category name, skipped")
 				continue
 			}
-			c.lines = append(c.lines, BudgetLineRow{Label: unescapeExportCell(a), AmountCents: cents})
+			c.lines = append(c.lines, BudgetLineRow{
+				Label:              unescapeExportCell(a),
+				AmountCents:        cents,
+				TracksTransactions: parseExpenseType(col(row, 2)),
+			})
 
 		case modeTx:
 			// The Datum column is nullable and the export writes it empty for a
@@ -218,6 +222,27 @@ func parseExportSheet(sheet string, rows [][]string) exportSheetContent {
 		}
 	}
 	return c
+}
+
+// parseExpenseType reads the Uitgaven section's Type column, which the export
+// writes as "Vast" (amount_cents is the line's amount) or "Boekingen" (the
+// amount is the sum of its transactions). Carrying it back is what makes the
+// round trip exact: inferring tracks_transactions from a label match against
+// the Transacties section flipped an untracked line to tracked as soon as it
+// had any stale transactions under it — legitimate data, since the toggle is
+// deliberately per-period — and its effective amount then switched from
+// amount_cents to the transaction sum. An unrecognized or missing value
+// returns nil, leaving the fallback in place.
+func parseExpenseType(raw string) *bool {
+	tracked := true
+	untracked := false
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "boekingen", "transactions":
+		return &tracked
+	case "vast", "fixed":
+		return &untracked
+	}
+	return nil
 }
 
 // unescapeExportCell undoes the apostrophe the export prefixes to any text that
