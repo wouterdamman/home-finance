@@ -179,6 +179,59 @@ export interface TrendsMonthlyTotal {
   surplusCents: number
 }
 
+export interface TrendsIncomeSourcesSource {
+  id: number
+  name: string
+}
+
+export interface TrendsIncomeSourcesEntry {
+  year: number
+  month: number
+  // Keyed by source id as a string; id "0" is the carryover bucket.
+  values: Record<string, number>
+}
+
+export interface TrendsIncomeSources {
+  sources: TrendsIncomeSourcesSource[]
+  entries: TrendsIncomeSourcesEntry[]
+}
+
+export interface TrendsPotBalancesPot {
+  id: number
+  name: string
+  kind: string
+  targetCents?: number
+  targetDate?: string
+  // Set for pots that are archived but still have ledger history: their
+  // past balances are worth charting, but they are not live savings goals
+  // and must not be offered as if they were still being funded.
+  archivedAt?: string
+}
+
+export interface TrendsPotBalancesEntry {
+  year: number
+  month: number
+  // All three keyed by pot id as a string.
+  balances: Record<string, number>
+  inflow: Record<string, number>
+  outflow: Record<string, number>
+}
+
+export interface TrendsPotBalances {
+  pots: TrendsPotBalancesPot[]
+  entries: TrendsPotBalancesEntry[]
+}
+
+export interface TrendsDescription {
+  description: string
+  totalCents: number
+  count: number
+  firstYear: number
+  firstMonth: number
+  lastYear: number
+  lastMonth: number
+}
+
 export interface ApiError {
   error: { code: string; message: string }
 }

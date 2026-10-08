@@ -1964,3 +1964,449 @@ func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Reque
 		"entries":    entries,
 	})
 }
+
+func (s *Server) handleTrendsIncomeSources(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Mirrors domain.EffectiveIncomeCentsSQL's per-row CASE exactly (just
+	// without the outer SUM), so summing this endpoint's values across all
+	// sources for a given period reproduces the exact same incomeTotalCents
+	// as /api/trends/monthly-totals row for row — including that formula's
+	// double-counting behavior if a period ever has more than one
+	// income_entries row for the same itemized source.
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.year, p.month, ie.source_id, isrc.name,
+		  CASE WHEN isrc.is_itemized
+		    THEN COALESCE((SELECT SUM(it.amount_cents) FROM income_transactions it WHERE it.period_id=ie.period_id AND it.source_id=ie.source_id),0)
+		    ELSE ie.amount_cents END AS effective_cents
+		FROM income_entries ie
+		JOIN periods p ON p.id = ie.period_id
+		LEFT JOIN income_sources isrc ON isrc.id = ie.source_id
+		ORDER BY p.year, p.month`)
+	if err != nil {
+		dbError(w, "handleTrendsIncomeSources", err)
+		return
+	}
+	defer rows.Close()
+
+	type sourceInfo struct {
+		ID    int64  `json:"id"`
+		Name  string `json:"name"`
+		total int64
+	}
+	srcOrder := make([]int64, 0)
+	srcs := map[int64]*sourceInfo{}
+	type periodKey struct{ year, month int }
+	periodOrder := make([]periodKey, 0)
+	periodSeen := map[periodKey]bool{}
+	values := map[periodKey]map[int64]int64{}
+
+	for rows.Next() {
+		var year, month int
+		var sourceID *int64
+		var name *string
+		var cents int64
+		if err := rows.Scan(&year, &month, &sourceID, &name, &cents); err != nil {
+			rows.Close()
+			dbError(w, "handleTrendsIncomeSources scan", err)
+			return
+		}
+		// A carryover income_entries row (entry_type='carryover') has
+		// source_id IS NULL — bucket it under a synthetic id 0 so the
+		// per-month sum here still equals monthly-totals' incomeTotalCents.
+		bucketID := int64(0)
+		bucketName := "Carryover"
+		if sourceID != nil {
+			bucketID = *sourceID
+			bucketName = *name
+		}
+		if _, ok := srcs[bucketID]; !ok {
+			srcs[bucketID] = &sourceInfo{ID: bucketID, Name: bucketName}
+			srcOrder = append(srcOrder, bucketID)
+		}
+		srcs[bucketID].total += cents
+		pk := periodKey{year, month}
+		if !periodSeen[pk] {
+			periodSeen[pk] = true
+			periodOrder = append(periodOrder, pk)
+			values[pk] = map[int64]int64{}
+		}
+		values[pk][bucketID] += cents
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		dbError(w, "handleTrendsIncomeSources", err)
+		return
+	}
+
+	sort.Slice(srcOrder, func(i, j int) bool {
+		return srcs[srcOrder[i]].total > srcs[srcOrder[j]].total
+	})
+	sources := make([]sourceInfo, 0, len(srcOrder))
+	for _, id := range srcOrder {
+		sources = append(sources, *srcs[id])
+	}
+
+	sort.Slice(periodOrder, func(i, j int) bool {
+		if periodOrder[i].year != periodOrder[j].year {
+			return periodOrder[i].year < periodOrder[j].year
+		}
+		return periodOrder[i].month < periodOrder[j].month
+	})
+
+	type entry struct {
+		Year   int             `json:"year"`
+		Month  int             `json:"month"`
+		Values map[int64]int64 `json:"values"`
+	}
+	entries := make([]entry, 0, len(periodOrder))
+	for _, pk := range periodOrder {
+		entries = append(entries, entry{Year: pk.year, Month: pk.month, Values: values[pk]})
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"sources": sources,
+		"entries": entries,
+	})
+}
+
+func (s *Server) handleTrendsPotBalances(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	type potInfo struct {
+		ID          int64   `json:"id"`
+		Name        string  `json:"name"`
+		Kind        string  `json:"kind"`
+		TargetCents *int64  `json:"targetCents,omitempty"`
+		TargetDate  *string `json:"targetDate,omitempty"`
+		// Exposed so a consumer can tell a historical pot apart from a live
+		// one: a balance chart wants the archived pot's history, while a
+		// "savings goals" list or a pot picker must not offer it as if it
+		// were still being funded.
+		ArchivedAt *string `json:"archivedAt,omitempty"`
+	}
+
+	// Archived pots are included as long as they have ledger history — an
+	// archived pot's past balance trend is still real data worth charting.
+	// Only a pot that was archived with zero activity ever drops out.
+	potRows, err := s.pool.Query(ctx, `
+		SELECT p.id, p.name, p.kind, p.target_cents, p.target_date, p.archived_at
+		FROM pots p
+		WHERE p.archived_at IS NULL OR EXISTS (SELECT 1 FROM pot_ledger pl WHERE pl.pot_id=p.id)
+		ORDER BY p.sort_order, p.id`)
+	if err != nil {
+		dbError(w, "handleTrendsPotBalances pots", err)
+		return
+	}
+	potOrder := make([]int64, 0)
+	pots := make([]potInfo, 0)
+	for potRows.Next() {
+		var pi potInfo
+		var td *time.Time
+		var archivedAt *time.Time
+		if err := potRows.Scan(&pi.ID, &pi.Name, &pi.Kind, &pi.TargetCents, &td, &archivedAt); err != nil {
+			potRows.Close()
+			dbError(w, "handleTrendsPotBalances pots scan", err)
+			return
+		}
+		if td != nil {
+			ds := td.Format("2006-01-02")
+			pi.TargetDate = &ds
+		}
+		if archivedAt != nil {
+			as := archivedAt.UTC().Format(time.RFC3339)
+			pi.ArchivedAt = &as
+		}
+		pots = append(pots, pi)
+		potOrder = append(potOrder, pi.ID)
+	}
+	potRows.Close()
+	if err := potRows.Err(); err != nil {
+		dbError(w, "handleTrendsPotBalances pots", err)
+		return
+	}
+
+	// CRITICAL: bucket each ledger row by the period it actually belongs
+	// to (join periods on pot_ledger.period_id), not by entry_date. Every
+	// allocation/carryover_out row written at period close carries
+	// period_id, which is the real time axis — their entry_date is often a
+	// meaningless import artifact (real data has every allocation row
+	// sharing one date). Only manual entries with no period_id
+	// (deposit/withdrawal/adjustment/opening_balance entered outside the
+	// close flow) fall back to their own entry_date.
+	ledgerRows, err := s.pool.Query(ctx, `
+		SELECT pl.pot_id,
+		  COALESCE(p.year, EXTRACT(YEAR FROM pl.entry_date)::int) AS year,
+		  COALESCE(p.month, EXTRACT(MONTH FROM pl.entry_date)::int) AS month,
+		  pl.entry_type, pl.amount_cents
+		FROM pot_ledger pl
+		LEFT JOIN periods p ON p.id = pl.period_id
+		ORDER BY pl.pot_id, year, month`)
+	if err != nil {
+		dbError(w, "handleTrendsPotBalances ledger", err)
+		return
+	}
+	defer ledgerRows.Close()
+
+	type periodKey struct{ year, month int }
+	periodOrder := make([]periodKey, 0)
+	periodSeen := map[periodKey]bool{}
+	delta := map[periodKey]map[int64]int64{}
+	inflow := map[periodKey]map[int64]int64{}
+	outflow := map[periodKey]map[int64]int64{}
+
+	for ledgerRows.Next() {
+		var potID int64
+		var year, month int
+		var entryType string
+		var cents int64
+		if err := ledgerRows.Scan(&potID, &year, &month, &entryType, &cents); err != nil {
+			ledgerRows.Close()
+			dbError(w, "handleTrendsPotBalances ledger scan", err)
+			return
+		}
+		pk := periodKey{year, month}
+		if !periodSeen[pk] {
+			periodSeen[pk] = true
+			periodOrder = append(periodOrder, pk)
+			delta[pk] = map[int64]int64{}
+			inflow[pk] = map[int64]int64{}
+			outflow[pk] = map[int64]int64{}
+		}
+		delta[pk][potID] += cents
+		switch entryType {
+		case "allocation", "deposit":
+			inflow[pk][potID] += cents
+		case "withdrawal", "carryover_out":
+			outflow[pk][potID] += cents
+		case "adjustment":
+			// An adjustment can go either way, so it is classified by its
+			// own sign rather than lumped into outflow: a positive
+			// correction that RAISED the pot used to land in outflow, where
+			// a chart drawing outflow below zero showed it as money leaving
+			// — and then disagreed with the balance line, which went up.
+			if cents >= 0 {
+				inflow[pk][potID] += cents
+			} else {
+				outflow[pk][potID] += cents
+			}
+		}
+		// entry_type "opening_balance" is folded into the running balance
+		// via delta above but deliberately excluded from both inflow and
+		// outflow — it's a one-time historical seed, not a monthly flow.
+	}
+	ledgerRows.Close()
+	if err := ledgerRows.Err(); err != nil {
+		dbError(w, "handleTrendsPotBalances ledger", err)
+		return
+	}
+
+	sort.Slice(periodOrder, func(i, j int) bool {
+		if periodOrder[i].year != periodOrder[j].year {
+			return periodOrder[i].year < periodOrder[j].year
+		}
+		return periodOrder[i].month < periodOrder[j].month
+	})
+
+	type entry struct {
+		Year     int             `json:"year"`
+		Month    int             `json:"month"`
+		Balances map[int64]int64 `json:"balances"`
+		Inflow   map[int64]int64 `json:"inflow"`
+		Outflow  map[int64]int64 `json:"outflow"`
+	}
+	entries := make([]entry, 0, len(periodOrder))
+	// Months with no ledger row for a given pot still carry its previous
+	// balance forward — computed here in Go, not in SQL — starting only
+	// once that pot has had its first ledger row ever (started[potID]).
+	running := map[int64]int64{}
+	started := map[int64]bool{}
+	for _, pk := range periodOrder {
+		balances := map[int64]int64{}
+		for _, potID := range potOrder {
+			d, hadActivity := delta[pk][potID]
+			if hadActivity {
+				started[potID] = true
+			}
+			if !started[potID] {
+				continue
+			}
+			running[potID] += d
+			balances[potID] = running[potID]
+		}
+		entries = append(entries, entry{
+			Year: pk.year, Month: pk.month,
+			Balances: balances, Inflow: inflow[pk], Outflow: outflow[pk],
+		})
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"pots":    pots,
+		"entries": entries,
+	})
+}
+
+func (s *Server) handleTrendsDescriptions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	q := r.URL.Query()
+
+	var categoryID, sourceID *int64
+	if c := q.Get("categoryId"); c != "" {
+		v, err := strconv.ParseInt(c, 10, 64)
+		if err != nil {
+			Error(w, http.StatusBadRequest, "bad_request", "invalid categoryId")
+			return
+		}
+		categoryID = &v
+	}
+	if sv := q.Get("sourceId"); sv != "" {
+		v, err := strconv.ParseInt(sv, 10, 64)
+		if err != nil {
+			Error(w, http.StatusBadRequest, "bad_request", "invalid sourceId")
+			return
+		}
+		sourceID = &v
+	}
+	limit := 20
+	if l := q.Get("limit"); l != "" {
+		v, err := strconv.Atoi(l)
+		if err != nil || v <= 0 || v > 100 {
+			Error(w, http.StatusBadRequest, "bad_request", "limit must be between 1 and 100")
+			return
+		}
+		limit = v
+	}
+
+	var rows pgx.Rows
+	var err error
+	switch {
+	case sourceID != nil:
+		// sourceId switches the whole query to income transactions —
+		// categoryId is ignored if both are supplied, since there is no
+		// income-side analogue of the expense category hierarchy.
+		rows, err = s.pool.Query(ctx, `
+			SELECT it.description, p.year, p.month, it.amount_cents
+			FROM income_transactions it
+			JOIN periods p ON p.id = it.period_id
+			WHERE it.source_id=$1 AND btrim(it.description) <> ''`, *sourceID)
+	case categoryID != nil:
+		// category_rollup so a parent category id also pulls in its
+		// children's transactions, same as the transactions drill-down.
+		rows, err = s.pool.Query(ctx, `
+			SELECT t.description, p.year, p.month, t.amount_cents
+			FROM transactions t
+			JOIN periods p ON p.id = t.period_id
+			JOIN category_rollup cr ON cr.member_id = t.category_id
+			WHERE cr.category_id=$1 AND btrim(t.description) <> ''`, *categoryID)
+	default:
+		rows, err = s.pool.Query(ctx, `
+			SELECT t.description, p.year, p.month, t.amount_cents
+			FROM transactions t
+			JOIN periods p ON p.id = t.period_id
+			WHERE btrim(t.description) <> ''`)
+	}
+	if err != nil {
+		dbError(w, "handleTrendsDescriptions", err)
+		return
+	}
+	defer rows.Close()
+
+	// Real data has the same description typed with different casing/
+	// whitespace ("MTC", "MTC ", "Mtc") — group on the trimmed-lowercased
+	// form but report back whichever original spelling occurred most
+	// often (ties broken lexicographically for determinism).
+	type agg struct {
+		totalCents int64
+		count      int
+		firstKey   int // year*12+(month-1), so it's sortable/comparable as a plain int
+		lastKey    int
+		variants   map[string]int
+	}
+	groups := map[string]*agg{}
+	groupOrder := make([]string, 0)
+
+	for rows.Next() {
+		var desc string
+		var year, month int
+		var cents int64
+		if err := rows.Scan(&desc, &year, &month, &cents); err != nil {
+			rows.Close()
+			dbError(w, "handleTrendsDescriptions scan", err)
+			return
+		}
+		key := strings.ToLower(strings.TrimSpace(desc))
+		pk := year*12 + (month - 1)
+		g, ok := groups[key]
+		if !ok {
+			g = &agg{firstKey: pk, lastKey: pk, variants: map[string]int{}}
+			groups[key] = g
+			groupOrder = append(groupOrder, key)
+		}
+		g.totalCents += cents
+		g.count++
+		g.variants[desc]++
+		if pk < g.firstKey {
+			g.firstKey = pk
+		}
+		if pk > g.lastKey {
+			g.lastKey = pk
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		dbError(w, "handleTrendsDescriptions", err)
+		return
+	}
+
+	type descRow struct {
+		Description string `json:"description"`
+		TotalCents  int64  `json:"totalCents"`
+		Count       int    `json:"count"`
+		FirstYear   int    `json:"firstYear"`
+		FirstMonth  int    `json:"firstMonth"`
+		LastYear    int    `json:"lastYear"`
+		LastMonth   int    `json:"lastMonth"`
+	}
+	out := make([]descRow, 0, len(groupOrder))
+	for _, key := range groupOrder {
+		g := groups[key]
+		variantOrder := make([]string, 0, len(g.variants))
+		for v := range g.variants {
+			variantOrder = append(variantOrder, v)
+		}
+		sort.Strings(variantOrder)
+		bestVariant, bestCount := "", -1
+		for _, v := range variantOrder {
+			if g.variants[v] > bestCount {
+				bestCount = g.variants[v]
+				bestVariant = v
+			}
+		}
+		out = append(out, descRow{
+			Description: bestVariant,
+			TotalCents:  g.totalCents,
+			Count:       g.count,
+			FirstYear:   g.firstKey / 12,
+			FirstMonth:  g.firstKey%12 + 1,
+			LastYear:    g.lastKey / 12,
+			LastMonth:   g.lastKey%12 + 1,
+		})
+	}
+
+	// Tie-broken on the description so the order is deterministic: the
+	// underlying query has no ORDER BY and sort.Slice is not stable, so two
+	// descriptions with the same total could otherwise swap places — or, with
+	// the limit cut applied right below, swap in and out of the response —
+	// between two identical requests.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TotalCents != out[j].TotalCents {
+			return out[i].TotalCents > out[j].TotalCents
+		}
+		return out[i].Description < out[j].Description
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+
+	JSON(w, http.StatusOK, out)
+}

@@ -14,6 +14,50 @@ export type WidgetConfig =
   | { type: 'allTimeTrend'; fromYear: number; toYear: number; chartKind: ChartKind }
   // Same single month, compared across up to MAX_COMPARE_YEARS years.
   | { type: 'monthAcrossYears'; month: number; years: number[]; chartKind: ChartKind }
+  // Stacked bar/area of income per source per month — scoped to the page's
+  // global year filter, same as categoryChart. Up to MAX_INCOME_SOURCE_SLOTS
+  // sources (8 palette.categorical slots, not the 4-slot MAX_CATEGORY_SLOTS).
+  | { type: 'incomeSources'; sourceIds: number[]; chartKind: ChartKind }
+  // Donut of the filter year's income share per source — no config fields
+  // of its own beyond type, same page-level year filter as incomeSources.
+  | { type: 'incomeMix' }
+  // Self-contained ranked breakdown of one itemized income source's
+  // transaction descriptions (trends/descriptions?sourceId=) — independent
+  // of the page's global year filter, like monthCompare/allTimeTrend.
+  | { type: 'itemizedIncome'; sourceId: number }
+  // Stacked area/bar of each selected pot's closing balance per month —
+  // scoped to the page's global year filter, same as categoryChart/
+  // incomeSources. Up to MAX_POT_SLOTS pots (8 palette.categorical slots).
+  | { type: 'potBalances'; potIds: number[]; chartKind: ChartKind }
+  // Signed inflow(+)/outflow(-) bars per selected pot per month, on one
+  // y-axis — same page-level year filter as potBalances. No chartKind: it's
+  // always bars (a signed stacked area reads badly, unlike potBalances).
+  | { type: 'potFlow'; potIds: number[] }
+  // Not a chart: a Progress row per pot with a savings target, showing
+  // current/target, percent and a projected completion month. No config
+  // fields of its own beyond type — self-contained like incomeMix, and
+  // independent of the page's year filter (it always reflects "now").
+  | { type: 'potTargets' }
+  // Surplus/income per month as a percentage, for one self-contained year
+  // (own year field, like monthCompare/allTimeTrend) — independent of the
+  // page's global year filter.
+  | { type: 'savingsRate'; year: number }
+  // Donut of the filter year's expense share per category — no config
+  // fields of its own beyond type, same page-level year filter as
+  // categoryChart/incomeMix. Always includes an explicit "uncategorised"
+  // slice for the gap between category-totals and the real year expense
+  // total (budget lines without a category).
+  | { type: 'categoryShare' }
+  // Self-contained ranked breakdown of transaction descriptions
+  // (trends/descriptions?categoryId=&limit=), independent of the page's
+  // global year filter, like itemizedIncome. categoryId null means "all
+  // categories".
+  | { type: 'topDescriptions'; categoryId: number | null; limit: number }
+  // Self-contained three-layer Sankey (income sources -> Income hub ->
+  // expense categories, plus a surplus branch to pots that received
+  // allocations) for one year — own year field, like monthCompare/
+  // allTimeTrend/savingsRate.
+  | { type: 'sankeyFlow'; year: number }
 
 // Size in grid units. Width = columns (desktop grid is 4 wide, see
 // Trends.tsx's SimpleGrid `cols`). Height = row-units of a fixed
@@ -41,7 +85,13 @@ function genId(): string {
 
 function defaultHeight(config: WidgetConfig): WidgetHeight {
   if (config.type === 'kpi') return 1
-  if (config.type === 'monthCompare' || config.type === 'allTimeTrend' || config.type === 'monthAcrossYears') return 3
+  if (
+    config.type === 'monthCompare' || config.type === 'allTimeTrend' || config.type === 'monthAcrossYears'
+    || config.type === 'incomeSources' || config.type === 'incomeMix' || config.type === 'itemizedIncome'
+    || config.type === 'potBalances' || config.type === 'potFlow' || config.type === 'potTargets' || config.type === 'savingsRate'
+    || config.type === 'categoryShare' || config.type === 'topDescriptions'
+  ) return 3
+  if (config.type === 'sankeyFlow') return 4
   return 2
 }
 
@@ -53,12 +103,47 @@ function isNumberArray(v: unknown): v is number[] {
 // category ids would render series with an undefined color.
 const MAX_CATEGORY_SLOTS = 4
 
+// `palette.categorical` has 8 slots — incomeSources (and incomeMix's
+// "real entities before folding into Other") are capped here, independent
+// of MAX_CATEGORY_SLOTS which stays at 4 for categoryChart.
+export const MAX_INCOME_SOURCE_SLOTS = 8
+
+// Same 8 palette.categorical slots, independent constant because pots and
+// income sources are different entity sets that could have different limits
+// in the future.
+export const MAX_POT_SLOTS = 8
+
 function isMonth(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 12
 }
 
 function isYear(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1900 && v <= 9999
+}
+
+// Income source ids are >= 0 (0 is the carryover bucket, not a real row in
+// `income_sources`, but a valid selectable series all the same).
+function isSourceId(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0
+}
+
+function isPotId(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0
+}
+
+function isCategoryId(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0
+}
+
+// Reasonable bounds on the ranked-list row count — below 3 the widget barely
+// shows anything useful, above 25 the bars get too thin to label.
+const MIN_TOP_DESCRIPTIONS_LIMIT = 3
+const MAX_TOP_DESCRIPTIONS_LIMIT = 25
+const DEFAULT_TOP_DESCRIPTIONS_LIMIT = 10
+
+function clampLimit(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return DEFAULT_TOP_DESCRIPTIONS_LIMIT
+  return Math.min(MAX_TOP_DESCRIPTIONS_LIMIT, Math.max(MIN_TOP_DESCRIPTIONS_LIMIT, Math.round(v)))
 }
 
 function validEntries(v: unknown, isValid: (x: unknown) => boolean): number[] | null {
@@ -124,6 +209,47 @@ function sanitizeConfig(config: unknown): WidgetConfig | null {
       }
       return null
     }
+    case 'incomeSources': {
+      const sourceIds = validEntries(c.sourceIds, isSourceId)
+      if (sourceIds == null) return null
+      return { type: 'incomeSources', sourceIds: sourceIds.slice(0, MAX_INCOME_SOURCE_SLOTS), chartKind: normalizeChartKind(c.chartKind) }
+    }
+    case 'incomeMix':
+      return { type: 'incomeMix' }
+    case 'itemizedIncome':
+      if (isSourceId(c.sourceId)) {
+        return { type: 'itemizedIncome', sourceId: c.sourceId }
+      }
+      return null
+    case 'potBalances': {
+      const potIds = validEntries(c.potIds, isPotId)
+      if (potIds == null) return null
+      return { type: 'potBalances', potIds: potIds.slice(0, MAX_POT_SLOTS), chartKind: normalizeChartKind(c.chartKind) }
+    }
+    case 'potFlow': {
+      const potIds = validEntries(c.potIds, isPotId)
+      if (potIds == null) return null
+      return { type: 'potFlow', potIds: potIds.slice(0, MAX_POT_SLOTS) }
+    }
+    case 'potTargets':
+      return { type: 'potTargets' }
+    case 'savingsRate':
+      if (isYear(c.year)) {
+        return { type: 'savingsRate', year: c.year }
+      }
+      return null
+    case 'categoryShare':
+      return { type: 'categoryShare' }
+    case 'topDescriptions': {
+      const categoryId = c.categoryId === null ? null : (isCategoryId(c.categoryId) ? c.categoryId : undefined)
+      if (categoryId === undefined) return null
+      return { type: 'topDescriptions', categoryId, limit: clampLimit(c.limit) }
+    }
+    case 'sankeyFlow':
+      if (isYear(c.year)) {
+        return { type: 'sankeyFlow', year: c.year }
+      }
+      return null
     default:
       return null
   }
