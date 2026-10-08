@@ -64,7 +64,10 @@ function PotBalancesWidget({ potIds, chartKind, filter, potData }: Props) {
   })
 
   const series = selectedPots.map((pot, idx) => ({ name: String(pot.id), label: pot.name, color: palette.categorical[idx] }))
-  const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
+  // Stacked: the axis must cover the per-month SUM of the pots, not the
+  // largest single pot, or the ticks stop a fraction of the way up the
+  // drawn area (see IncomeSourcesWidget for the same fix).
+  const maxValue = Math.max(...data.map((row) => series.reduce((sum, s) => sum + (Number(row[s.name]) || 0), 0)), 0)
   const ticks = niceAxisTicks(maxValue)
   const xInterval = categoryTickInterval(data.length)
 

@@ -56,8 +56,12 @@ function PotFlowWidget({ potIds, filter, potData }: Props) {
   ])
   const legendSeries = selectedPots.map((pot, idx) => ({ name: String(pot.id), label: pot.name, color: palette.categorical[idx] }))
 
-  const values = data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0))
-  const ticks = niceAxisTicksSigned(Math.min(...values, 0), Math.max(...values, 0))
+  // Inflow and outflow each stack across the selected pots, so the axis has
+  // to span the summed height of each stack rather than the largest single
+  // pot's bar — otherwise the ticks cover only a fraction of what is drawn.
+  const inflowTotals = data.map((row) => selectedPots.reduce((sum, pot) => sum + (Number(row[`${pot.id}__in`]) || 0), 0))
+  const outflowTotals = data.map((row) => selectedPots.reduce((sum, pot) => sum + (Number(row[`${pot.id}__out`]) || 0), 0))
+  const ticks = niceAxisTicksSigned(Math.min(...outflowTotals, 0), Math.max(...inflowTotals, 0))
   const xInterval = categoryTickInterval(data.length)
 
   // A visible gap between stacked segments, per the dataviz standard —

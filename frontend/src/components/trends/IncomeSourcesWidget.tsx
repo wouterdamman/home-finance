@@ -44,7 +44,12 @@ function IncomeSourcesWidget({ sourceIds, chartKind, filter, incomeData }: Props
   // Keyed by source id, labelled by name: income_sources.name is not unique
   // and archived sources appear here too, so a name key could collide.
   const series = selectedSources.map((source, idx) => ({ name: String(source.id), label: incomeSourceLabel(source, t), color: palette.categorical[idx] }))
-  const maxValue = Math.max(...data.flatMap((row) => series.map((s) => Number(row[s.name]) || 0)), 0)
+  // The chart is stacked, so the axis has to cover the per-month SUM, not
+  // the tallest individual series: taking the max of individual values left
+  // the explicit ticks ending partway up while recharts quietly extended the
+  // real domain to the stack height, so the top of every bar sat above the
+  // last gridline.
+  const maxValue = Math.max(...data.map((row) => series.reduce((sum, s) => sum + (Number(row[s.name]) || 0), 0)), 0)
   const ticks = niceAxisTicks(maxValue)
   const xInterval = categoryTickInterval(data.length)
 
