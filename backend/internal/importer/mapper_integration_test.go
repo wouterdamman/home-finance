@@ -561,3 +561,67 @@ func TestRunRejectsLockedYear(t *testing.T) {
 		}
 	}
 }
+
+// TestCloseThroughFreezesTarget is the importer-side equivalent of
+// httpapi's TestClosedPeriodFreezesTarget: a period closed by
+// --close-through must snapshot budget_lines.target_cents_at_close from the
+// category default, or handleGetPeriodOverview falls back to the live value
+// and the closed period's target drifts whenever that default is edited.
+func TestCloseThroughFreezesTarget(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	const year = 2064
+	const potName = "ZTest Pot 2064"
+	const incomeLabel = "ZTest Income 2064"
+	const categoryLabel = "ZTest Category 2064"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM pots WHERE name=$1`, potName)
+		pool.Exec(ctx, `DELETE FROM income_sources WHERE name=$1`, incomeLabel)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, categoryLabel)
+	})
+
+	var catID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1,100000,false,0) RETURNING id`,
+		categoryLabel).Scan(&catID); err != nil {
+		t.Fatalf("seed category: %v", err)
+	}
+
+	sheets := []SheetData{{
+		Year: year, Month: 2, Kind: "Overview",
+		Incomes: []IncomeRow{{Label: incomeLabel, AmountCents: 300000}},
+		Lines:   []BudgetLineRow{{Label: categoryLabel, AmountCents: 100000}},
+		Splits:  []SplitRow{{PotName: potName, Percentage: 100}},
+	}}
+
+	rep, err := Run(ctx, pool, sheets, ImportOptions{Year: year, CloseThrough: 2})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(rep.Months) != 1 || !rep.Months[0].Closed {
+		t.Fatalf("month 2 should be closed, got %+v", rep.Months)
+	}
+
+	// The drift this guards against: editing the category default after the
+	// close must not move the closed period's frozen target.
+	if _, err := pool.Exec(ctx, `UPDATE categories SET default_amount_cents=250000 WHERE id=$1`, catID); err != nil {
+		t.Fatalf("update category default: %v", err)
+	}
+
+	var target *int64
+	if err := pool.QueryRow(ctx,
+		`SELECT bl.target_cents_at_close
+		 FROM budget_lines bl JOIN periods p ON p.id=bl.period_id
+		 WHERE p.year=$1 AND p.month=2 AND bl.category_id=$2`, year, catID).Scan(&target); err != nil {
+		t.Fatalf("read target_cents_at_close: %v", err)
+	}
+	if target == nil {
+		t.Fatal("target_cents_at_close is NULL after an importer close; the overview then falls back to the live category default")
+	}
+	if *target != 100000 {
+		t.Errorf("frozen target: want 100000, got %d", *target)
+	}
+}

@@ -716,6 +716,17 @@ func closePeriod(ctx context.Context, dbTx dbtx, periodID int64, year, month int
 		}
 	}
 
+	// Freeze each line's target, exactly as handleClosePeriod does. Without
+	// this the snapshot stays NULL and handleGetPeriodOverview falls back to
+	// the category's live default_amount_cents, so a period closed by the
+	// importer showed a target that drifted every time the category default
+	// was edited afterwards.
+	if _, err := dbTx.Exec(ctx,
+		`UPDATE budget_lines
+		 SET target_cents_at_close = COALESCE((SELECT default_amount_cents FROM categories WHERE id = budget_lines.category_id), 0)
+		 WHERE period_id = $1`, periodID); err != nil {
+		return false, err
+	}
 	if _, err := dbTx.Exec(ctx, `UPDATE periods SET status='closed', closed_at=now() WHERE id=$1`, periodID); err != nil {
 		return false, err
 	}
