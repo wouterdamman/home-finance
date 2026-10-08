@@ -193,11 +193,6 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("C", row), headerStyle)
 	row++
 
-	type trackedCat struct {
-		label string
-	}
-	var trackedCats []trackedCat
-
 	blRows, err := s.pool.Query(ctx, `
 		SELECT COALESCE(c.name, bl.label, ''), bl.amount_cents, bl.tracks_transactions,
 		  COALESCE((SELECT SUM(t.amount_cents) FROM transactions t JOIN category_rollup cr ON cr.member_id=t.category_id WHERE t.period_id=bl.period_id AND cr.category_id=bl.category_id),0)
@@ -219,7 +214,6 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		if tracks {
 			effective = txCents
 			typeLabel = "Boekingen"
-			trackedCats = append(trackedCats, trackedCat{label: label})
 		}
 		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
 		f.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
@@ -241,8 +235,41 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row += 2
 
-	// ── Transactions for tracked categories ─────────────────
-	if len(trackedCats) > 0 {
+	// ── Transactions ────────────────────────────────────────
+	// Written whenever the period has any, regardless of whether a budget
+	// line tracks them: the Settings UI pairs this export with
+	// import-with-wipe, so skipping the section for a period with no tracked
+	// line meant the wipe deleted transactions the workbook never carried.
+	txRows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(c.name,''), t.description, t.amount_cents, t.tx_date
+		FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+		WHERE t.period_id=$1 ORDER BY t.tx_date NULLS LAST, t.id`, periodID)
+	if err != nil {
+		return 0, 0, err
+	}
+	type txLine struct {
+		category, desc, date string
+		cents                int64
+	}
+	var txLines []txLine
+	for txRows.Next() {
+		var line txLine
+		var txDate *time.Time
+		if err := txRows.Scan(&line.category, &line.desc, &line.cents, &txDate); err != nil {
+			txRows.Close()
+			return 0, 0, err
+		}
+		if txDate != nil {
+			line.date = txDate.Format("2006-01-02")
+		}
+		txLines = append(txLines, line)
+	}
+	txRows.Close()
+	if err := txRows.Err(); err != nil {
+		return 0, 0, err
+	}
+
+	if len(txLines) > 0 {
 		f.SetCellValue(sheetName, cellRef("A", row), "Transacties")
 		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
 		row++
@@ -252,35 +279,12 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		f.SetCellValue(sheetName, cellRef("D", row), "Bedrag")
 		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
 		row++
-
-		txRows, err := s.pool.Query(ctx, `
-			SELECT COALESCE(c.name,''), t.description, t.amount_cents, t.tx_date
-			FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-			WHERE t.period_id=$1 ORDER BY t.tx_date NULLS LAST, t.id`, periodID)
-		if err != nil {
-			return 0, 0, err
-		}
-		for txRows.Next() {
-			var catLabel, desc string
-			var cents int64
-			var txDate *time.Time
-			if err := txRows.Scan(&catLabel, &desc, &cents, &txDate); err != nil {
-				txRows.Close()
-				return 0, 0, err
-			}
-			date := ""
-			if txDate != nil {
-				date = txDate.Format("2006-01-02")
-			}
-			f.SetCellValue(sheetName, cellRef("A", row), date)
-			f.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(catLabel))
-			f.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(desc))
-			f.SetCellValue(sheetName, cellRef("D", row), float64(cents)/100)
+		for _, line := range txLines {
+			f.SetCellValue(sheetName, cellRef("A", row), line.date)
+			f.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(line.category))
+			f.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(line.desc))
+			f.SetCellValue(sheetName, cellRef("D", row), float64(line.cents)/100)
 			row++
-		}
-		txRows.Close()
-		if err := txRows.Err(); err != nil {
-			return 0, 0, err
 		}
 	}
 

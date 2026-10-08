@@ -316,3 +316,108 @@ func TestRoundTripKeepsUntrackedLineUntracked(t *testing.T) {
 		t.Error("tracked budget line lost tracks_transactions on reimport")
 	}
 }
+
+// TestRoundTripExportsTransactionsWithoutTrackedLine: the Transacties section
+// used to be written only when at least one budget line tracked transactions,
+// so a period whose lines are all fixed exported zero transaction rows. The
+// Settings UI pairs export with import-with-wipe, which makes that silent data
+// loss — the wipe deletes rows the workbook never carried.
+func TestRoundTripExportsTransactionsWithoutTrackedLine(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set, skipping integration test")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	const (
+		year     = 2063
+		month    = 9
+		fixedCat = "ZTest Huur 2063"
+	)
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, fixedCat)
+	})
+	pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("seed (%s): %v", sql, err)
+		}
+	}
+	scanID := func(sql string, args ...any) int64 {
+		t.Helper()
+		var id int64
+		if err := pool.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
+			t.Fatalf("seed (%s): %v", sql, err)
+		}
+		return id
+	}
+
+	exec(`INSERT INTO years (year) VALUES ($1) ON CONFLICT DO NOTHING`, year)
+	periodID := scanID(`INSERT INTO periods (year, month) VALUES ($1,$2) RETURNING id`, year, month)
+	fixedID := scanID(`INSERT INTO categories (name, default_amount_cents, is_itemized, sort_order) VALUES ($1,0,false,0) RETURNING id`, fixedCat)
+
+	// Not one tracked budget line in the period, but two real transactions.
+	exec(`INSERT INTO budget_lines (period_id, category_id, label, amount_cents, tracks_transactions, sort_order) VALUES ($1,$2,$3,100000,false,0)`, periodID, fixedID, fixedCat)
+	exec(`INSERT INTO transactions (period_id, category_id, amount_cents, description, tx_date) VALUES ($1,$2,12500,'Reparatie','2063-09-02')`, periodID, fixedID)
+	exec(`INSERT INTO transactions (period_id, category_id, amount_cents, description, tx_date) VALUES ($1,$2,7500,'Zonder datum',NULL)`, periodID, fixedID)
+
+	path := exportPeriodToFile(t, pool, year, month)
+
+	sheets, skipped, err := importer.DetectAndParse(path)
+	if err != nil {
+		t.Fatalf("DetectAndParse: %v", err)
+	}
+	if len(sheets) == 0 {
+		t.Fatalf("no sheets parsed (skipped: %v)", skipped)
+	}
+	var exported int
+	for _, sd := range sheets {
+		exported += len(sd.Txs)
+	}
+	if exported != 2 {
+		t.Fatalf("exported transaction rows: want 2, got %d", exported)
+	}
+
+	// Re-import with wipe: the period is deleted and rebuilt from the
+	// workbook alone, which is exactly the Settings flow that turned a
+	// missing Transacties section into data loss.
+	if _, err := importer.Run(ctx, pool, sheets, importer.ImportOptions{Year: year, Wipe: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var count int
+	var sum int64
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*), COALESCE(SUM(t.amount_cents),0)
+		 FROM transactions t JOIN periods p ON p.id=t.period_id
+		 WHERE p.year=$1 AND p.month=$2`, year, month).Scan(&count, &sum); err != nil {
+		t.Fatalf("count transactions: %v", err)
+	}
+	if count != 2 || sum != 20000 {
+		t.Errorf("transactions after wipe+reimport: want 2 rows totalling 20000, got %d rows totalling %d", count, sum)
+	}
+
+	var tracks bool
+	var amount int64
+	if err := pool.QueryRow(ctx,
+		`SELECT bl.tracks_transactions, bl.amount_cents
+		 FROM budget_lines bl JOIN periods p ON p.id=bl.period_id
+		 WHERE p.year=$1 AND p.month=$2`, year, month).Scan(&tracks, &amount); err != nil {
+		t.Fatalf("read budget line: %v", err)
+	}
+	if tracks {
+		t.Error("fixed budget line flipped to tracks_transactions on reimport")
+	}
+	if amount != 100000 {
+		t.Errorf("fixed budget line amount: want 100000, got %d", amount)
+	}
+}
