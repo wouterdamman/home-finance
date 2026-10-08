@@ -102,6 +102,7 @@
     "incomeMixHint": "Shows the filter year's income split by source.",
     "itemizedIncomeSourceLabel": "Income source",
     "noItemizedIncomeSources": "No itemized income sources yet",
+    "archivedSuffix": "archived",
     "carryoverSource": "Carryover",
     "otherSource": "Other",
     "widgetType_potBalances": "Pot balances",

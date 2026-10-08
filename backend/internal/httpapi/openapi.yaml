@@ -2349,7 +2349,8 @@ paths:
         outflow. Both maps therefore always carry their natural sign - inflow non-negative,
         outflow non-positive. entry_type opening_balance counts toward balances
         but is excluded from both inflow and outflow, as a one-time historical seed rather than a
-        monthly flow. Archived pots are included as long as they have ledger history.
+        monthly flow. Archived pots are included as long as they have ledger history; they carry
+        archivedAt so a consumer can tell a historical pot from one still being funded.
       responses:
         "200":
           description: Pots and their per-period balances/inflow/outflow.

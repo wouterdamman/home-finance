@@ -202,6 +202,10 @@ export interface TrendsPotBalancesPot {
   kind: string
   targetCents?: number
   targetDate?: string
+  // Set for pots that are archived but still have ledger history: their
+  // past balances are worth charting, but they are not live savings goals
+  // and must not be offered as if they were still being funded.
+  archivedAt?: string
 }
 
 export interface TrendsPotBalancesEntry {

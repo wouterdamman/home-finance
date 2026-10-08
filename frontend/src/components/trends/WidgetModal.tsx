@@ -160,6 +160,17 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
     setItemizedSourceId((current) => current ?? (itemizedSourceOptions[0] ? String(itemizedSourceOptions[0].id) : null))
   }, [opened, itemizedSourceOptions])
 
+  // Archived pots stay selectable — their past balances are still real
+  // history worth charting — but they are labelled, because the picker
+  // otherwise offers them as if they were still being funded. Active pots
+  // come first.
+  const potOptions = [...pots]
+    .sort((a, b) => Number(a.archivedAt != null) - Number(b.archivedAt != null))
+    .map((p) => ({
+      value: String(p.id),
+      label: p.archivedAt != null ? `${p.name} (${t('trends.archivedSuffix')})` : p.name,
+    }))
+
   const canSubmit = (type !== 'categoryChart' || categoryIds.length >= 1)
     && (type !== 'monthCompare' || (monthYear != null && selectedMonths.length >= 1))
     && (type !== 'allTimeTrend' || (fromYear != null && toYear != null && Number(fromYear) <= Number(toYear)))
@@ -424,7 +435,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
           <>
             <MultiSelect
               label={t('trends.potsLabel')}
-              data={pots.map((p) => ({ value: String(p.id), label: p.name }))}
+              data={potOptions}
               value={potIds}
               onChange={setPotIds}
               maxValues={MAX_POT_SLOTS}
@@ -447,7 +458,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
           <>
             <MultiSelect
               label={t('trends.potsLabel')}
-              data={pots.map((p) => ({ value: String(p.id), label: p.name }))}
+              data={potOptions}
               value={potIds}
               onChange={setPotIds}
               maxValues={MAX_POT_SLOTS}

@@ -20,7 +20,9 @@ function PotTargetsWidget() {
 
   if (isLoading) return <Skeleton h="100%" />
 
-  const potsWithTarget = (data?.pots ?? []).filter((p) => p.targetCents != null && p.targetCents > 0)
+  // Archived pots are excluded: the endpoint returns them so their history
+  // can be charted, but this widget is about goals still being saved for.
+  const potsWithTarget = (data?.pots ?? []).filter((p) => p.targetCents != null && p.targetCents > 0 && p.archivedAt == null)
   if (!data || potsWithTarget.length === 0) {
     return <Text size="sm" c="dimmed">{t('trends.noData')}</Text>
   }
@@ -52,6 +54,13 @@ function PotTargetsWidget() {
       projectedLabel = t('trends.potTargetComplete')
     } else if (avgInflowCents <= 0 || !latest) {
       projectedLabel = t('trends.potTargetNoProjection')
+      // A pot with no recent inflow whose target date has already gone by is
+      // the most clearly off-track case there is — it used to be the only
+      // one that never got the badge, because the flag was set solely in the
+      // projection branch below.
+      if (pot.targetDate && dayjs(pot.targetDate).isBefore(dayjs(), 'month')) {
+        behindSchedule = true
+      }
     } else {
       const remainingCents = targetCents - balanceCents
       const monthsNeeded = Math.ceil(remainingCents / avgInflowCents)

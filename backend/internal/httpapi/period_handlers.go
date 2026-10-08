@@ -2079,13 +2079,18 @@ func (s *Server) handleTrendsPotBalances(w http.ResponseWriter, r *http.Request)
 		Kind        string  `json:"kind"`
 		TargetCents *int64  `json:"targetCents,omitempty"`
 		TargetDate  *string `json:"targetDate,omitempty"`
+		// Exposed so a consumer can tell a historical pot apart from a live
+		// one: a balance chart wants the archived pot's history, while a
+		// "savings goals" list or a pot picker must not offer it as if it
+		// were still being funded.
+		ArchivedAt *string `json:"archivedAt,omitempty"`
 	}
 
 	// Archived pots are included as long as they have ledger history — an
 	// archived pot's past balance trend is still real data worth charting.
 	// Only a pot that was archived with zero activity ever drops out.
 	potRows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.name, p.kind, p.target_cents, p.target_date
+		SELECT p.id, p.name, p.kind, p.target_cents, p.target_date, p.archived_at
 		FROM pots p
 		WHERE p.archived_at IS NULL OR EXISTS (SELECT 1 FROM pot_ledger pl WHERE pl.pot_id=p.id)
 		ORDER BY p.sort_order, p.id`)
@@ -2098,7 +2103,8 @@ func (s *Server) handleTrendsPotBalances(w http.ResponseWriter, r *http.Request)
 	for potRows.Next() {
 		var pi potInfo
 		var td *time.Time
-		if err := potRows.Scan(&pi.ID, &pi.Name, &pi.Kind, &pi.TargetCents, &td); err != nil {
+		var archivedAt *time.Time
+		if err := potRows.Scan(&pi.ID, &pi.Name, &pi.Kind, &pi.TargetCents, &td, &archivedAt); err != nil {
 			potRows.Close()
 			dbError(w, "handleTrendsPotBalances pots scan", err)
 			return
@@ -2106,6 +2112,10 @@ func (s *Server) handleTrendsPotBalances(w http.ResponseWriter, r *http.Request)
 		if td != nil {
 			ds := td.Format("2006-01-02")
 			pi.TargetDate = &ds
+		}
+		if archivedAt != nil {
+			as := archivedAt.UTC().Format(time.RFC3339)
+			pi.ArchivedAt = &as
 		}
 		pots = append(pots, pi)
 		potOrder = append(potOrder, pi.ID)
