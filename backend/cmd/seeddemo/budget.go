@@ -37,14 +37,22 @@ func (s *seeder) seedBudgetLinesAndTransactions() error {
 		periodID := s.periodID[month]
 		for order, spec := range s.catSpecs {
 			catID := s.categoryID[spec.name]
-			variance := randRange(-spec.monthlyBudget/10, spec.monthlyBudget/10)
-			amount := spec.monthlyBudget + variance
-			if _, err := s.tx.Exec(s.ctx,
-				`INSERT INTO budget_lines (period_id, category_id, amount_cents, tracks_transactions, sort_order)
-				 VALUES ($1,$2,$3,$4,$5)`,
-				periodID, catID, amount, spec.tracksTransactions, order,
-			); err != nil {
-				return fmt.Errorf("insert budget_line %q month %d: %w", spec.name, month, err)
+			// Child categories get transactions but no budget line of their
+			// own: effective spend resolves a budget line's amount through
+			// category_rollup, which already folds a child's transactions
+			// into its parent's line. Giving the child its own line too
+			// counted those transactions twice, inflating every expense
+			// total the trends widgets are read against.
+			if spec.parent == "" {
+				variance := randRange(-spec.monthlyBudget/10, spec.monthlyBudget/10)
+				amount := spec.monthlyBudget + variance
+				if _, err := s.tx.Exec(s.ctx,
+					`INSERT INTO budget_lines (period_id, category_id, amount_cents, tracks_transactions, sort_order)
+					 VALUES ($1,$2,$3,$4,$5)`,
+					periodID, catID, amount, spec.tracksTransactions, order,
+				); err != nil {
+					return fmt.Errorf("insert budget_line %q month %d: %w", spec.name, month, err)
+				}
 			}
 
 			if spec.name == "Overig" {
