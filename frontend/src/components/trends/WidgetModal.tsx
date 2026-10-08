@@ -8,6 +8,7 @@ import type { CategoryTotalsCategory, TrendsIncomeSourcesSource, TrendsPotBalanc
 import { useIncomeSources } from '../../api/hooks/useSettings'
 import SizeGridPicker from './SizeGridPicker'
 import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
+import { monthNames as getMonthNames } from '../../lib/monthNames'
 
 type BaseType = WidgetConfig['type']
 
@@ -47,9 +48,6 @@ const DEFAULT_SIZE: Partial<Record<BaseType, [WidgetWidth, WidgetHeight]>> = {
   sankeyFlow: [4, 4],
 }
 
-const MONTH_OPTIONS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
-const MONTH_OPTIONS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
 interface Props {
   opened: boolean
   onClose: () => void
@@ -65,7 +63,7 @@ interface Props {
 
 export default function WidgetModal({ opened, onClose, onSubmit, categories, incomeSources, pots, years, initial, initialWidth, initialHeight }: Props) {
   const { t, i18n } = useTranslation()
-  const monthNames = i18n.language.startsWith('nl') ? MONTH_OPTIONS_NL : MONTH_OPTIONS_EN
+  const monthNames = getMonthNames(i18n.language)
   const firstYear = years[0] ?? new Date().getFullYear()
   const lastYear = years[years.length - 1] ?? new Date().getFullYear()
   // itemizedIncome's source select only makes sense for itemized sources —

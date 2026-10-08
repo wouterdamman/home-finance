@@ -8,9 +8,7 @@ import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicks, categoryTickInterval } from '../../lib/chartAxis'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
-
-const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
-const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+import { monthNames } from '../../lib/monthNames'
 
 interface Props {
   categoryIds: number[]
@@ -21,7 +19,7 @@ interface Props {
 
 function CategoryWidget({ categoryIds, chartKind, filter, catData }: Props) {
   const { i18n } = useTranslation()
-  const months = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
+  const months = monthNames(i18n.language)
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
   const Chart = chartKind === 'bar' ? BarChart : LineChart
