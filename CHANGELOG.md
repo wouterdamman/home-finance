@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/wouterdamman/home-finance/compare/v1.21.0...v1.22.0) (2026-10-08)
+
+
+### Features
+
+* **trends:** sync the dashboard layout across browsers via the server ([#176](https://github.com/wouterdamman/home-finance/issues/176)) ([f48e660](https://github.com/wouterdamman/home-finance/commit/f48e660dae51a1616166ebfd92d7b750cd57b6f6))
+
 ## [1.21.0](https://github.com/wouterdamman/home-finance/compare/v1.20.0...v1.21.0) (2026-10-08)
 
 
