@@ -399,3 +399,76 @@ func TestTrendsPotBalancesCarryForwardAndPeriodBucketing(t *testing.T) {
 		t.Fatalf("balance after month 3 allocation = %d, want 15000 (10000 carried forward + 5000)", balanceAt[3])
 	}
 }
+
+// A pot adjustment can raise or lower a balance. It used to be folded into
+// outflow regardless of sign, so a correction that ADDED money was reported
+// as money leaving the pot — and contradicted the balance series, which went
+// up in the same month.
+func TestTrendsPotBalancesAdjustmentClassifiedBySign(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	const year = 2089
+	const potName = "ZTest Pot Adjustment 2089"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM pots WHERE name=$1`, potName)
+	})
+
+	resp := c.do(http.MethodPost, "/api/pots", map[string]any{
+		"name": potName, "kind": "normal", "sortOrder": 0,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create pot: want 201, got %d", resp.StatusCode)
+	}
+	var pot struct {
+		ID int64 `json:"id"`
+	}
+	c.decode(resp, &pot)
+
+	periodUp := createTestPeriod(t, c, year, 1)
+	periodDown := createTestPeriod(t, c, year, 2)
+
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO pot_ledger (pot_id,period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,'adjustment',2500,'Correction up','2089-01-10')`,
+		pot.ID, periodUp); err != nil {
+		t.Fatalf("insert positive adjustment: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO pot_ledger (pot_id,period_id,entry_type,amount_cents,description,entry_date) VALUES ($1,$2,'adjustment',-1000,'Correction down','2089-02-10')`,
+		pot.ID, periodDown); err != nil {
+		t.Fatalf("insert negative adjustment: %v", err)
+	}
+
+	resp = c.do(http.MethodGet, "/api/trends/pot-balances", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("trends/pot-balances: want 200, got %d", resp.StatusCode)
+	}
+	var out trendsPotBalancesResponse
+	c.decode(resp, &out)
+
+	potIDStr := strconv.FormatInt(pot.ID, 10)
+	for _, e := range out.Entries {
+		if e.Year != year {
+			continue
+		}
+		switch e.Month {
+		case 1:
+			if e.Inflow[potIDStr] != 2500 {
+				t.Fatalf("month 1 inflow = %d, want 2500 (a positive adjustment is inflow)", e.Inflow[potIDStr])
+			}
+			if e.Outflow[potIDStr] != 0 {
+				t.Fatalf("month 1 outflow = %d, want 0", e.Outflow[potIDStr])
+			}
+		case 2:
+			if e.Outflow[potIDStr] != -1000 {
+				t.Fatalf("month 2 outflow = %d, want -1000 (a negative adjustment is outflow)", e.Outflow[potIDStr])
+			}
+			if e.Inflow[potIDStr] != 0 {
+				t.Fatalf("month 2 inflow = %d, want 0", e.Inflow[potIDStr])
+			}
+		}
+	}
+}

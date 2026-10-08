@@ -2167,12 +2167,19 @@ func (s *Server) handleTrendsPotBalances(w http.ResponseWriter, r *http.Request)
 		switch entryType {
 		case "allocation", "deposit":
 			inflow[pk][potID] += cents
-		case "withdrawal", "carryover_out", "adjustment":
-			// adjustment keeps its own sign here — a correction can go
-			// either way — it's grouped into "outflow" only because it
-			// isn't a scheduled allocation/deposit, not because it always
-			// removes money from the pot.
+		case "withdrawal", "carryover_out":
 			outflow[pk][potID] += cents
+		case "adjustment":
+			// An adjustment can go either way, so it is classified by its
+			// own sign rather than lumped into outflow: a positive
+			// correction that RAISED the pot used to land in outflow, where
+			// a chart drawing outflow below zero showed it as money leaving
+			// — and then disagreed with the balance line, which went up.
+			if cents >= 0 {
+				inflow[pk][potID] += cents
+			} else {
+				outflow[pk][potID] += cents
+			}
 		}
 		// entry_type "opening_balance" is folded into the running balance
 		// via delta above but deliberately excluded from both inflow and

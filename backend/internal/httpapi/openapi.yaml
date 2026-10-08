@@ -2344,8 +2344,10 @@ paths:
         balances is the cumulative signed closing balance per pot at the end of each month
         (months with no ledger activity for a pot carry its previous balance forward, starting
         once that pot has had its first ledger row). inflow sums entry_type allocation+deposit;
-        outflow sums withdrawal+carryover_out+adjustment, keeping adjustment's own sign since a
-        manual correction can go either way. entry_type opening_balance counts toward balances
+        outflow sums withdrawal+carryover_out. An adjustment can go either way, so it is
+        classified by its own sign: positive corrections count as inflow, negative ones as
+        outflow. Both maps therefore always carry their natural sign - inflow non-negative,
+        outflow non-positive. entry_type opening_balance counts toward balances
         but is excluded from both inflow and outflow, as a one-time historical seed rather than a
         monthly flow. Archived pots are included as long as they have ledger history.
       responses:
