@@ -118,11 +118,19 @@ func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID
 		return err
 	}
 
-	// Copy normal income entries (respecting include_in_template flag on income sources)
+	// Copy normal income entries (respecting include_in_template flag on income sources).
+	// The amount follows the source's autofill_actual switch exactly as the
+	// budget-line copy above follows the category's: without it a variable
+	// income source carried its previous month's actual forward even with the
+	// switch off, which is the opposite of what the Settings tooltip promises.
+	// Itemized sources are unaffected in practice — EffectiveIncomeCentsSQL
+	// sums their income_transactions rows and ignores amount_cents — and
+	// carryover entries never reach this query at all (entry_type='normal').
 	if _, err := q.Exec(ctx, `
 		INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
-		SELECT $1,ie.source_id,ie.label,ie.amount_cents,'normal',ie.notes,ie.sort_order
+		SELECT $1,ie.source_id,ie.label,CASE WHEN COALESCE(isrc.autofill_actual,false) THEN COALESCE(isrc.default_amount_cents,0) ELSE 0 END,'normal',ie.notes,ie.sort_order
 		FROM income_entries ie
+		LEFT JOIN income_sources isrc ON isrc.id = ie.source_id
 		WHERE ie.period_id=$2 AND ie.entry_type='normal'
 		AND (ie.source_id IS NULL OR ie.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true))`,
 		destPeriodID, srcPeriodID); err != nil {

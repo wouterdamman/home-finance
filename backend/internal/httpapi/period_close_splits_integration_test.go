@@ -383,3 +383,104 @@ func TestReopenDecemberBlockedWhenNextYearLocked(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+// TestIncomeCarryForwardRespectsAutofillFlag is the income-side counterpart of
+// TestCarryForwardRespectsAutofillFlag: a source with autofill_actual off must
+// start the new month at zero instead of inheriting last month's actual, and
+// one with it on must start at its configured default.
+func TestIncomeCarryForwardRespectsAutofillFlag(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	const year = 2076
+	wipeTestYear(t, pool, year)
+
+	newSource := func(name string, defaultCents int64, autofill, itemized bool) int64 {
+		resp := c.do(http.MethodPost, "/api/income-sources", map[string]any{
+			"name":               name,
+			"defaultAmountCents": defaultCents,
+			"isItemized":         itemized,
+			"includeInTemplate":  true,
+			"autofillActual":     autofill,
+			"sortOrder":          990,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create income source %s: want 201, got %d", name, resp.StatusCode)
+		}
+		var out struct {
+			ID int64 `json:"id"`
+		}
+		c.decode(resp, &out)
+		t.Cleanup(func() {
+			pool.Exec(ctx, `DELETE FROM income_sources WHERE id=$1`, out.ID)
+		})
+		return out.ID
+	}
+
+	autofillID := newSource("ZTest Income Autofill 2076", 70000, true, false)
+	noAutofillID := newSource("ZTest Income NoAutofill 2076", 30000, false, false)
+	itemizedID := newSource("ZTest Income Itemized 2076", 0, true, true)
+
+	srcID := createTestPeriod(t, c, year, 1)
+
+	addEntry := func(sourceID int64, cents int64) {
+		resp := c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(srcID, 10)+"/incomes", map[string]any{
+			"sourceId": sourceID, "amountCents": cents, "sortOrder": 0,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create income entry: want 201, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+	addEntry(autofillID, 99999)
+	addEntry(noAutofillID, 99999)
+	addEntry(itemizedID, 0)
+
+	resp := c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(srcID, 10)+"/income-transactions", map[string]any{
+		"sourceId": itemizedID, "amountCents": 12345, "description": "Itemized line", "txDate": "2076-01-01",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create income transaction: want 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = c.do(http.MethodPost, "/api/periods", map[string]any{
+		"year": year, "month": 2, "copyFromPeriodId": srcID,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create period via copy: want 201, got %d", resp.StatusCode)
+	}
+	var dest struct {
+		ID int64 `json:"id"`
+	}
+	c.decode(resp, &dest)
+
+	amountFor := func(sourceID int64) int64 {
+		var cents int64
+		if err := pool.QueryRow(ctx,
+			`SELECT amount_cents FROM income_entries WHERE period_id=$1 AND source_id=$2 AND entry_type='normal'`,
+			dest.ID, sourceID).Scan(&cents); err != nil {
+			t.Fatalf("read copied entry for source %d: %v", sourceID, err)
+		}
+		return cents
+	}
+
+	if got := amountFor(autofillID); got != 70000 {
+		t.Errorf("autofill source: want 70000 (its default), got %d", got)
+	}
+	if got := amountFor(noAutofillID); got != 0 {
+		t.Errorf("no-autofill source: want 0, got %d", got)
+	}
+
+	// The itemized source still carries its transactions forward, and the
+	// overview total keeps reading those rather than amount_cents.
+	resp = c.do(http.MethodGet, "/api/periods/"+strconv.FormatInt(dest.ID, 10)+"/overview", nil)
+	var overview struct {
+		IncomeTotalCents int64 `json:"incomeTotalCents"`
+	}
+	c.decode(resp, &overview)
+	if want := int64(70000 + 12345); overview.IncomeTotalCents != want {
+		t.Errorf("copied income total: want %d, got %d", want, overview.IncomeTotalCents)
+	}
+}
