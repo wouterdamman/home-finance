@@ -484,3 +484,59 @@ func TestIncomeCarryForwardRespectsAutofillFlag(t *testing.T) {
 		t.Errorf("copied income total: want %d, got %d", want, overview.IncomeTotalCents)
 	}
 }
+
+// TestCloseAllocatesOddCentToTheProjectedPot pins the close's split ordering
+// to the overview's. LargestRemainderSplit breaks a remainder tie by slice
+// index, so the odd cent follows whatever order the rows arrive in — and the
+// close query had no ORDER BY at all while the overview's projection ordered
+// by p.sort_order, p.id. The two then disagree about which pot gets the cent.
+func TestCloseAllocatesOddCentToTheProjectedPot(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+
+	const year, month = 2077, 3
+	wipeTestYear(t, pool, year)
+
+	// first is created earlier (lower id) but sorts last, so row order and
+	// sort order disagree.
+	first := createTestPot(t, pool, "ZTest Cent Pot Late", "normal", 952)
+	second := createTestPot(t, pool, "ZTest Cent Pot Early", "normal", 951)
+
+	id := createTestPeriod(t, c, year, month)
+	addIncome(t, c, id, "Test salary", 1)
+	insertSplit(t, pool, id, first, "50")
+	insertSplit(t, pool, id, second, "50")
+
+	resp := c.do(http.MethodGet, "/api/periods/"+strconv.FormatInt(id, 10)+"/overview", nil)
+	var overview struct {
+		SurplusCents int64 `json:"surplusCents"`
+		Splits       []struct {
+			PotID          int64 `json:"potId"`
+			ProjectedCents int64 `json:"projectedCents"`
+		} `json:"splits"`
+	}
+	c.decode(resp, &overview)
+	if overview.SurplusCents != 1 {
+		t.Fatalf("surplus: want 1, got %d", overview.SurplusCents)
+	}
+	projected := map[int64]int64{}
+	for _, sp := range overview.Splits {
+		projected[sp.PotID] = sp.ProjectedCents
+	}
+	// The pot that sorts first is the one the UI shows the cent against.
+	if projected[second] != 1 || projected[first] != 0 {
+		t.Fatalf("projection: want the cent on the first-sorted pot, got %v", projected)
+	}
+
+	resp = closePeriod(t, c, id)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("close: want 204, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	for potID, want := range projected {
+		if got := allocatedCents(t, pool, id, potID); got != want {
+			t.Errorf("pot %d: projected %d, allocated %d", potID, want, got)
+		}
+	}
+}

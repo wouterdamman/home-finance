@@ -539,7 +539,7 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 	// summary use: allocating into an archived pot puts money somewhere no
 	// screen ever sums it. If that drops the total below 100% the close is
 	// refused by the split validation below instead of quietly paying out less.
-	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1 AND p.archived_at IS NULL`, id)
+	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1 AND p.archived_at IS NULL ORDER BY p.sort_order,p.id`, id)
 	if err != nil {
 		dbError(w, "handleClosePeriod", err)
 		return
