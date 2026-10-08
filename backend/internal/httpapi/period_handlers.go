@@ -2393,7 +2393,17 @@ func (s *Server) handleTrendsDescriptions(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	sort.Slice(out, func(i, j int) bool { return out[i].TotalCents > out[j].TotalCents })
+	// Tie-broken on the description so the order is deterministic: the
+	// underlying query has no ORDER BY and sort.Slice is not stable, so two
+	// descriptions with the same total could otherwise swap places — or, with
+	// the limit cut applied right below, swap in and out of the response —
+	// between two identical requests.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TotalCents != out[j].TotalCents {
+			return out[i].TotalCents > out[j].TotalCents
+		}
+		return out[i].Description < out[j].Description
+	})
 	if len(out) > limit {
 		out = out[:limit]
 	}
