@@ -213,3 +213,118 @@ func TestClosePeriodRejectsSurplusWithoutValidSplits(t *testing.T) {
 		}
 	})
 }
+
+// TestArchivedPotIsNotResurrectedByTemplateOrClose covers the two places an
+// archived pot could still receive real money: copyPeriodTemplate copied
+// every split row verbatim, and the close's split query did not filter
+// archived pots either. detachPotSplits cleans the split up only for periods
+// that are still open, so a closed period keeps it indefinitely.
+func TestArchivedPotIsNotResurrectedByTemplateOrClose(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	t.Run("template copy drops the split and reassigns its percentage", func(t *testing.T) {
+		const year = 2072
+		wipeTestYear(t, pool, year)
+		carryID := carryoverPotID(t, pool)
+		potID := createTestPot(t, pool, "ZTest Archived Template Pot", 910)
+
+		srcID := createTestPeriod(t, c, year, 1)
+		addIncome(t, c, srcID, "Test salary", 100000)
+		putSplits(t, c, srcID, map[string]any{"potId": potID, "percentage": "60"})
+
+		// Closing the source period is what makes the split row survive the
+		// archive: detachPotSplits is scoped to p.status <> 'closed'.
+		resp := closePeriod(t, c, srcID)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("close source period: want 204, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		resp = c.do(http.MethodPost, "/api/pots/"+strconv.FormatInt(potID, 10)+"/archive", nil)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("archive pot: want 204, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		var stillThere bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pot_splits WHERE period_id=$1 AND pot_id=$2)`,
+			srcID, potID).Scan(&stillThere); err != nil {
+			t.Fatalf("read source split: %v", err)
+		}
+		if !stillThere {
+			t.Fatal("precondition: closed period should still hold the archived pot's split")
+		}
+
+		// Copy the closed period forward.
+		resp = c.do(http.MethodPost, "/api/periods", map[string]any{
+			"year": year, "month": 4, "copyFromPeriodId": srcID,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create period from template: want 201, got %d", resp.StatusCode)
+		}
+		var dest struct {
+			ID int64 `json:"id"`
+		}
+		c.decode(resp, &dest)
+
+		var copied bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pot_splits WHERE period_id=$1 AND pot_id=$2)`,
+			dest.ID, potID).Scan(&copied); err != nil {
+			t.Fatalf("read copied split: %v", err)
+		}
+		if copied {
+			t.Error("template copy: archived pot's split was copied forward")
+		}
+
+		var carryPct, total float64
+		if err := pool.QueryRow(ctx, `
+			SELECT COALESCE((SELECT percentage FROM pot_splits WHERE period_id=$1 AND pot_id=$2),0)::float8,
+			       COALESCE((SELECT SUM(percentage) FROM pot_splits WHERE period_id=$1),0)::float8`,
+			dest.ID, carryID).Scan(&carryPct, &total); err != nil {
+			t.Fatalf("read copied percentages: %v", err)
+		}
+		if carryPct != 100 {
+			t.Errorf("carryover percentage after reassignment: want 100, got %v", carryPct)
+		}
+		if total != 100 {
+			t.Errorf("copied split total: want 100, got %v", total)
+		}
+	})
+
+	t.Run("close ignores an archived pot's split", func(t *testing.T) {
+		const year, month = 2073, 5
+		wipeTestYear(t, pool, year)
+		carryID := carryoverPotID(t, pool)
+		potID := createTestPot(t, pool, "ZTest Archived Close Pot", 911)
+		if _, err := pool.Exec(ctx, `UPDATE pots SET archived_at=now() WHERE id=$1`, potID); err != nil {
+			t.Fatalf("archive pot: %v", err)
+		}
+
+		id := createTestPeriod(t, c, year, month)
+		addIncome(t, c, id, "Test salary", 100000)
+		putSplits(t, c, id)
+
+		// 100% to the carryover pot plus a leftover 30% for the archived pot:
+		// filtering the archived row leaves exactly 100%, which keeps the
+		// split validation out of the way so the allocation is what is tested.
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO pot_splits (period_id,pot_id,percentage) VALUES ($1,$2,30)`, id, potID); err != nil {
+			t.Fatalf("insert archived split: %v", err)
+		}
+
+		resp := closePeriod(t, c, id)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("close: want 204, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		if got := allocatedCents(t, pool, id, potID); got != 0 {
+			t.Errorf("allocation into archived pot: want 0, got %d", got)
+		}
+		if got := allocatedCents(t, pool, id, carryID); got != 100000 {
+			t.Errorf("allocation into carryover pot: want 100000, got %d", got)
+		}
+	})
+}

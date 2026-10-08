@@ -71,9 +71,40 @@ func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID
 		return err
 	}
 
-	// Copy pot splits
-	if _, err := q.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, destPeriodID, srcPeriodID); err != nil {
+	// Copy pot splits, minus any archived pot. detachPotSplits only rewrites
+	// periods that are still open, so a closed source period can still carry
+	// an archived pot's split row — and the close pays real money into it,
+	// landing it in a pot no balance screen sums. Dropping the row alone
+	// would leave the destination under 100%, so the freed percentage goes to
+	// the carryover pot, exactly as detachPotSplits and handleReplaceSplits do.
+	if _, err := q.Exec(ctx, `
+		INSERT INTO pot_splits (period_id,pot_id,percentage)
+		SELECT $1,ps.pot_id,ps.percentage
+		FROM pot_splits ps JOIN pots po ON po.id = ps.pot_id
+		WHERE ps.period_id=$2 AND po.archived_at IS NULL`, destPeriodID, srcPeriodID); err != nil {
 		return err
+	}
+	var droppedArchivedSplit bool
+	if err := q.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM pot_splits ps JOIN pots po ON po.id = ps.pot_id
+			WHERE ps.period_id=$1 AND po.archived_at IS NOT NULL)`, srcPeriodID).Scan(&droppedArchivedSplit); err != nil {
+		return err
+	}
+	if droppedArchivedSplit {
+		// Without a carryover pot there is nowhere to put the freed
+		// percentage; the copy then stays under 100% and the close refuses it
+		// rather than losing the difference.
+		if _, err := q.Exec(ctx, `
+			UPDATE pot_splits ps
+			SET percentage = GREATEST(0, 100 - COALESCE((
+				SELECT SUM(other.percentage) FROM pot_splits other
+				WHERE other.period_id = ps.period_id AND other.pot_id <> ps.pot_id), 0))
+			WHERE ps.period_id = $1
+			AND ps.pot_id = (SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL ORDER BY id LIMIT 1)`,
+			destPeriodID); err != nil {
+			return err
+		}
 	}
 
 	// Copy itemized expense transactions (for categories marked itemized, autofill_actual, and include_in_template)
@@ -496,7 +527,11 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		Pct   float64
 		Kind  string
 	}
-	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, id)
+	// archived_at IS NULL is the same filter handleGetPotBalances and the year
+	// summary use: allocating into an archived pot puts money somewhere no
+	// screen ever sums it. If that drops the total below 100% the close is
+	// refused by the split validation below instead of quietly paying out less.
+	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1 AND p.archived_at IS NULL`, id)
 	if err != nil {
 		dbError(w, "handleClosePeriod", err)
 		return
