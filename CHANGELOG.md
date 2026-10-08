@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.21.0](https://github.com/wouterdamman/home-finance/compare/v1.20.0...v1.21.0) (2026-10-08)
+
+
+### Features
+
+* **trends:** ten new widgets for income, savings pots and money flow ([#165](https://github.com/wouterdamman/home-finance/issues/165)) ([0a78b95](https://github.com/wouterdamman/home-finance/commit/0a78b95a90fbf71d170dacf4581f6faa60b5bec2))
+
+
+### Bug Fixes
+
+* catch export write errors and stop dropping label-only budget lines ([#174](https://github.com/wouterdamman/home-finance/issues/174)) ([ba723b2](https://github.com/wouterdamman/home-finance/commit/ba723b224e413f564388e401ef16530b2c1b63e6))
+* close the gaps in the period close/reopen lifecycle ([#172](https://github.com/wouterdamman/home-finance/issues/172)) ([b90d970](https://github.com/wouterdamman/home-finance/commit/b90d97029789bed0f8f18006200065400bb7112e))
+* make the xlsx round trip exact and respect period locks on import ([#171](https://github.com/wouterdamman/home-finance/issues/171)) ([6ab7e40](https://github.com/wouterdamman/home-finance/commit/6ab7e407108fff20d432970402389347c3dfd120))
+* stale trends caches and a missing split-total guard ([#170](https://github.com/wouterdamman/home-finance/issues/170)) ([b6a436c](https://github.com/wouterdamman/home-finance/commit/b6a436cf5d6e2ff2a99ff15e37200a9b195bc759))
+* sync the OpenAPI spec, range-check year locks, log updates in the audit trail ([#173](https://github.com/wouterdamman/home-finance/issues/173)) ([a7eddeb](https://github.com/wouterdamman/home-finance/commit/a7eddebf12e41917bf31f8c4ada1783c7059dacf))
+
 ## [1.20.0](https://github.com/wouterdamman/home-finance/compare/v1.19.2...v1.20.0) (2026-10-05)
 
 
