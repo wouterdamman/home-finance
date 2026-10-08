@@ -34,6 +34,7 @@ import SankeyFlowWidget from '../components/trends/SankeyFlowWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
 import { incomeSourceLabel } from '../lib/incomeSourceLabel'
+import { categoryLabel, UNCATEGORIZED_CATEGORY_ID } from '../lib/categoryLabel'
 import { monthNames as getMonthNames } from '../lib/monthNames'
 
 // A fixed row-track height (rather than auto-sized rows) is what lets
@@ -58,7 +59,7 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
   if (config.type === 'topDescriptions') {
     if (config.categoryId == null) return t('trends.topDescriptionsTitleAll')
     const category = categories.find((c) => c.id === config.categoryId)
-    return category ? t('trends.topDescriptionsTitle', { category: category.name }) : t('trends.unknownCategory')
+    return category ? t('trends.topDescriptionsTitle', { category: categoryLabel(category, t) }) : t('trends.unknownCategory')
   }
   if (config.type === 'incomeSources') {
     const names = config.sourceIds
@@ -86,7 +87,10 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
     }
     return names.join(', ')
   }
-  const names = config.categoryIds.map((id) => categories.find((c) => c.id === id)?.name).filter((n): n is string => n != null)
+  const names = config.categoryIds
+    .map((id) => categories.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => c != null)
+    .map((c) => categoryLabel(c, t))
   return names.length > 0 ? names.join(', ') : t('trends.unknownCategory')
 }
 
@@ -128,7 +132,12 @@ export default function Trends() {
   useEffect(() => {
     if (dashboard === null && categoryQuery.data) {
       const lastYear = registeredYears.length > 0 ? Math.max(...registeredYears) : new Date().getFullYear()
-      const topCategoryIds = categoryQuery.data.categories.map((c) => c.id)
+      // Exclude the synthetic "Uncategorised" bucket (id 0, label-only
+      // budget lines) from the default dashboard's auto-picked top
+      // categories — it isn't a real category to chart a trend line for.
+      const topCategoryIds = categoryQuery.data.categories
+        .filter((c) => c.id !== UNCATEGORIZED_CATEGORY_ID)
+        .map((c) => c.id)
       const recentMonths = categoryQuery.data.entries
         .filter((e) => e.year === lastYear)
         .map((e) => e.month)

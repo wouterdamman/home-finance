@@ -27,9 +27,22 @@ type trendsIncomeSourcesResponse struct {
 }
 
 type trendsMonthlyTotalsResponse []struct {
-	Year             int   `json:"year"`
-	Month            int   `json:"month"`
-	IncomeTotalCents int64 `json:"incomeTotalCents"`
+	Year              int   `json:"year"`
+	Month             int   `json:"month"`
+	IncomeTotalCents  int64 `json:"incomeTotalCents"`
+	ExpenseTotalCents int64 `json:"expenseTotalCents"`
+}
+
+type trendsCategoryTotalsResponse struct {
+	Categories []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"categories"`
+	Entries []struct {
+		Year   int              `json:"year"`
+		Month  int              `json:"month"`
+		Values map[string]int64 `json:"values"`
+	} `json:"entries"`
 }
 
 type trendsPotBalancesResponse struct {
@@ -225,6 +238,116 @@ func TestTrendsIncomeSourcesCarryoverBucket(t *testing.T) {
 	}
 	if gotCarryover != 12345 {
 		t.Fatalf("carryover bucket for %d-%d = %d, want 12345", year, month, gotCarryover)
+	}
+}
+
+// TestTrendsCategoryTotalsMatchesMonthlyTotals checks that, for a period
+// with both a real-category budget line and a label-only one (category_id
+// NULL, allowed by the budget_lines check constraint), summing this
+// endpoint's per-category values reproduces the exact same
+// expenseTotalCents as /api/trends/monthly-totals. Before the LEFT JOIN
+// fix, the label-only line's amount was silently missing from both the
+// category breakdown and this sum.
+func TestTrendsCategoryTotalsMatchesMonthlyTotals(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	const year, month = 2041, 3
+	const categoryName = "ZTest Real Category 2041"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name=$1`, categoryName)
+	})
+
+	resp := c.do(http.MethodPost, "/api/categories", map[string]any{
+		"name": categoryName, "defaultAmountCents": 0, "isItemized": false, "includeInTemplate": true, "sortOrder": 0,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create category: want 201, got %d", resp.StatusCode)
+	}
+	var cat struct {
+		ID int64 `json:"id"`
+	}
+	c.decode(resp, &cat)
+
+	periodID := createTestPeriod(t, c, year, month)
+	periodIDStr := strconv.FormatInt(periodID, 10)
+
+	resp = c.do(http.MethodPost, "/api/periods/"+periodIDStr+"/budget-lines", map[string]any{
+		"categoryId": cat.ID, "amountCents": 30000, "sortOrder": 0,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create budget line: want 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Label-only line: no category, just a label — allowed by
+	// `CHECK (category_id IS NOT NULL OR label IS NOT NULL)`.
+	resp = c.do(http.MethodPost, "/api/periods/"+periodIDStr+"/budget-lines", map[string]any{
+		"label": "One-off fee", "amountCents": 5000, "sortOrder": 1,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create label-only budget line: want 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = c.do(http.MethodGet, "/api/trends/category-totals", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("trends/category-totals: want 200, got %d", resp.StatusCode)
+	}
+	var catResp trendsCategoryTotalsResponse
+	c.decode(resp, &catResp)
+
+	resp = c.do(http.MethodGet, "/api/trends/monthly-totals", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("trends/monthly-totals: want 200, got %d", resp.StatusCode)
+	}
+	var monthlyResp trendsMonthlyTotalsResponse
+	c.decode(resp, &monthlyResp)
+
+	var wantExpense int64 = -1
+	for _, mt := range monthlyResp {
+		if mt.Year == year && mt.Month == month {
+			wantExpense = mt.ExpenseTotalCents
+		}
+	}
+	if wantExpense == -1 {
+		t.Fatalf("monthly-totals missing %d-%d", year, month)
+	}
+	if wantExpense != 30000+5000 {
+		t.Fatalf("sanity: expected monthly expense 35000, got %d", wantExpense)
+	}
+
+	var sawUncategorised bool
+	for _, catOut := range catResp.Categories {
+		if catOut.ID == 0 {
+			sawUncategorised = true
+			if catOut.Name != "Uncategorised" {
+				t.Fatalf("category id 0 name = %q, want %q", catOut.Name, "Uncategorised")
+			}
+		}
+	}
+	if !sawUncategorised {
+		t.Fatalf("expected a synthetic category id 0 (Uncategorised) in categories list")
+	}
+
+	var gotSum int64
+	found := false
+	for _, e := range catResp.Entries {
+		if e.Year == year && e.Month == month {
+			found = true
+			for _, v := range e.Values {
+				gotSum += v
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("category-totals missing entry for %d-%d", year, month)
+	}
+	if gotSum != wantExpense {
+		t.Fatalf("category-totals per-category sum %d does not match monthly-totals expenseTotalCents %d", gotSum, wantExpense)
 	}
 }
 

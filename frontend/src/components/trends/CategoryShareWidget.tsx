@@ -6,6 +6,7 @@ import type { TrendsFilter } from '../../lib/trendsFilter'
 import type { CategoryTotals, TrendsMonthlyTotal } from '../../api/types'
 import { formatCents, formatCentsCompact } from '../../lib/money'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
+import { UNCATEGORIZED_CATEGORY_ID } from '../../lib/categoryLabel'
 import ChartLegend from './ChartLegend'
 
 interface Props {
@@ -29,11 +30,14 @@ function CategoryShareWidget({ filter, catData, monthlyTotals }: Props) {
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
 
-  // /api/trends/category-totals omits budget lines that have no category,
-  // so summing the categories alone under-reports the year's real expense
-  // total — the year's expense total from monthly-totals is the source of
-  // truth, and the gap between the two becomes its own explicit slice
-  // instead of silently vanishing.
+  // The year's expense total from monthly-totals is the source of truth,
+  // and the gap between it and the sum of real categories becomes this
+  // widget's own explicit "uncategorised" slice (in a distinct neutral
+  // gray, separate from the "Other categories" fold of small real ones)
+  // instead of silently vanishing. /api/trends/category-totals also
+  // reports label-only budget lines under a synthetic category id 0 —
+  // excluded below so it isn't double-counted as a (mis-colored) real
+  // category on top of this gap, which already covers it.
   const yearExpenseTotalCents = monthlyTotals
     .filter((m) => m.year === filter.year)
     .reduce((sum, m) => sum + m.expenseTotalCents, 0)
@@ -43,6 +47,7 @@ function CategoryShareWidget({ filter, catData, monthlyTotals }: Props) {
   }
 
   const categoryTotals = catData.categories
+    .filter((cat) => cat.id !== UNCATEGORIZED_CATEGORY_ID)
     .map((cat) => ({
       name: cat.name,
       totalCents: catData.entries

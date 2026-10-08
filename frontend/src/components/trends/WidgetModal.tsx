@@ -8,6 +8,7 @@ import type { CategoryTotalsCategory, TrendsIncomeSourcesSource, TrendsPotBalanc
 import { useIncomeSources } from '../../api/hooks/useSettings'
 import SizeGridPicker from './SizeGridPicker'
 import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
+import { categoryLabel } from '../../lib/categoryLabel'
 import { monthNames as getMonthNames } from '../../lib/monthNames'
 
 type BaseType = WidgetConfig['type']
@@ -284,7 +285,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
           <>
             <MultiSelect
               label={t('settings.categories')}
-              data={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+              data={categories.map((c) => ({ value: String(c.id), label: categoryLabel(c, t) }))}
               value={categoryIds}
               onChange={setCategoryIds}
               maxValues={MAX_CATEGORIES}
@@ -490,7 +491,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
               label={t('trends.topDescriptionsCategoryLabel')}
               data={[
                 { value: ALL_CATEGORIES_VALUE, label: t('trends.allCategories') },
-                ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+                ...categories.map((c) => ({ value: String(c.id), label: categoryLabel(c, t) })),
               ]}
               value={topDescriptionsCategory}
               onChange={(v) => v && setTopDescriptionsCategory(v)}
