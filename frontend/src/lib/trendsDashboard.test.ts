@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { loadDashboard, saveDashboard, type Widget } from './trendsDashboard'
+import { loadDashboard, saveDashboard, parseWidgets, type Widget } from './trendsDashboard'
 
 const STORAGE_KEY = 'trends-dashboard-v1'
 
@@ -391,5 +391,27 @@ describe('loadDashboard', () => {
       }),
     )
     expect(loadDashboard()).toEqual([])
+  })
+})
+
+describe('parseWidgets', () => {
+  it('returns null for non-arrays so callers can tell "never saved" from "empty"', () => {
+    expect(parseWidgets(null)).toBeNull()
+    expect(parseWidgets({ widgets: [] })).toBeNull()
+  })
+
+  it('keeps an explicitly empty board empty', () => {
+    expect(parseWidgets([])).toEqual([])
+  })
+
+  it('drops garbage entries and unknown widget types instead of throwing', () => {
+    const out = parseWidgets([
+      null,
+      7,
+      { id: 'a', config: { type: 'doesNotExist' } },
+      { id: 'b', visible: false, width: 2, height: 3, config: { type: 'kpi', metric: 'income', year: 2026 } },
+    ])
+    expect(out).toHaveLength(1)
+    expect(out![0]).toMatchObject({ id: 'b', visible: false, width: 2 })
   })
 })

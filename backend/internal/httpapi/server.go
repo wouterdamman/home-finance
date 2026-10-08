@@ -79,6 +79,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 		r.With(requireAuth).Get("/reauth-status", s.handleReauthStatus)
 		r.With(requireAuth).Patch("/me", s.handleUpdateMe)
 		r.With(requireAuth).Post("/me/avatar", s.handleUploadAvatar)
+		r.With(requireAuth).Get("/me/trends-dashboard", s.handleGetTrendsDashboard)
+		r.With(requireAuth).Put("/me/trends-dashboard", s.handlePutTrendsDashboard)
 		r.With(requireAuth).Get("/users/{id}/avatar", s.handleGetAvatar)
 		r.With(requireAuth, requireAdmin).Get("/docs", s.handleAPIDocs)
 		r.With(requireAuth, requireAdmin).Get("/openapi.yaml", s.handleOpenAPISpec)

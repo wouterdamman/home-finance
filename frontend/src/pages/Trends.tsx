@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Title, Skeleton, Alert, Stack, SimpleGrid, Group, Select, ActionIcon, Tooltip, Button, Chip, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
@@ -13,7 +13,8 @@ import { useTrendsYears, useTrendsCategoryTotals, useTrendsIncomeSources, useTre
 import type { TrendsFilter } from '../lib/trendsFilter'
 import { loadTrendsFilter, saveTrendsFilter } from '../lib/trendsFilter'
 import type { Widget, WidgetConfig, WidgetWidth, WidgetHeight } from '../lib/trendsDashboard'
-import { loadDashboard, saveDashboard, defaultWidgets, newWidget } from '../lib/trendsDashboard'
+import { loadDashboard, saveDashboard, parseWidgets, defaultWidgets, newWidget } from '../lib/trendsDashboard'
+import { useServerTrendsDashboard, useSaveTrendsDashboard } from '../api/hooks/useTrendsDashboard'
 import type { CategoryTotalsCategory, TrendsIncomeSourcesSource, TrendsPotBalancesPot } from '../api/types'
 import WidgetFrame from '../components/trends/WidgetFrame'
 import KpiWidget from '../components/trends/KpiWidget'
@@ -113,6 +114,48 @@ export default function Trends() {
   const registeredYearsQuery = useYears()
 
   const [dashboard, setDashboard] = useState<Widget[] | null>(() => loadDashboard())
+  const serverQuery = useServerTrendsDashboard()
+  const { mutate: pushDashboard } = useSaveTrendsDashboard()
+  const serverReadyRef = useRef(false)
+  const pendingPushRef = useRef<{ timer: ReturnType<typeof setTimeout>; widgets: Widget[] } | null>(null)
+
+  // localStorage is only a cache for instant first paint; the server copy is
+  // what other browsers and devices see.
+  const persistDashboard = useCallback((widgets: Widget[]) => {
+    saveDashboard(widgets)
+    if (!serverReadyRef.current) return
+    if (pendingPushRef.current) clearTimeout(pendingPushRef.current.timer)
+    const timer = setTimeout(() => {
+      pendingPushRef.current = null
+      pushDashboard(widgets)
+    }, 800)
+    pendingPushRef.current = { timer, widgets }
+  }, [pushDashboard])
+
+  useEffect(() => () => {
+    const pending = pendingPushRef.current
+    if (pending) {
+      clearTimeout(pending.timer)
+      pushDashboard(pending.widgets)
+    }
+  }, [pushDashboard])
+
+  const pulledRef = useRef(false)
+  useEffect(() => {
+    if (pulledRef.current || !serverQuery.isSuccess) return
+    pulledRef.current = true
+    serverReadyRef.current = true
+    const remote = parseWidgets(serverQuery.data.widgets)
+    if (remote) {
+      setDashboard(remote)
+      saveDashboard(remote)
+    } else {
+      // First run after this feature shipped: seed the server from the board
+      // this browser already has.
+      const local = loadDashboard()
+      if (local) pushDashboard(local)
+    }
+  }, [serverQuery.isSuccess, serverQuery.data, pushDashboard])
   const [filter, setFilter] = useState<TrendsFilter | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [modalOpened, setModalOpened] = useState(false)
@@ -130,7 +173,9 @@ export default function Trends() {
   // with no years registered yet would otherwise leave both `dashboard` and
   // `filter` null forever, and the page stuck on its skeleton.
   useEffect(() => {
-    if (dashboard === null && categoryQuery.data) {
+    // Wait for the server answer so first-time defaults can't be generated
+    // (and pushed) over a board saved from another browser.
+    if (dashboard === null && categoryQuery.data && !serverQuery.isPending) {
       const lastYear = registeredYears.length > 0 ? Math.max(...registeredYears) : new Date().getFullYear()
       // Exclude the synthetic "Uncategorised" bucket (id 0, label-only
       // budget lines) from the default dashboard's auto-picked top
@@ -144,9 +189,9 @@ export default function Trends() {
         .sort((a, b) => a - b)
       const generated = defaultWidgets(registeredYears, topCategoryIds, recentMonths)
       setDashboard(generated)
-      saveDashboard(generated)
+      persistDashboard(generated)
     }
-  }, [dashboard, registeredYears, categoryQuery.data])
+  }, [dashboard, registeredYears, categoryQuery.data, serverQuery.isPending, persistDashboard])
 
   useEffect(() => {
     if (filter === null && !registeredYearsQuery.isLoading) {
@@ -168,10 +213,10 @@ export default function Trends() {
     setDashboard((prev) => {
       if (prev === null) return prev
       const next = update(prev)
-      saveDashboard(next)
+      persistDashboard(next)
       return next
     })
-  }, [])
+  }, [persistDashboard])
 
   const handleSetVisible = useCallback((id: string, visible: boolean) => {
     commitDashboard((prev) => prev.map((w) => (w.id === id ? { ...w, visible } : w)))
