@@ -297,6 +297,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusNotFound, "not_found", "category not found")
 		return
 	}
+	s.auditLog(r.Context(), "category.update", "category", id, map[string]any{"name": name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized, "parentId": body.ParentID})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -462,6 +463,7 @@ func (s *Server) handleUpdateIncomeSource(w http.ResponseWriter, r *http.Request
 		Error(w, http.StatusNotFound, "not_found", "income source not found")
 		return
 	}
+	s.auditLog(r.Context(), "income_source.update", "income_source", id, map[string]any{"name": name, "defaultAmountCents": body.DefaultAmountCents, "isItemized": body.IsItemized})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -666,6 +668,7 @@ func (s *Server) handleUpdatePot(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusNotFound, "not_found", "pot not found")
 		return
 	}
+	s.auditLog(r.Context(), "pot.update", "pot", id, map[string]any{"name": name, "kind": body.Kind, "targetCents": body.TargetCents, "targetDate": body.TargetDate})
 	w.WriteHeader(http.StatusNoContent)
 }
 

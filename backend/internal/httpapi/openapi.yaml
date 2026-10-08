@@ -217,6 +217,50 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/me/avatar:
+    post:
+      operationId: uploadAvatar
+      tags: [Auth]
+      summary: Uploads the caller's own avatar image, replacing any existing one.
+      description: >-
+        Multipart form upload, field name "file". The declared Content-Type is ignored for
+        trust purposes - the bytes are decoded and the stored content type is derived from what
+        the image actually is, so a spoofed Content-Type on a non-image upload is rejected.
+        Only PNG and JPEG are accepted. Stored in Postgres (users.avatar_data), not object
+        storage.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "200":
+          description: Avatar stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  avatarUrl:
+                    type: string
+                required: [avatarUrl]
+        "400":
+          description: Missing file, file too large, malformed upload, or not a valid PNG/JPEG image.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/reauth-status:
     get:
       operationId: getReauthStatus
@@ -299,6 +343,37 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  /api/users/{id}/avatar:
+    get:
+      operationId: getAvatar
+      tags: [Users]
+      summary: Streams a user's avatar image bytes. Not admin-gated - any authenticated user can view any other user's avatar, same as a display name.
+      description: >-
+        Proxies the bytes stored in Postgres rather than exposing a public bucket URL. Response
+        Content-Type is whatever was detected at upload time (image/png or image/jpeg).
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Avatar image bytes.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User has no avatar.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/periods:
     get:
@@ -1294,6 +1369,38 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/categories/{id}/transaction-descriptions:
+    get:
+      operationId: listCategoryTransactionDescriptions
+      tags: [Categories]
+      summary: Most-used raw transaction descriptions typed against this category, built from history.
+      description: >-
+        Not used by the current Autocomplete (that shows only curated description-presets by
+        product decision) but kept for API completeness. Grouped by exact description (no
+        case/whitespace folding), ordered by most-recently-used first then by frequency, and
+        capped by the limit query parameter.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - name: limit
+          in: query
+          required: false
+          description: Max rows to return, 1-100. Defaults to 15; out-of-range or non-numeric values are ignored.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Descriptions used against this category, most-recent first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionDescriptionUsage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/categories/{id}/description-presets:
     get:
       operationId: listCategoryDescriptionPresets
@@ -1629,6 +1736,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/income-sources/{id}/transaction-descriptions:
+    get:
+      operationId: listIncomeSourceTransactionDescriptions
+      tags: [IncomeSources]
+      summary: Most-used raw transaction descriptions typed against this income source, built from history.
+      description: >-
+        Not used by the current Autocomplete (that shows only curated description-presets by
+        product decision) but kept for API completeness. Grouped by exact description (no
+        case/whitespace folding), ordered by most-recently-used first then by frequency, and
+        capped by the limit query parameter.
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - name: limit
+          in: query
+          required: false
+          description: Max rows to return, 1-100. Defaults to 15; out-of-range or non-numeric values are ignored.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Descriptions used against this income source, most-recent first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionDescriptionUsage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/ServerError"
 
@@ -2306,6 +2445,82 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/trends/years:
+    get:
+      operationId: getTrendsYears
+      tags: [Trends]
+      summary: Income/expense/surplus totals per calendar year, across all years in the registry.
+      description: >-
+        One row per row of the years table (ascending by year), regardless of whether that year
+        has any periods yet - a year with zero periods reports all-zero totals. Effective
+        income/expense per year use domain.EffectiveIncomeCentsSQL/EffectiveExpenseCentsSQL
+        (itemized/tracked rows sum transactions, others use their own amount_cents).
+      responses:
+        "200":
+          description: Per-year totals, ascending by year.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendsYearTotal"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/trends/monthly-totals:
+    get:
+      operationId: getTrendsMonthlyTotals
+      tags: [Trends]
+      summary: Income/expense/surplus totals per period, across all periods.
+      description: >-
+        One row per existing period (ascending by year, month) - unlike /api/trends/years, there
+        is no synthetic zero row for a month with no period. Effective income/expense per period
+        use domain.EffectiveIncomeCentsSQL/EffectiveExpenseCentsSQL, same as the period overview.
+      responses:
+        "200":
+          description: Per-period totals, ascending by year, month.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendsMonthlyTotal"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/trends/category-totals:
+    get:
+      operationId: getTrendsCategoryTotals
+      tags: [Trends]
+      summary: Per-category expense totals over time - the expense mirror of /api/trends/income-sources.
+      description: >-
+        Effective amount per category per period: transactions summed through category_rollup
+        when the budget line tracks_transactions, otherwise amount_cents - the same per-row CASE
+        as domain.EffectiveExpenseCentsSQL, so summing a period's values across all categories
+        reproduces that period's expenseTotalCents from /api/trends/monthly-totals. Only
+        categories with at least one budget line across all periods appear.
+      responses:
+        "200":
+          description: Categories and their per-period values.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrendsCategoryTotals"
+        "500":
+          description: Server/DB error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/trends/income-sources:
     get:
       operationId: getTrendsIncomeSources
@@ -2779,7 +2994,7 @@ components:
         incomes:
           type: array
           items:
-            $ref: "#/components/schemas/IncomeEntry"
+            $ref: "#/components/schemas/IncomeEntryWithTotals"
         incomeTotalCents:
           type: integer
           format: int64
@@ -2853,6 +3068,49 @@ components:
         sortOrder:
           type: integer
       required: [id, amountCents, entryType, notes, sortOrder]
+
+    IncomeEntryWithTotals:
+      description: Income entry as returned within a period overview, including derived itemized/effective totals.
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+            sourceId:
+              type: [integer, "null"]
+              format: int64
+            label:
+              type: [string, "null"]
+            amountCents:
+              type: integer
+              format: int64
+            entryType:
+              type: string
+              enum: [normal, carryover]
+            notes:
+              type: string
+            sortOrder:
+              type: integer
+            isItemized:
+              type: boolean
+              description: Whether the linked income source is itemized (effectiveCents then sums income_transactions instead of using amountCents).
+            transactionsTotalCents:
+              type: integer
+              format: int64
+            effectiveCents:
+              type: integer
+              format: int64
+              description: transactionsTotalCents if isItemized, otherwise amountCents.
+          required:
+            - id
+            - amountCents
+            - entryType
+            - notes
+            - sortOrder
+            - isItemized
+            - transactionsTotalCents
+            - effectiveCents
 
     CreateIncomeEntryRequest:
       type: object
@@ -2935,6 +3193,10 @@ components:
               description: transactionsTotalCents if tracksTransactions, otherwise amountCents.
             sortOrder:
               type: integer
+            targetCents:
+              type: integer
+              format: int64
+              description: The line's planned amount at the time of query - category.defaultAmountCents while the period is open, or the amount snapshotted at close (target_cents_at_close) once it's closed.
           required:
             - id
             - amountCents
@@ -2942,6 +3204,7 @@ components:
             - transactionsTotalCents
             - effectiveCents
             - sortOrder
+            - targetCents
 
     CreateBudgetLineRequest:
       type: object
@@ -3320,6 +3583,74 @@ components:
           format: date
       required: [entryType, amountCents]
 
+    TrendsYearTotal:
+      type: object
+      properties:
+        year:
+          type: integer
+        incomeTotalCents:
+          type: integer
+          format: int64
+        expenseTotalCents:
+          type: integer
+          format: int64
+        surplusCents:
+          type: integer
+          format: int64
+      required: [year, incomeTotalCents, expenseTotalCents, surplusCents]
+
+    TrendsMonthlyTotal:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        incomeTotalCents:
+          type: integer
+          format: int64
+        expenseTotalCents:
+          type: integer
+          format: int64
+        surplusCents:
+          type: integer
+          format: int64
+      required: [year, month, incomeTotalCents, expenseTotalCents, surplusCents]
+
+    TrendsCategoryTotals:
+      type: object
+      properties:
+        categories:
+          type: array
+          description: Descending by all-time total.
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+              name:
+                type: string
+            required: [id, name]
+        entries:
+          type: array
+          description: Ascending by year, month.
+          items:
+            type: object
+            properties:
+              year:
+                type: integer
+              month:
+                type: integer
+              values:
+                type: object
+                description: Map of category id (as a JSON string key) to effective expense cents for that period.
+                additionalProperties:
+                  type: integer
+                  format: int64
+            required: [year, month, values]
+      required: [categories, entries]
+
     TrendsIncomeSources:
       type: object
       properties:
@@ -3586,6 +3917,20 @@ components:
         sortOrder:
           type: integer
       required: [id, description, sortOrder]
+
+    TransactionDescriptionUsage:
+      type: object
+      description: One distinct description value and its usage stats, from GET .../transaction-descriptions.
+      properties:
+        description:
+          type: string
+        lastUsed:
+          type: string
+          format: date-time
+          description: Empty string if every matching row somehow has a null tx_date.
+        count:
+          type: integer
+      required: [description, lastUsed, count]
 
     CreateDescriptionPresetRequest:
       type: object

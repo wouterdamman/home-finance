@@ -279,6 +279,30 @@ func TestYearLockBlocksWritesAndUnlockRestores(t *testing.T) {
 	resp.Body.Close()
 }
 
+// TestLockUnlockYearRangeValidation ensures handleLockYear/handleUnlockYear
+// reject years outside the 2000-2100 range the DB CHECK and
+// handleCreateYear/handleCreatePeriod already enforce — without this, a
+// locked_years row could be inserted for a year that can never exist as a
+// period.
+func TestLockUnlockYearRangeValidation(t *testing.T) {
+	srv, _ := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+
+	for _, year := range []int{1999, 2101, 9999} {
+		resp := c.do(http.MethodPost, "/api/years/"+strconv.Itoa(year)+"/lock", nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("lock year %d: want 400, got %d", year, resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		resp = c.do(http.MethodPost, "/api/years/"+strconv.Itoa(year)+"/unlock", nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("unlock year %d: want 400, got %d", year, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+}
+
 // TestClosePeriodGuards covers the lifecycle guards handleClosePeriod is
 // missing relative to handleReopenPeriod: closing a period whose year is
 // locked, and closing a period whose successor is already closed (which

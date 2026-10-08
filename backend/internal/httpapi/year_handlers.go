@@ -56,6 +56,10 @@ func (s *Server) handleLockYear(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid year")
 		return
 	}
+	if year < 2000 || year > 2100 {
+		Error(w, http.StatusBadRequest, "bad_request", "year out of range")
+		return
+	}
 	if !s.requireFreshReauth(w, r) {
 		return
 	}
@@ -97,6 +101,10 @@ func (s *Server) handleUnlockYear(w http.ResponseWriter, r *http.Request) {
 	year, err := strconv.Atoi(chi.URLParam(r, "year"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "bad_request", "invalid year")
+		return
+	}
+	if year < 2000 || year > 2100 {
+		Error(w, http.StatusBadRequest, "bad_request", "year out of range")
 		return
 	}
 	if !s.requireFreshReauth(w, r) {

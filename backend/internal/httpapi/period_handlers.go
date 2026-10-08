@@ -1044,6 +1044,7 @@ func (s *Server) handleUpdateIncomeEntry(w http.ResponseWriter, r *http.Request)
 		dbError(w, "handleUpdateIncomeEntry", err)
 		return
 	}
+	s.auditLog(r.Context(), "income_entry.update", "income_entry", id, map[string]any{"periodId": periodID, "label": body.Label, "amountCents": body.AmountCents})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1170,6 +1171,7 @@ func (s *Server) handleUpdateBudgetLine(w http.ResponseWriter, r *http.Request) 
 		dbError(w, "handleUpdateBudgetLine", err)
 		return
 	}
+	s.auditLog(r.Context(), "budget_line.update", "budget_line", id, map[string]any{"periodId": periodID, "label": body.Label, "amountCents": body.AmountCents, "tracksTransactions": body.TracksTransactions})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1341,6 +1343,7 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 		dbError(w, "handleUpdateTransaction", err)
 		return
 	}
+	s.auditLog(r.Context(), "transaction.update", "transaction", id, map[string]any{"periodId": periodID, "amountCents": body.AmountCents, "description": body.Description, "txDate": body.TxDate})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1491,6 +1494,7 @@ func (s *Server) handleUpdateIncomeTransaction(w http.ResponseWriter, r *http.Re
 		dbError(w, "handleUpdateIncomeTransaction", err)
 		return
 	}
+	s.auditLog(r.Context(), "income_transaction.update", "income_transaction", id, map[string]any{"periodId": periodID, "amountCents": body.AmountCents, "description": body.Description, "txDate": body.TxDate})
 	w.WriteHeader(http.StatusNoContent)
 }
 
