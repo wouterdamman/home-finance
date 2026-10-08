@@ -23,7 +23,7 @@ function SavingsRateWidget({ year }: Props) {
   if (isLoading) return <Skeleton h="100%" />
   if (!data) return <Text size="sm" c="dimmed">{t('trends.noData')}</Text>
 
-  const percentFormatter = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 })
+  const percentFormatter = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 })
   const seriesName = t('trends.savingsRateSeries')
 
   const chartData = months.map((label, i) => {
@@ -31,7 +31,10 @@ function SavingsRateWidget({ year }: Props) {
     // A month with zero income has an undefined savings rate (division by
     // zero) — rendered as a gap in the line (null + connectNulls={false}),
     // never as a misleading 0%.
-    const rate = row && row.incomeTotalCents > 0 ? row.surplusCents / row.incomeTotalCents : null
+    // Percentage POINTS, not a 0..1 fraction: niceAxisTicksSigned rounds
+    // each tick to two decimals, so on fractions a step below 0.01 collapses
+    // consecutive ticks into duplicate labels (0%, 1%, 1%, 2%, 2%).
+    const rate = row && row.incomeTotalCents > 0 ? (row.surplusCents / row.incomeTotalCents) * 100 : null
     return { month: label, [seriesName]: rate }
   })
 
@@ -47,17 +50,17 @@ function SavingsRateWidget({ year }: Props) {
         dataKey="month"
         withLegend={false}
         connectNulls={false}
-        valueFormatter={(v: number) => percentFormatter.format(v)}
+        valueFormatter={(v: number) => percentFormatter.format(v / 100)}
         series={[{ name: seriesName, color: palette.surplus }]}
         yAxisProps={{
-          tickFormatter: (v: number) => percentFormatter.format(v),
+          tickFormatter: (v: number) => percentFormatter.format(v / 100),
           width: 56,
           ticks,
           domain: [ticks[0], ticks[ticks.length - 1]],
         }}
         // The average label sits top-RIGHT: January's marker is at the very
         // left of the plot and a left-aligned label lands on top of it.
-        referenceLines={values.length > 0 ? [{ y: average, color: 'gray.5', label: percentFormatter.format(average), labelPosition: 'insideTopRight' }] : []}
+        referenceLines={values.length > 0 ? [{ y: average, color: 'gray.5', label: percentFormatter.format(average / 100), labelPosition: 'insideTopRight' }] : []}
       />
     </div>
   )
