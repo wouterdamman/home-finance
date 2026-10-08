@@ -4,10 +4,12 @@ package httpapi_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -44,13 +46,32 @@ func wipeTestYear(t *testing.T, pool *pgxpool.Pool, years ...int) {
 // test that needs the carryover leg of a close has to use this one — it
 // cannot create its own. Its ledger rows hang off the test period and
 // cascade away with it.
+// carryoverPotID returns the household's carryover pot, creating one when the
+// database has none. The schema permits exactly one unarchived carryover pot
+// (pots_one_carryover_idx), so tests cannot simply make their own — but a
+// freshly migrated database (CI) has none at all, where a plain SELECT fails
+// and every test needing the carryover leg dies with "no rows in result set".
 func carryoverPotID(t *testing.T, pool *pgxpool.Pool) int64 {
 	t.Helper()
+	ctx := context.Background()
 	var id int64
-	if err := pool.QueryRow(context.Background(),
-		`SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL`).Scan(&id); err != nil {
+	err := pool.QueryRow(ctx,
+		`SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL`).Scan(&id)
+	if err == nil {
+		return id
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("carryover pot: %v", err)
 	}
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO pots (name,kind,sort_order) VALUES ('ZTest Carryover','carryover',990) RETURNING id`).Scan(&id); err != nil {
+		t.Fatalf("create carryover pot: %v", err)
+	}
+	t.Cleanup(func() {
+		// Best effort: a later test in the same run may still reference it,
+		// and the foreign keys will simply refuse the delete in that case.
+		pool.Exec(context.Background(), `DELETE FROM pots WHERE id=$1 AND name='ZTest Carryover'`, id)
+	})
 	return id
 }
 
