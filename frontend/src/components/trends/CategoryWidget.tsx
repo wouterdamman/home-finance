@@ -7,6 +7,7 @@ import type { ChartKind } from '../../lib/trendsDashboard'
 import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicks, categoryTickInterval } from '../../lib/chartAxis'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
+import { categoryLabel } from '../../lib/categoryLabel'
 import ChartLegend from './ChartLegend'
 import { monthNames } from '../../lib/monthNames'
 
@@ -18,7 +19,7 @@ interface Props {
 }
 
 function CategoryWidget({ categoryIds, chartKind, filter, catData }: Props) {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const months = monthNames(i18n.language)
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
@@ -27,6 +28,7 @@ function CategoryWidget({ categoryIds, chartKind, filter, catData }: Props) {
   const selectedCategories = categoryIds
     .map((id) => catData.categories.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => c != null)
+    .map((cat) => ({ id: cat.id, name: categoryLabel(cat, t) }))
 
   const data = months.map((label, i) => {
     const entry = catData.entries.find((e) => e.year === filter.year && e.month === i + 1)

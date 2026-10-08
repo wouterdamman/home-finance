@@ -1971,6 +1971,10 @@ func (s *Server) handleTrendsMonthlyTotals(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// category_id is nullable (a label-only budget line) — LEFT JOIN so
+	// those lines aren't silently dropped from the per-month totals, and
+	// bucket them under a synthetic id 0, same convention as
+	// handleTrendsIncomeSources' carryover bucket (source_id NULL -> id 0).
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.year, p.month, bl.category_id, c.name,
 		  CASE WHEN bl.tracks_transactions
@@ -1978,7 +1982,7 @@ func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Reque
 		    ELSE bl.amount_cents END AS effective_cents
 		FROM budget_lines bl
 		JOIN periods p ON p.id = bl.period_id
-		JOIN categories c ON c.id = bl.category_id
+		LEFT JOIN categories c ON c.id = bl.category_id
 		ORDER BY p.year, p.month`)
 	if err != nil {
 		dbError(w, "handleTrendsCategoryTotals", err)
@@ -2000,26 +2004,35 @@ func (s *Server) handleTrendsCategoryTotals(w http.ResponseWriter, r *http.Reque
 
 	for rows.Next() {
 		var year, month int
-		var catID int64
-		var name string
+		var catID *int64
+		var name *string
 		var cents int64
 		if err := rows.Scan(&year, &month, &catID, &name, &cents); err != nil {
 			rows.Close()
 			dbError(w, "handleTrendsCategoryTotals scan", err)
 			return
 		}
-		if _, ok := cats[catID]; !ok {
-			cats[catID] = &catInfo{ID: catID, Name: name}
-			catOrder = append(catOrder, catID)
+		// A label-only budget line (entry_type has no category) has
+		// category_id IS NULL — bucket it under a synthetic id 0 so the
+		// per-month sum here still equals monthly-totals' expenseTotalCents.
+		bucketID := int64(0)
+		bucketName := "Uncategorised"
+		if catID != nil {
+			bucketID = *catID
+			bucketName = *name
 		}
-		cats[catID].total += cents
+		if _, ok := cats[bucketID]; !ok {
+			cats[bucketID] = &catInfo{ID: bucketID, Name: bucketName}
+			catOrder = append(catOrder, bucketID)
+		}
+		cats[bucketID].total += cents
 		pk := periodKey{year, month}
 		if !periodSeen[pk] {
 			periodSeen[pk] = true
 			periodOrder = append(periodOrder, pk)
 			values[pk] = map[int64]int64{}
 		}
-		values[pk][catID] += cents
+		values[pk][bucketID] += cents
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {

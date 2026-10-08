@@ -17,6 +17,7 @@ import ChartLegend from '../components/trends/ChartLegend'
 import { MobileListRow } from '../components/mobile/MobileList'
 import EmptyState from '../components/EmptyState'
 import { monthNames } from '../lib/monthNames'
+import { categoryLabel } from '../lib/categoryLabel'
 
 const MAX_PERIODS = 4
 const MIN_PERIODS = 2
@@ -204,7 +205,7 @@ export default function MonthCompareDetail() {
     .map((cat) => {
       const values = entries.map((e) => e?.values[String(cat.id)] ?? 0)
       const trend = values.length >= 2 ? values[values.length - 1] - values[0] : 0
-      return { id: cat.id, name: cat.name, values, trend }
+      return { id: cat.id, name: categoryLabel(cat, t), values, trend }
     })
     .filter((row) => !hiddenIds.has(row.id))
     .filter((row) => searchLower === '' || row.name.toLowerCase().includes(searchLower))

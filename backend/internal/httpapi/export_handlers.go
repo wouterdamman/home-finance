@@ -59,6 +59,43 @@ func parseMonthsParam(raw string) ([]int, error) {
 	return months, nil
 }
 
+// cellWriter wraps excelize's SetCellValue/SetCellStyle and records the
+// first error instead of discarding it. AGENTS.md documents a session lost
+// to exactly that failure mode (a swallowed Scan error silently dropped a
+// whole export section) — writes after the first error become no-ops, and
+// handleExportYear checks Err() before streaming the workbook, so a failed
+// write can no longer produce a silently truncated file served as a 200.
+type cellWriter struct {
+	f   *excelize.File
+	err error
+}
+
+func newCellWriter(f *excelize.File) *cellWriter {
+	return &cellWriter{f: f}
+}
+
+func (cw *cellWriter) SetCellValue(sheet, cell string, value interface{}) {
+	if cw.err != nil {
+		return
+	}
+	if err := cw.f.SetCellValue(sheet, cell, value); err != nil {
+		cw.err = fmt.Errorf("set cell %s!%s: %w", sheet, cell, err)
+	}
+}
+
+func (cw *cellWriter) SetCellStyle(sheet, topLeftCell, bottomRightCell string, styleID int) {
+	if cw.err != nil {
+		return
+	}
+	if err := cw.f.SetCellStyle(sheet, topLeftCell, bottomRightCell, styleID); err != nil {
+		cw.err = fmt.Errorf("set cell style %s!%s:%s: %w", sheet, topLeftCell, bottomRightCell, err)
+	}
+}
+
+func (cw *cellWriter) Err() error {
+	return cw.err
+}
+
 func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 	year, err := strconv.Atoi(chi.URLParam(r, "year"))
 	if err != nil {
@@ -74,6 +111,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 
 	f := excelize.NewFile()
 	defer f.Close()
+	cw := newCellWriter(f)
 	headerStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
 
 	totals := make([]monthTotal, 0, len(months))
@@ -90,7 +128,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 		mt := monthTotal{Month: month, Status: status}
 		if periodID != nil {
 			var err error
-			mt.IncomeTotalCents, mt.ExpenseTotalCents, err = s.writeMonthSheet(ctx, f, headerStyle, year, month, *periodID)
+			mt.IncomeTotalCents, mt.ExpenseTotalCents, err = s.writeMonthSheet(ctx, cw, headerStyle, year, month, *periodID)
 			if err != nil {
 				dbError(w, "export: write month sheet", err)
 				return
@@ -99,9 +137,14 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 		totals = append(totals, mt)
 	}
 
-	writeYearOverviewSheet(f, headerStyle, year, totals)
-	if err := s.writePotBalancesSheet(ctx, f, headerStyle); err != nil {
+	writeYearOverviewSheet(cw, headerStyle, year, totals)
+	if err := s.writePotBalancesSheet(ctx, cw, headerStyle); err != nil {
 		dbError(w, "export: write pot balances", err)
+		return
+	}
+
+	if err := cw.Err(); err != nil {
+		dbError(w, "export: write workbook cells", err)
 		return
 	}
 
@@ -122,22 +165,22 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 // budget lines (effective amount — transaction sum for tracked lines,
 // otherwise the budgeted amount), and the underlying transactions for
 // tracked lines. Returns the income/expense totals for the year-overview sheet.
-func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerStyle int, year, month int, periodID int64) (incomeTotal, expenseTotal int64, err error) {
+func (s *Server) writeMonthSheet(ctx context.Context, cw *cellWriter, headerStyle int, year, month int, periodID int64) (incomeTotal, expenseTotal int64, err error) {
 	sheetName := fmt.Sprintf("%d-%02d", year, month)
-	f.NewSheet(sheetName)
+	cw.f.NewSheet(sheetName)
 	row := 1
 
-	f.SetCellValue(sheetName, cellRef("A", row), fmt.Sprintf("%s %d", dutchMonthNames[month], year))
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), fmt.Sprintf("%s %d", dutchMonthNames[month], year))
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
 	row += 2
 
 	// ── Income ───────────────────────────────────────────────
-	f.SetCellValue(sheetName, cellRef("A", row), "Inkomsten")
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Inkomsten")
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
 	row++
-	f.SetCellValue(sheetName, cellRef("A", row), "Bron")
-	f.SetCellValue(sheetName, cellRef("B", row), "Bedrag")
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Bron")
+	cw.SetCellValue(sheetName, cellRef("B", row), "Bedrag")
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row++
 
 	// Carryover entries are included deliberately, so the sheet's Totaal
@@ -169,8 +212,8 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 		if itemized {
 			effective = txCents
 		}
-		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
-		f.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
+		cw.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
+		cw.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
 		incomeTotal += effective
 		row++
 	}
@@ -178,19 +221,19 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	if err := incRows.Err(); err != nil {
 		return 0, 0, err
 	}
-	f.SetCellValue(sheetName, cellRef("A", row), "Totaal inkomsten")
-	f.SetCellValue(sheetName, cellRef("B", row), float64(incomeTotal)/100)
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Totaal inkomsten")
+	cw.SetCellValue(sheetName, cellRef("B", row), float64(incomeTotal)/100)
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row += 2
 
 	// ── Budget lines ─────────────────────────────────────────
-	f.SetCellValue(sheetName, cellRef("A", row), "Uitgaven")
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Uitgaven")
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
 	row++
-	f.SetCellValue(sheetName, cellRef("A", row), "Categorie")
-	f.SetCellValue(sheetName, cellRef("B", row), "Bedrag")
-	f.SetCellValue(sheetName, cellRef("C", row), "Type")
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("C", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Categorie")
+	cw.SetCellValue(sheetName, cellRef("B", row), "Bedrag")
+	cw.SetCellValue(sheetName, cellRef("C", row), "Type")
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("C", row), headerStyle)
 	row++
 
 	blRows, err := s.pool.Query(ctx, `
@@ -215,9 +258,9 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 			effective = txCents
 			typeLabel = "Boekingen"
 		}
-		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
-		f.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
-		f.SetCellValue(sheetName, cellRef("C", row), typeLabel)
+		cw.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(label))
+		cw.SetCellValue(sheetName, cellRef("B", row), float64(effective)/100)
+		cw.SetCellValue(sheetName, cellRef("C", row), typeLabel)
 		expenseTotal += effective
 		row++
 	}
@@ -225,14 +268,14 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	if err := blRows.Err(); err != nil {
 		return 0, 0, err
 	}
-	f.SetCellValue(sheetName, cellRef("A", row), "Totaal uitgaven")
-	f.SetCellValue(sheetName, cellRef("B", row), float64(expenseTotal)/100)
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Totaal uitgaven")
+	cw.SetCellValue(sheetName, cellRef("B", row), float64(expenseTotal)/100)
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row += 2
 
-	f.SetCellValue(sheetName, cellRef("A", row), "Surplus")
-	f.SetCellValue(sheetName, cellRef("B", row), float64(incomeTotal-expenseTotal)/100)
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Surplus")
+	cw.SetCellValue(sheetName, cellRef("B", row), float64(incomeTotal-expenseTotal)/100)
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("B", row), headerStyle)
 	row += 2
 
 	// ── Transactions ────────────────────────────────────────
@@ -270,20 +313,20 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 	}
 
 	if len(txLines) > 0 {
-		f.SetCellValue(sheetName, cellRef("A", row), "Transacties")
-		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
+		cw.SetCellValue(sheetName, cellRef("A", row), "Transacties")
+		cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
 		row++
-		f.SetCellValue(sheetName, cellRef("A", row), "Datum")
-		f.SetCellValue(sheetName, cellRef("B", row), "Categorie")
-		f.SetCellValue(sheetName, cellRef("C", row), "Omschrijving")
-		f.SetCellValue(sheetName, cellRef("D", row), "Bedrag")
-		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
+		cw.SetCellValue(sheetName, cellRef("A", row), "Datum")
+		cw.SetCellValue(sheetName, cellRef("B", row), "Categorie")
+		cw.SetCellValue(sheetName, cellRef("C", row), "Omschrijving")
+		cw.SetCellValue(sheetName, cellRef("D", row), "Bedrag")
+		cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
 		row++
 		for _, line := range txLines {
-			f.SetCellValue(sheetName, cellRef("A", row), line.date)
-			f.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(line.category))
-			f.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(line.desc))
-			f.SetCellValue(sheetName, cellRef("D", row), float64(line.cents)/100)
+			cw.SetCellValue(sheetName, cellRef("A", row), line.date)
+			cw.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(line.category))
+			cw.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(line.desc))
+			cw.SetCellValue(sheetName, cellRef("D", row), float64(line.cents)/100)
 			row++
 		}
 	}
@@ -323,26 +366,26 @@ func (s *Server) writeMonthSheet(ctx context.Context, f *excelize.File, headerSt
 
 	if len(incomeTxLines) > 0 {
 		row++ // blank separator row
-		f.SetCellValue(sheetName, cellRef("A", row), "Inkomsten transacties")
-		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
+		cw.SetCellValue(sheetName, cellRef("A", row), "Inkomsten transacties")
+		cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("A", row), headerStyle)
 		row++
-		f.SetCellValue(sheetName, cellRef("A", row), "Datum")
-		f.SetCellValue(sheetName, cellRef("B", row), "Bron")
-		f.SetCellValue(sheetName, cellRef("C", row), "Omschrijving")
-		f.SetCellValue(sheetName, cellRef("D", row), "Bedrag")
-		f.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
+		cw.SetCellValue(sheetName, cellRef("A", row), "Datum")
+		cw.SetCellValue(sheetName, cellRef("B", row), "Bron")
+		cw.SetCellValue(sheetName, cellRef("C", row), "Omschrijving")
+		cw.SetCellValue(sheetName, cellRef("D", row), "Bedrag")
+		cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("D", row), headerStyle)
 		row++
 		for _, line := range incomeTxLines {
-			f.SetCellValue(sheetName, cellRef("A", row), line.date)
-			f.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(line.source))
-			f.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(line.desc))
-			f.SetCellValue(sheetName, cellRef("D", row), float64(line.cents)/100)
+			cw.SetCellValue(sheetName, cellRef("A", row), line.date)
+			cw.SetCellValue(sheetName, cellRef("B", row), sanitizeExportCell(line.source))
+			cw.SetCellValue(sheetName, cellRef("C", row), sanitizeExportCell(line.desc))
+			cw.SetCellValue(sheetName, cellRef("D", row), float64(line.cents)/100)
 			row++
 		}
 	}
 
-	f.SetColWidth(sheetName, "A", "A", 28)
-	f.SetColWidth(sheetName, "B", "D", 16)
+	cw.f.SetColWidth(sheetName, "A", "A", 28)
+	cw.f.SetColWidth(sheetName, "B", "D", 16)
 
 	return incomeTotal, expenseTotal, nil
 }
@@ -364,18 +407,18 @@ func sanitizeExportCell(s string) string {
 	return s
 }
 
-func writeYearOverviewSheet(f *excelize.File, headerStyle int, year int, totals []monthTotal) {
+func writeYearOverviewSheet(cw *cellWriter, headerStyle int, year int, totals []monthTotal) {
 	sheetName := "Jaaroverzicht"
-	f.NewSheet(sheetName)
-	f.SetCellValue(sheetName, "A1", fmt.Sprintf("Jaaroverzicht %d", year))
-	f.SetCellStyle(sheetName, "A1", "A1", headerStyle)
+	cw.f.NewSheet(sheetName)
+	cw.SetCellValue(sheetName, "A1", fmt.Sprintf("Jaaroverzicht %d", year))
+	cw.SetCellStyle(sheetName, "A1", "A1", headerStyle)
 
 	headers := []string{"Maand", "Status", "Inkomsten", "Uitgaven", "Surplus"}
 	for i, h := range headers {
 		col, _ := excelize.ColumnNumberToName(i + 1)
-		f.SetCellValue(sheetName, cellRef(col, 3), h)
+		cw.SetCellValue(sheetName, cellRef(col, 3), h)
 	}
-	f.SetCellStyle(sheetName, "A3", "E3", headerStyle)
+	cw.SetCellStyle(sheetName, "A3", "E3", headerStyle)
 
 	row := 4
 	var yearIncome, yearExpense int64
@@ -385,32 +428,32 @@ func writeYearOverviewSheet(f *excelize.File, headerStyle int, year int, totals 
 			status = *mt.Status
 		}
 		surplus := mt.IncomeTotalCents - mt.ExpenseTotalCents
-		f.SetCellValue(sheetName, cellRef("A", row), dutchMonthNames[mt.Month])
-		f.SetCellValue(sheetName, cellRef("B", row), status)
-		f.SetCellValue(sheetName, cellRef("C", row), float64(mt.IncomeTotalCents)/100)
-		f.SetCellValue(sheetName, cellRef("D", row), float64(mt.ExpenseTotalCents)/100)
-		f.SetCellValue(sheetName, cellRef("E", row), float64(surplus)/100)
+		cw.SetCellValue(sheetName, cellRef("A", row), dutchMonthNames[mt.Month])
+		cw.SetCellValue(sheetName, cellRef("B", row), status)
+		cw.SetCellValue(sheetName, cellRef("C", row), float64(mt.IncomeTotalCents)/100)
+		cw.SetCellValue(sheetName, cellRef("D", row), float64(mt.ExpenseTotalCents)/100)
+		cw.SetCellValue(sheetName, cellRef("E", row), float64(surplus)/100)
 		yearIncome += mt.IncomeTotalCents
 		yearExpense += mt.ExpenseTotalCents
 		row++
 	}
-	f.SetCellValue(sheetName, cellRef("A", row), "Totaal")
-	f.SetCellValue(sheetName, cellRef("C", row), float64(yearIncome)/100)
-	f.SetCellValue(sheetName, cellRef("D", row), float64(yearExpense)/100)
-	f.SetCellValue(sheetName, cellRef("E", row), float64(yearIncome-yearExpense)/100)
-	f.SetCellStyle(sheetName, cellRef("A", row), cellRef("E", row), headerStyle)
+	cw.SetCellValue(sheetName, cellRef("A", row), "Totaal")
+	cw.SetCellValue(sheetName, cellRef("C", row), float64(yearIncome)/100)
+	cw.SetCellValue(sheetName, cellRef("D", row), float64(yearExpense)/100)
+	cw.SetCellValue(sheetName, cellRef("E", row), float64(yearIncome-yearExpense)/100)
+	cw.SetCellStyle(sheetName, cellRef("A", row), cellRef("E", row), headerStyle)
 
-	f.SetColWidth(sheetName, "A", "A", 14)
-	f.SetColWidth(sheetName, "B", "E", 14)
+	cw.f.SetColWidth(sheetName, "A", "A", 14)
+	cw.f.SetColWidth(sheetName, "B", "E", 14)
 }
 
-func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, headerStyle int) error {
+func (s *Server) writePotBalancesSheet(ctx context.Context, cw *cellWriter, headerStyle int) error {
 	sheetName := "Potbalansen"
-	f.NewSheet(sheetName)
-	f.SetCellValue(sheetName, "A1", "Naam")
-	f.SetCellValue(sheetName, "B1", "Type")
-	f.SetCellValue(sheetName, "C1", "Saldo")
-	f.SetCellStyle(sheetName, "A1", "C1", headerStyle)
+	cw.f.NewSheet(sheetName)
+	cw.SetCellValue(sheetName, "A1", "Naam")
+	cw.SetCellValue(sheetName, "B1", "Type")
+	cw.SetCellValue(sheetName, "C1", "Saldo")
+	cw.SetCellStyle(sheetName, "A1", "C1", headerStyle)
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.name, p.kind, COALESCE(SUM(pl.amount_cents),0)
@@ -431,9 +474,9 @@ func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, he
 		if kind == "carryover" {
 			kindLabel = "Doorlopend"
 		}
-		f.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(name))
-		f.SetCellValue(sheetName, cellRef("B", row), kindLabel)
-		f.SetCellValue(sheetName, cellRef("C", row), float64(balance)/100)
+		cw.SetCellValue(sheetName, cellRef("A", row), sanitizeExportCell(name))
+		cw.SetCellValue(sheetName, cellRef("B", row), kindLabel)
+		cw.SetCellValue(sheetName, cellRef("C", row), float64(balance)/100)
 		row++
 	}
 	rows.Close()
@@ -441,8 +484,8 @@ func (s *Server) writePotBalancesSheet(ctx context.Context, f *excelize.File, he
 		return err
 	}
 
-	f.SetColWidth(sheetName, "A", "A", 24)
-	f.SetColWidth(sheetName, "B", "C", 16)
+	cw.f.SetColWidth(sheetName, "A", "A", 24)
+	cw.f.SetColWidth(sheetName, "B", "C", 16)
 	return nil
 }
 

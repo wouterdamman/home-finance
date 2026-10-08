@@ -10,6 +10,7 @@ import { formatCents } from '../../lib/money'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import { paletteColorValue } from '../../lib/chartPalette'
 import { incomeSourceLabel } from '../../lib/incomeSourceLabel'
+import { UNCATEGORIZED_CATEGORY_ID } from '../../lib/categoryLabel'
 
 interface Props {
   year: number
@@ -170,16 +171,24 @@ function SankeyFlowWidget({ year }: Props) {
   }))
   const { kept: keptSources, otherCents: otherSourceCents } = foldSmallEntries(sourceEntries)
 
-  const categoryEntries = catData.categories.map((c) => ({
-    name: c.name,
-    cents: catData.entries.filter((e) => e.year === year).reduce((sum, e) => sum + (e.values[String(c.id)] ?? 0), 0),
-  }))
+  // The synthetic id-0 "Uncategorised" bucket (label-only budget lines) is
+  // excluded here — it gets its own gray node below, derived from the gap
+  // against yearExpenseTotalCents, same as CategoryShareWidget. Including
+  // it in categoryEntries too would double-count it (once as a normal
+  // categorical-colored node, once as the gap-derived gray one).
+  const categoryEntries = catData.categories
+    .filter((c) => c.id !== UNCATEGORIZED_CATEGORY_ID)
+    .map((c) => ({
+      name: c.name,
+      cents: catData.entries.filter((e) => e.year === year).reduce((sum, e) => sum + (e.values[String(c.id)] ?? 0), 0),
+    }))
   const { kept: keptCategories, otherCents: otherCategoryCents } = foldSmallEntries(categoryEntries)
   const categoriesSum = categoryEntries.reduce((sum, c) => sum + c.cents, 0)
   const yearExpenseTotalCents = monthlyTotals.filter((m) => m.year === year).reduce((sum, m) => sum + m.expenseTotalCents, 0)
-  // Same gap as CategoryShareWidget: /api/trends/category-totals omits
-  // budget lines with no category, so the categories' own sum under-reports
-  // the real year expense total.
+  // Same gap as CategoryShareWidget: the real categories' own sum
+  // under-reports the real year expense total by exactly the label-only
+  // budget lines' amount (plus any rounding/timing drift between the two
+  // independent queries).
   const uncategorizedCents = Math.max(0, yearExpenseTotalCents - categoriesSum)
 
   const potEntries = potData.pots.map((p) => ({
