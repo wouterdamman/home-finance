@@ -16,9 +16,8 @@ import { paletteColorValue } from '../lib/chartPalette'
 import ChartLegend from '../components/trends/ChartLegend'
 import { MobileListRow } from '../components/mobile/MobileList'
 import EmptyState from '../components/EmptyState'
+import { monthNames } from '../lib/monthNames'
 
-const MONTHS_NL = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
-const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MAX_PERIODS = 4
 const MIN_PERIODS = 2
 
@@ -139,7 +138,7 @@ function BiggestMoversChart({ rows, locale }: { rows: { name: string; trend: num
 export default function MonthCompareDetail() {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
-  const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
+  const months = monthNames(i18n.language)
   const isMobile = useMediaQuery('(max-width: 47.99em)')
 
   const categoryQuery = useTrendsCategoryTotals()
@@ -175,7 +174,7 @@ export default function MonthCompareDetail() {
 
   const periodOptions = availablePeriods.map((p) => ({
     value: periodKey(p),
-    label: `${monthNames[p.month - 1]} ${p.year}`,
+    label: `${months[p.month - 1]} ${p.year}`,
   }))
 
   if (periodOptions.length === 0) {
@@ -188,7 +187,7 @@ export default function MonthCompareDetail() {
     )
   }
 
-  const periodLabels = periods.map((p) => `${monthNames[p.month - 1]} ${p.year}`)
+  const periodLabels = periods.map((p) => `${months[p.month - 1]} ${p.year}`)
   const monthRows = periods.map((p) => summaryByYear.get(p.year)?.data?.months[p.month - 1])
   const entries = periods.map((p) => categoryQuery.data!.entries.find((e) => e.year === p.year && e.month === p.month))
 

@@ -34,9 +34,7 @@ import SankeyFlowWidget from '../components/trends/SankeyFlowWidget'
 import WidgetModal from '../components/trends/WidgetModal'
 import EmptyState from '../components/EmptyState'
 import { incomeSourceLabel } from '../lib/incomeSourceLabel'
-
-const MONTH_NAMES_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
-const MONTH_NAMES_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+import { monthNames as getMonthNames } from '../lib/monthNames'
 
 // A fixed row-track height (rather than auto-sized rows) is what lets
 // `gridAutoFlow: dense` pack a short widget into the space beside a tall
@@ -94,7 +92,7 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
 
 export default function Trends() {
   const { t, i18n } = useTranslation()
-  const monthNames = i18n.language.startsWith('nl') ? MONTH_NAMES_NL : MONTH_NAMES_EN
+  const monthNames = getMonthNames(i18n.language)
   const isMobile = useMediaQuery('(max-width: 47.99em)')
   // Matches the SimpleGrid's own `sm`/`lg` breakpoints below (cols base:1,
   // sm:2, lg:4) so a widget's configured span never exceeds the grid's

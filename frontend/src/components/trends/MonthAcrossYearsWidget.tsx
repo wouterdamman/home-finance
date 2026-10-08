@@ -10,9 +10,7 @@ import { formatCents, formatCentsCompact } from '../../lib/money'
 import { niceAxisTicksSigned } from '../../lib/chartAxis'
 import { useChartPalette } from '../../contexts/ChartPaletteContext'
 import ChartLegend from './ChartLegend'
-
-const MONTHS_NL = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
-const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+import { monthNames as getMonthNames } from '../../lib/monthNames'
 
 interface Props {
   month: number
@@ -27,7 +25,7 @@ interface Props {
 function MonthAcrossYearsWidget({ month, years, chartKind }: Props) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
-  const monthNames = i18n.language.startsWith('nl') ? MONTHS_NL : MONTHS_EN
+  const monthNames = getMonthNames(i18n.language)
   const { palette } = useChartPalette()
   const sortedYears = [...years].sort((a, b) => a - b)
 
