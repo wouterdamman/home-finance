@@ -280,38 +280,48 @@ export function defaultWidgets(years: number[], topCategoryIds: number[], recent
   return configs.map((config) => ({ id: genId(), visible: true, width: 1, height: defaultHeight(config), config }))
 }
 
+// Shared by the localStorage cache and the server copy: both are untrusted
+// persisted JSON that may predate the current widget schema.
+export function parseWidgets(input: unknown): Widget[] | null {
+  if (!Array.isArray(input)) return null
+  // Widgets saved before `width`/`height` existed don't have the fields —
+  // default them rather than letting `gridColumn/gridRow: span undefined` break.
+  // Widgets whose type has since been removed (e.g. the retired
+  // `yearCompare`) or whose config shape doesn't match the current schema
+  // (e.g. pre-multi-select `categoryChart`) are dropped/migrated rather
+  // than crashing the render — see sanitizeConfig.
+  const out: Widget[] = []
+  for (const w of input as Record<string, unknown>[]) {
+    if (w == null || typeof w !== 'object') continue
+    const config = sanitizeConfig(w.config)
+    if (config == null || typeof w.id !== 'string') continue
+    out.push({
+      id: w.id,
+      visible: typeof w.visible === 'boolean' ? w.visible : true,
+      width: clampSpan(w.width, 1) as WidgetWidth,
+      height: clampSpan(w.height, defaultHeight(config)) as WidgetHeight,
+      config,
+    })
+  }
+  return out
+}
+
 export function loadDashboard(): Widget[] | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { widgets?: unknown }
-    if (!Array.isArray(parsed.widgets)) return null
-    // Widgets saved before `width`/`height` existed don't have the fields —
-    // default them rather than letting `gridColumn/gridRow: span undefined` break.
-    // Widgets whose type has since been removed (e.g. the retired
-    // `yearCompare`) or whose config shape doesn't match the current schema
-    // (e.g. pre-multi-select `categoryChart`) are dropped/migrated rather
-    // than crashing the render — see sanitizeConfig.
-    const out: Widget[] = []
-    for (const w of parsed.widgets as Record<string, unknown>[]) {
-      const config = sanitizeConfig(w.config)
-      if (config == null || typeof w.id !== 'string') continue
-      out.push({
-        id: w.id,
-        visible: typeof w.visible === 'boolean' ? w.visible : true,
-        width: clampSpan(w.width, 1) as WidgetWidth,
-        height: clampSpan(w.height, defaultHeight(config)) as WidgetHeight,
-        config,
-      })
-    }
-    return out
+    return parseWidgets((JSON.parse(raw) as { widgets?: unknown }).widgets)
   } catch {
     return null
   }
 }
 
 export function saveDashboard(widgets: Widget[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ widgets }))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ widgets }))
+  } catch {
+    // Quota / private mode: the server copy is the source of truth anyway.
+  }
 }
 
 export function newWidget(config: WidgetConfig): Widget {

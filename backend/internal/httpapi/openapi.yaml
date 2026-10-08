@@ -171,6 +171,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/me/trends-dashboard:
+    get:
+      operationId: getTrendsDashboard
+      tags: [Trends]
+      summary: The caller's saved /trends board layout.
+      description: >-
+        Returns the widget array the caller last saved, or null when they never saved one.
+        The widget schema is owned by the frontend; the server stores it opaquely.
+      responses:
+        "200":
+          description: Saved layout (widgets is null when none).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  widgets:
+                    type: [array, "null"]
+                    items:
+                      type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: putTrendsDashboard
+      tags: [Trends]
+      summary: Replaces the caller's saved /trends board layout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [widgets]
+              properties:
+                widgets:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+      responses:
+        "204":
+          description: Layout saved.
+        "400":
+          description: widgets missing, not an array of objects, or more than 200 entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/me:
     get:
       operationId: getMe
