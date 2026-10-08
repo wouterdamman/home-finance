@@ -214,9 +214,15 @@ func wipeExisting(ctx context.Context, tx pgx.Tx) error {
 	); err != nil {
 		return fmt.Errorf("delete pot_ledger: %w", err)
 	}
+	// Scoped by kid as well as by date, for the same reason the pot_ledger
+	// delete above is: a date-only match would wipe an unrelated child's
+	// whole year of savings history, and — because the kids delete below is
+	// guarded by "no ledger rows left" — could then drop that child's row too.
 	if _, err := tx.Exec(ctx,
-		`DELETE FROM kid_savings_ledger WHERE entry_date >= $1 AND entry_date < $2`,
-		yearStart, yearEnd,
+		`DELETE FROM kid_savings_ledger
+		 WHERE entry_date >= $1 AND entry_date < $2
+		   AND kid_id IN (SELECT id FROM kids WHERE name = ANY($3))`,
+		yearStart, yearEnd, kidNames(),
 	); err != nil {
 		return fmt.Errorf("delete kid_savings_ledger: %w", err)
 	}
