@@ -8,8 +8,11 @@ Built to replace a fragile, manually-maintained Excel workflow.
   <img src="docs/screenshots/dashboard.jpg" alt="Year dashboard" width="100%">
 </p>
 <p align="center">
-  <img src="docs/screenshots/trends.png" alt="Trends dashboard" width="65%">
+  <img src="docs/screenshots/trends.jpg" alt="Trends dashboard" width="65%">
   <img src="docs/screenshots/mobile.jpg" alt="Mobile view" width="30%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/money-flow.jpg" alt="Sankey diagram of income flowing into categories and savings pots" width="100%">
 </p>
 
 ## Features
@@ -17,8 +20,10 @@ Built to replace a fragile, manually-maintained Excel workflow.
 - **Monthly budget tracking** — income and expenses per category, budget-vs-actual at a glance
 - **Savings pots** — a ledger per pot with goals, and automatic percentage-based allocation of
   each month's surplus on close
-- **Trends dashboard** — modular, customizable widgets (category breakdowns, multi-period
-  comparisons, all-time trends) plus a dedicated month-vs-month drill-down
+- **Trends dashboard** — a modular board you arrange yourself: income per source, where each
+  category's money goes, savings-pot balances and goals, savings rate, the biggest recurring
+  payments, and a Sankey of income flowing into categories and pots — plus category breakdowns,
+  multi-period comparisons, all-time trends and a month-vs-month drill-down
 - **Excel export/import**, including a one-time migration path from a legacy spreadsheet
 - **Role-based access** (admin/user) with a full audit log and step-up re-authentication on
   destructive actions
@@ -46,7 +51,13 @@ short summary on purpose.
 ```bash
 cp .env.example .env
 make dev          # starts postgres + dex, backend on :8080, frontend on :5173
+make seed-demo    # optional: fill the database with a demo year to click through
 ```
+
+`make seed-demo` generates a deterministic demo year (income sources, categories, ~900
+transactions, savings pots, kids' savings) with invented names, so there is something realistic
+to develop against without using real household data. It refuses to run against anything but a
+localhost database; add `ARGS=--wipe` to replace an existing demo dataset.
 
 Open http://localhost:5173 — dev login is via the local dex container
 (`deploy/dex/config.yaml`: `wouter@example.com` / `password`). Set `DEV_FAKE_AUTH=true` to skip
