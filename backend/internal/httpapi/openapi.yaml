@@ -416,7 +416,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Period already closed, year locked, next period already closed, or the next year is locked.
+          description: Period already closed, year locked, next period already closed, the next year is locked, or the surplus has no pot splits / splits that do not total 100%.
           content:
             application/json:
               schema:
@@ -453,7 +453,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Period already open, year is locked, or next period is closed.
+          description: Period already open, year is locked, the next year is locked and holds this period's carryover, or next period is closed.
           content:
             application/json:
               schema:
