@@ -8,4 +8,14 @@ export function invalidatePeriodAggregates(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['trends-category-totals'] })
   qc.invalidateQueries({ queryKey: ['trends-years'] })
   qc.invalidateQueries({ queryKey: ['trends-monthly-totals'] })
+  qc.invalidateQueries({ queryKey: ['trends-income-sources'] })
+}
+
+// Closing/reopening writes allocation ledger rows and a carryover entry, so
+// every pot balance and every pot's detail ledger changes — the ['pots']
+// registry key alone only covers name/kind/target.
+export function invalidatePotLedgerQueries(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['pot-balances'] })
+  qc.invalidateQueries({ queryKey: ['pot-ledger'] })
+  qc.invalidateQueries({ queryKey: ['trends-pot-balances'] })
 }
