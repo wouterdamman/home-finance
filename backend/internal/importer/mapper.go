@@ -364,26 +364,39 @@ func Run(ctx context.Context, pool *pgxpool.Pool, sheets []SheetData, opts Impor
 
 		// Budget lines
 		for i, bl := range ov.Lines {
-			// tracks_transactions = true if a Details category has the same name
+			// This app's own export carries the line's Type column, so the
+			// sheet states tracks_transactions outright and is authoritative:
+			// the label-matching guess below flipped an untracked line to
+			// tracked the moment any transaction sat under it, after which
+			// its effective amount switched from amount_cents to the
+			// transaction sum and the round trip changed the period's total.
+			// The legacy Fam_Finance layout has no such column, so there the
+			// guess (plus the OR, which keeps a user's per-period toggle from
+			// being silently undone by a sheet carrying no transactions) is
+			// still the best available answer.
+			explicitTracking := bl.TracksTransactions != nil
 			tracksTransactions := false
-			for _, tx := range details[monthNum] {
-				if strings.EqualFold(tx.CategoryLabel, bl.Label) {
-					tracksTransactions = true
-					break
+			if explicitTracking {
+				tracksTransactions = *bl.TracksTransactions
+			} else {
+				for _, tx := range details[monthNum] {
+					if strings.EqualFold(tx.CategoryLabel, bl.Label) {
+						tracksTransactions = true
+						break
+					}
 				}
 			}
-			// tracks_transactions is deliberately a per-period user choice, so
-			// importing a sheet that happens to carry no transactions for a
-			// tracked line must not silently untrack it.
 			if _, err := dbTx.Exec(ctx,
 				`INSERT INTO budget_lines (period_id, category_id, label, amount_cents, tracks_transactions, sort_order)
 				 VALUES ($1, $2, $3, $4, $5, $6)
 				 ON CONFLICT (period_id, category_id) DO UPDATE
 				 SET label=EXCLUDED.label,
 				     amount_cents=EXCLUDED.amount_cents,
-				     tracks_transactions = budget_lines.tracks_transactions OR EXCLUDED.tracks_transactions,
+				     tracks_transactions = CASE WHEN $7
+				       THEN EXCLUDED.tracks_transactions
+				       ELSE budget_lines.tracks_transactions OR EXCLUDED.tracks_transactions END,
 				     sort_order=EXCLUDED.sort_order`,
-				periodID, catIDs[bl.Label], bl.Label, bl.AmountCents, tracksTransactions, i); err != nil {
+				periodID, catIDs[bl.Label], bl.Label, bl.AmountCents, tracksTransactions, i, explicitTracking); err != nil {
 				return nil, fmt.Errorf("month %d: insert budget line %q: %w", monthNum, bl.Label, err)
 			}
 		}
