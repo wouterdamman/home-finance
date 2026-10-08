@@ -153,6 +153,8 @@
     "addCategory": "Add category",
     "addPot": "Add pot",
     "splitOverAllocated": "Pots total more than 100% — lower a percentage.",
+    "splitTotalMustBe100": "Pots must total exactly 100% to save.",
+    "splitTotalLabel": "Total",
     "splitSection": "Savings allocation",
     "pot": "Pot",
     "percentage": "Percentage",

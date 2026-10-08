@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { QueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { api } from '../client'
 import i18n from '../../i18n/index'
+import { invalidatePeriodAggregates, invalidatePotLedgerQueries } from '../../lib/queryInvalidation'
 import type {
   Period,
   MonthOverview,
@@ -130,14 +130,6 @@ function yearsTouchedByPeriodMutation(year: number, month: number): number[] {
   return month === 12 ? [year, year + 1] : [year]
 }
 
-// Closing/reopening writes allocation ledger rows and a carryover entry, so
-// every pot balance and every pot's detail ledger changes — the ['pots']
-// registry key alone only covers name/kind/target.
-function invalidatePotLedgerQueries(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: ['pot-balances'] })
-  qc.invalidateQueries({ queryKey: ['pot-ledger'] })
-}
-
 export function useClosePeriod(periodId: number, year: number, month: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -149,6 +141,7 @@ export function useClosePeriod(periodId: number, year: number, month: number) {
       }
       qc.invalidateQueries({ queryKey: ['pots'] })
       invalidatePotLedgerQueries(qc)
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -160,6 +153,7 @@ export function useDeletePeriod(periodId: number, year: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['year-summary', year] })
       qc.invalidateQueries({ queryKey: ['periods', year] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -172,6 +166,7 @@ export function useCreateBudgetLine(periodId: number, year: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
       qc.invalidateQueries({ queryKey: ['year-summary', year] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -184,6 +179,7 @@ export function useUpdateBudgetLine(periodId: number, year: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
       qc.invalidateQueries({ queryKey: ['year-summary', year] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -195,6 +191,7 @@ export function useDeleteBudgetLine(periodId: number, year: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['period', periodId, 'overview'] })
       qc.invalidateQueries({ queryKey: ['year-summary', year] })
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -226,6 +223,7 @@ export function useReopenPeriod(periodId: number, year: number, month: number) {
       }
       qc.invalidateQueries({ queryKey: ['pots'] })
       invalidatePotLedgerQueries(qc)
+      invalidatePeriodAggregates(qc)
     },
   })
 }
@@ -257,6 +255,8 @@ export function useImportXLSX() {
       qc.invalidateQueries({ queryKey: ['categories'] })
       qc.invalidateQueries({ queryKey: ['income-sources'] })
       qc.invalidateQueries({ queryKey: ['pots'] })
+      invalidatePotLedgerQueries(qc)
+      invalidatePeriodAggregates(qc)
     },
   })
 }

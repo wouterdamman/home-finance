@@ -153,6 +153,8 @@
     "addCategory": "Categorie toevoegen",
     "addPot": "Potje toevoegen",
     "splitOverAllocated": "Potjes samen meer dan 100% — verlaag een percentage.",
+    "splitTotalMustBe100": "Potjes moeten samen precies 100% zijn om op te slaan.",
+    "splitTotalLabel": "Totaal",
     "splitSection": "Spaarpotjes verdeling",
     "pot": "Potje",
     "percentage": "Percentage",
