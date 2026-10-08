@@ -78,9 +78,9 @@ func TestTrendsIncomeSourcesMatchesMonthlyTotals(t *testing.T) {
 	c := newAPIClient(t, srv)
 	ctx := context.Background()
 
-	const year, month = 2091, 4
-	const itemizedName = "ZTest Itemized Source 2091"
-	const plainName = "ZTest Plain Source 2091"
+	const year, month = 2081, 4
+	const itemizedName = "ZTest Itemized Source 2081"
+	const plainName = "ZTest Plain Source 2081"
 
 	t.Cleanup(func() {
 		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)

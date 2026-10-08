@@ -262,13 +262,17 @@ func TestRunIsIdempotentOnReimport(t *testing.T) {
 			t.Errorf("pass %d: expense: want 120000, got %d", pass, mr.ExpenseTotalCents)
 		}
 
+		// Scoped to this test's own month, not the whole year: `go test ./...`
+		// runs packages in parallel against one database, so a test elsewhere
+		// touching another month of the same year would otherwise be counted
+		// here and fail this one.
 		var incomeRows, txRows int
 		if err := pool.QueryRow(ctx,
-			`SELECT count(*) FROM income_entries ie JOIN periods p ON p.id=ie.period_id WHERE p.year=$1`, year).Scan(&incomeRows); err != nil {
+			`SELECT count(*) FROM income_entries ie JOIN periods p ON p.id=ie.period_id WHERE p.year=$1 AND p.month=3`, year).Scan(&incomeRows); err != nil {
 			t.Fatalf("count income entries: %v", err)
 		}
 		if err := pool.QueryRow(ctx,
-			`SELECT count(*) FROM transactions t JOIN periods p ON p.id=t.period_id WHERE p.year=$1`, year).Scan(&txRows); err != nil {
+			`SELECT count(*) FROM transactions t JOIN periods p ON p.id=t.period_id WHERE p.year=$1 AND p.month=3`, year).Scan(&txRows); err != nil {
 			t.Fatalf("count transactions: %v", err)
 		}
 		if incomeRows != 1 {
