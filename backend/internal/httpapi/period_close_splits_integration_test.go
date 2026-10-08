@@ -413,7 +413,15 @@ func TestIncomeCarryForwardRespectsAutofillFlag(t *testing.T) {
 		}
 		c.decode(resp, &out)
 		t.Cleanup(func() {
-			pool.Exec(ctx, `DELETE FROM income_sources WHERE id=$1`, out.ID)
+			// t.Cleanup runs LIFO, so this fires before wipeTestYear removes
+			// the periods — the rows referencing the source have to go first
+			// or the delete silently fails on the foreign key.
+			pool.Exec(ctx, `DELETE FROM income_transactions WHERE source_id=$1`, out.ID)
+			pool.Exec(ctx, `DELETE FROM income_entries WHERE source_id=$1`, out.ID)
+			pool.Exec(ctx, `DELETE FROM income_source_description_presets WHERE income_source_id=$1`, out.ID)
+			if _, err := pool.Exec(ctx, `DELETE FROM income_sources WHERE id=$1`, out.ID); err != nil {
+				t.Errorf("cleanup income source %d: %v", out.ID, err)
+			}
 		})
 		return out.ID
 	}
