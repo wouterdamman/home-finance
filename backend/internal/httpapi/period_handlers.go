@@ -71,9 +71,40 @@ func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID
 		return err
 	}
 
-	// Copy pot splits
-	if _, err := q.Exec(ctx, `INSERT INTO pot_splits (period_id,pot_id,percentage) SELECT $1,pot_id,percentage FROM pot_splits WHERE period_id=$2`, destPeriodID, srcPeriodID); err != nil {
+	// Copy pot splits, minus any archived pot. detachPotSplits only rewrites
+	// periods that are still open, so a closed source period can still carry
+	// an archived pot's split row — and the close pays real money into it,
+	// landing it in a pot no balance screen sums. Dropping the row alone
+	// would leave the destination under 100%, so the freed percentage goes to
+	// the carryover pot, exactly as detachPotSplits and handleReplaceSplits do.
+	if _, err := q.Exec(ctx, `
+		INSERT INTO pot_splits (period_id,pot_id,percentage)
+		SELECT $1,ps.pot_id,ps.percentage
+		FROM pot_splits ps JOIN pots po ON po.id = ps.pot_id
+		WHERE ps.period_id=$2 AND po.archived_at IS NULL`, destPeriodID, srcPeriodID); err != nil {
 		return err
+	}
+	var droppedArchivedSplit bool
+	if err := q.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM pot_splits ps JOIN pots po ON po.id = ps.pot_id
+			WHERE ps.period_id=$1 AND po.archived_at IS NOT NULL)`, srcPeriodID).Scan(&droppedArchivedSplit); err != nil {
+		return err
+	}
+	if droppedArchivedSplit {
+		// Without a carryover pot there is nowhere to put the freed
+		// percentage; the copy then stays under 100% and the close refuses it
+		// rather than losing the difference.
+		if _, err := q.Exec(ctx, `
+			UPDATE pot_splits ps
+			SET percentage = GREATEST(0, 100 - COALESCE((
+				SELECT SUM(other.percentage) FROM pot_splits other
+				WHERE other.period_id = ps.period_id AND other.pot_id <> ps.pot_id), 0))
+			WHERE ps.period_id = $1
+			AND ps.pot_id = (SELECT id FROM pots WHERE kind='carryover' AND archived_at IS NULL ORDER BY id LIMIT 1)`,
+			destPeriodID); err != nil {
+			return err
+		}
 	}
 
 	// Copy itemized expense transactions (for categories marked itemized, autofill_actual, and include_in_template)
@@ -87,11 +118,19 @@ func (s *Server) copyPeriodTemplate(ctx context.Context, q querier, destPeriodID
 		return err
 	}
 
-	// Copy normal income entries (respecting include_in_template flag on income sources)
+	// Copy normal income entries (respecting include_in_template flag on income sources).
+	// The amount follows the source's autofill_actual switch exactly as the
+	// budget-line copy above follows the category's: without it a variable
+	// income source carried its previous month's actual forward even with the
+	// switch off, which is the opposite of what the Settings tooltip promises.
+	// Itemized sources are unaffected in practice — EffectiveIncomeCentsSQL
+	// sums their income_transactions rows and ignores amount_cents — and
+	// carryover entries never reach this query at all (entry_type='normal').
 	if _, err := q.Exec(ctx, `
 		INSERT INTO income_entries (period_id,source_id,label,amount_cents,entry_type,notes,sort_order)
-		SELECT $1,ie.source_id,ie.label,ie.amount_cents,'normal',ie.notes,ie.sort_order
+		SELECT $1,ie.source_id,ie.label,CASE WHEN COALESCE(isrc.autofill_actual,false) THEN COALESCE(isrc.default_amount_cents,0) ELSE 0 END,'normal',ie.notes,ie.sort_order
 		FROM income_entries ie
+		LEFT JOIN income_sources isrc ON isrc.id = ie.source_id
 		WHERE ie.period_id=$2 AND ie.entry_type='normal'
 		AND (ie.source_id IS NULL OR ie.source_id IN (SELECT id FROM income_sources WHERE include_in_template=true))`,
 		destPeriodID, srcPeriodID); err != nil {
@@ -496,7 +535,11 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		Pct   float64
 		Kind  string
 	}
-	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1`, id)
+	// archived_at IS NULL is the same filter handleGetPotBalances and the year
+	// summary use: allocating into an archived pot puts money somewhere no
+	// screen ever sums it. If that drops the total below 100% the close is
+	// refused by the split validation below instead of quietly paying out less.
+	spRows, err := tx.Query(ctx, `SELECT ps.pot_id, ps.percentage, p.kind FROM pot_splits ps JOIN pots p ON p.id=ps.pot_id WHERE ps.period_id=$1 AND p.archived_at IS NULL ORDER BY p.sort_order,p.id`, id)
 	if err != nil {
 		dbError(w, "handleClosePeriod", err)
 		return
@@ -524,6 +567,24 @@ func (s *Server) handleClosePeriod(w http.ResponseWriter, r *http.Request) {
 		if sr.Kind == "carryover" {
 			hasCarryoverSplit = true
 		}
+	}
+
+	// domain.LargestRemainderSplit returns nothing for an empty or
+	// under-/over-100% split set, so without these guards the allocation loop
+	// below simply never runs: the period closes with 204 while the whole
+	// surplus disappears — no pot_ledger rows, no carryover income entry in
+	// the next month. The importer's close has always refused both (see
+	// importer.closePeriod); the HTTP close has to as well.
+	if len(rawSplits) == 0 {
+		if surplus != 0 {
+			Error(w, http.StatusConflict, "no_pot_splits",
+				"cannot close: this period has a surplus but no pot splits to allocate it to")
+			return
+		}
+	} else if err := domain.ValidateSplits(inputs); err != nil {
+		Error(w, http.StatusConflict, "split_percentage_not_100",
+			"cannot close: pot splits must total 100%")
+		return
 	}
 
 	// A December close writes its carryover into January of the *next* year,
@@ -684,6 +745,34 @@ func (s *Server) handleReopenPeriod(w http.ResponseWriter, r *http.Request) {
 	if currentStatus == "open" {
 		Error(w, http.StatusConflict, "period_already_open", "period is already open")
 		return
+	}
+	// A December close writes its carryover into January of the *next* year,
+	// and the deletes below reach into it. That year locks independently of
+	// this one, so the check above on this period's own year does not cover
+	// it — handleClosePeriod guards the same destination explicitly.
+	if nextYear != year {
+		var carryRowsInNextYear bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM income_entries ie JOIN periods p ON p.id = ie.period_id
+				WHERE ie.entry_type='carryover' AND ie.source_period_id=$1 AND p.year=$2
+				UNION ALL
+				SELECT 1 FROM pot_ledger pl JOIN periods p ON p.id = pl.period_id
+				WHERE pl.source_period_id=$1 AND p.year=$2)`, id, nextYear).Scan(&carryRowsInNextYear); err != nil {
+			dbError(w, "handleReopenPeriod next year carryover", err)
+			return
+		}
+		if carryRowsInNextYear {
+			var nextYearLocked bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM locked_years WHERE year=$1)`, nextYear).Scan(&nextYearLocked); err != nil {
+				dbError(w, "handleReopenPeriod next year lock", err)
+				return
+			}
+			if nextYearLocked {
+				Error(w, http.StatusConflict, "year_locked", "cannot reopen: the next year is locked")
+				return
+			}
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM pot_ledger WHERE source_period_id=$1`, id); err != nil {
 		dbError(w, "handleReopenPeriod", err)

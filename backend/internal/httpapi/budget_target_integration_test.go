@@ -196,6 +196,9 @@ func TestClosedPeriodFreezesTarget(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// The surplus needs a pot to land in, otherwise the close is rejected.
+	insertSplit(t, pool, periodID, createTestPot(t, pool, "ZTest Freeze Target Pot 2093", "normal", 931), "100")
+
 	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(periodID, 10)+"/close", nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("close period: want 204, got %d", resp.StatusCode)

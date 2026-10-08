@@ -125,11 +125,14 @@ func deleteTestPeriod(t *testing.T, c *apiClient, id int64) {
 }
 
 func TestPeriodCloseReopenLifecycle(t *testing.T) {
-	srv, _ := newIntegrationServer(t)
+	srv, pool := newIntegrationServer(t)
 	c := newAPIClient(t, srv)
 
 	const year, month = 2098, 6
 	id := createTestPeriod(t, c, year, month)
+	// The close creates the following period for its carryover; clean that
+	// up too, along with the test year's registry row.
+	wipeTestYear(t, pool, year)
 	defer func() {
 		// Ensure period is open before cleanup delete (closed periods can't be deleted).
 		c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/reopen", nil)
@@ -152,6 +155,10 @@ func TestPeriodCloseReopenLifecycle(t *testing.T) {
 		t.Fatalf("create budget line: want 201, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+
+	// A surplus needs somewhere to go: closing a period that has one but no
+	// pot splits is rejected (see TestClosePeriodRejectsSurplusWithoutValidSplits).
+	insertSplit(t, pool, id, createTestPot(t, pool, "ZTest Lifecycle Pot 2098", "normal", 930), "100")
 
 	// Close.
 	resp = c.do(http.MethodPost, "/api/periods/"+strconv.FormatInt(id, 10)+"/close", nil)
