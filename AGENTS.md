@@ -106,6 +106,33 @@ See `README.md` for full stack details.
 - `POST /api/periods/{id}/reopen` fails with `409 next_period_closed` if the chronologically next period is still `closed` — reopening blocked. To reopen several closed periods at once (e.g. a multi-month data fix), reopen in **reverse** chronological order (latest month first) so each next-period check already passes; reclose afterward in forward chronological order.
 - Destructive period/year actions in prod (`DELETE /api/periods/{id}`, year lock/unlock, import wipe/reset) require a fresh step-up reauth (`GET /api/reauth-status` → `{"fresh":false}` blocks them with `401`) that only a real browser popup round-trip through Authentik can satisfy — a plain `fetch()` replay of the session cookie (e.g. from a scripted browser-automation session) cannot pass this, even though it carries a valid session. `DEV_FAKE_AUTH=true` bypasses it locally, which is why this only surfaces against a real deployed environment.
 
+- **Closing a period exists twice** — `handleClosePeriod` (HTTP) and `importer.closePeriod` — and
+  the two have drifted four separate times: split validation, the zero-splits guard, the
+  `target_cents_at_close` snapshot and the year-lock checks were each present in one and missing
+  from the other, every time with real consequences (a close that silently discarded the whole
+  surplus, a target that kept drifting after close). They are in sync as of 2026-10-08. Change
+  one, change the other — or extract the shared implementation, which is the one refactor here
+  with a named, recurring cost.
+
+- The trends endpoints use **synthetic id 0** for the rows that have no entity of their own:
+  carryover income entries (`source_id IS NULL`) in `/api/trends/income-sources`, and label-only
+  budget lines (`category_id IS NULL`) in `/api/trends/category-totals`. Both exist so the
+  per-month sums still equal `monthly-totals`' own totals — the inner joins they replaced were
+  silently dropping those rows. The backend sends an English placeholder name; the label is
+  resolved client-side (`lib/incomeSourceLabel.ts`, `lib/categoryLabel.ts`). A widget that
+  derives its own "uncategorised" remainder from the gap between the category sum and the year
+  total must exclude the id-0 bucket, or it counts it twice.
+
+- `/api/trends/pot-balances` buckets a ledger row by its **period**, falling back to `entry_date`
+  only when there is no period: imported allocations all carry the same meaningless import date,
+  so `entry_date` alone is not a usable time axis. Its `inflow`/`outflow` maps always carry their
+  natural sign, and an `adjustment` is classified by its own sign rather than lumped into
+  outflow — a positive correction is money arriving.
+
+- The xlsx export checks its writes through the `cellWriter` wrapper in `export_handlers.go`
+  instead of discarding every `SetCellValue` error. Keep using it for new cells: the whole point
+  is that a failed write can no longer be served as a 200 with a silently truncated workbook.
+
 ## Dev setup
 
 ```bash
@@ -137,3 +164,25 @@ cd frontend && npx tsc -b        # type check (-b, not --noEmit: see gotchas)
 ```
 
 CI runs all three on every PR via `.github/workflows/ci.yml`.
+
+Integration tests (`//go:build integration`) all share **one** database, and `go test ./...`
+runs packages in parallel — so two tests in different packages can be writing at the same
+moment. Three rules follow from that, each of which has already broken CI:
+
+- **Pick a year nobody else uses** and treat it as yours. Existing tests sit in 2023-2027 and
+  2040-2099; grep before you claim one. Clean up in `t.Cleanup`.
+- **Scope every assertion to your own fixture**, down to the month. A count over a whole year
+  will eventually pick up another package's rows and fail a test that has nothing wrong with it.
+- **Never depend on data that merely happens to exist.** A developer database has the demo
+  dataset in it; CI's is freshly migrated and empty. The carryover pot is the trap here — the
+  schema permits exactly one unarchived one, so a test that needs it cannot create a second;
+  use the `carryoverPotID` helper, which creates one when the database has none.
+
+Run anything you are unsure about against an empty database before pushing:
+
+```bash
+docker run -d --name hf-test -e POSTGRES_USER=homefinance -e POSTGRES_PASSWORD=homefinance \
+  -e POSTGRES_DB=homefinance -p 5434:5432 postgres:18-alpine
+export DATABASE_URL='postgres://homefinance:homefinance@localhost:5434/homefinance?sslmode=disable'
+cd backend && go run ./cmd/server --migrate-only && go test -tags integration ./...
+```
