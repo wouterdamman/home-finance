@@ -331,7 +331,7 @@ describe('loadDashboard', () => {
       JSON.stringify({ widgets: [{ id: 'a', visible: true, config: { type: 'topDescriptions', categoryId: null, limit: 10 } }] }),
     )
     const widgets = loadDashboard()
-    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, limit: 10 })
+    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, excludeCategoryIds: [], limit: 10 })
     expect(widgets![0].height).toBe(3)
   })
 
@@ -341,7 +341,7 @@ describe('loadDashboard', () => {
       JSON.stringify({ widgets: [{ id: 'a', visible: true, config: { type: 'topDescriptions', categoryId: 7, limit: 5 } }] }),
     )
     const widgets = loadDashboard()
-    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: 7, limit: 5 })
+    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: 7, excludeCategoryIds: [], limit: 5 })
   })
 
   it('clamps an out-of-range topDescriptions limit instead of dropping the widget', () => {
@@ -350,7 +350,7 @@ describe('loadDashboard', () => {
       JSON.stringify({ widgets: [{ id: 'a', visible: true, config: { type: 'topDescriptions', categoryId: null, limit: 999 } }] }),
     )
     const widgets = loadDashboard()
-    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, limit: 25 })
+    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, excludeCategoryIds: [], limit: 50 })
   })
 
   it('defaults a missing topDescriptions limit instead of dropping the widget', () => {
@@ -359,7 +359,25 @@ describe('loadDashboard', () => {
       JSON.stringify({ widgets: [{ id: 'a', visible: true, config: { type: 'topDescriptions', categoryId: null } }] }),
     )
     const widgets = loadDashboard()
-    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, limit: 10 })
+    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, excludeCategoryIds: [], limit: 10 })
+  })
+
+  it('keeps valid excludeCategoryIds on a topDescriptions widget', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ widgets: [{ id: 'a', visible: true, config: { type: 'topDescriptions', categoryId: null, excludeCategoryIds: [4, 13], limit: 40 } }] }),
+    )
+    const widgets = loadDashboard()
+    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, excludeCategoryIds: [4, 13], limit: 40 })
+  })
+
+  it('falls back to no exclusions when excludeCategoryIds is malformed', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ widgets: [{ id: 'a', visible: true, config: { type: 'topDescriptions', categoryId: null, excludeCategoryIds: ['x', -1], limit: 10 } }] }),
+    )
+    const widgets = loadDashboard()
+    expect(widgets![0].config).toEqual({ type: 'topDescriptions', categoryId: null, excludeCategoryIds: [], limit: 10 })
   })
 
   it('drops a topDescriptions widget whose categoryId is neither null nor a valid id', () => {

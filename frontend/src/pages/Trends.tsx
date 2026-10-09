@@ -58,7 +58,7 @@ function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[],
   if (config.type === 'categoryShare') return t('trends.widgetType_categoryShare')
   if (config.type === 'sankeyFlow') return t('trends.sankeyFlowTitle', { year: config.year })
   if (config.type === 'topDescriptions') {
-    if (config.categoryId == null) return t('trends.topDescriptionsTitleAll')
+    if (config.categoryId == null) return config.excludeCategoryIds.length > 0 ? t('trends.topDescriptionsTitleFiltered') : t('trends.topDescriptionsTitleAll')
     const category = categories.find((c) => c.id === config.categoryId)
     return category ? t('trends.topDescriptionsTitle', { category: categoryLabel(category, t) }) : t('trends.unknownCategory')
   }
@@ -278,7 +278,7 @@ export default function Trends() {
       return <SavingsRateWidget year={config.year} />
     }
     if (config.type === 'topDescriptions') {
-      return <TopDescriptionsWidget categoryId={config.categoryId} limit={config.limit} />
+      return <TopDescriptionsWidget categoryId={config.categoryId} excludeCategoryIds={config.excludeCategoryIds} limit={config.limit} />
     }
     if (config.type === 'sankeyFlow') {
       return <SankeyFlowWidget year={config.year} />

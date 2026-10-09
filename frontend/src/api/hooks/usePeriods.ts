@@ -68,6 +68,7 @@ export function useTrendsPotBalances() {
 export interface TrendsDescriptionsParams {
   categoryId?: number
   sourceId?: number
+  excludeCategoryIds?: number[]
   limit?: number
 }
 
@@ -78,6 +79,7 @@ export function useTrendsDescriptions(params: TrendsDescriptionsParams = {}) {
       const search = new URLSearchParams()
       if (params.categoryId != null) search.set('categoryId', String(params.categoryId))
       if (params.sourceId != null) search.set('sourceId', String(params.sourceId))
+      if (params.excludeCategoryIds?.length) search.set('excludeCategoryIds', params.excludeCategoryIds.join(','))
       if (params.limit != null) search.set('limit', String(params.limit))
       const qs = search.toString()
       return api.get<TrendsDescription[]>(`/api/trends/descriptions${qs ? `?${qs}` : ''}`)

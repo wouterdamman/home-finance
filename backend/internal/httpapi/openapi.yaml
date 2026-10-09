@@ -2654,6 +2654,14 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: excludeCategoryIds
+          in: query
+          description: >-
+            Comma-separated category ids to leave out of expense results; a parent id also
+            excludes its children (through category_rollup). Ignored with sourceId.
+          schema:
+            type: string
+            example: "4,13"
         - name: limit
           in: query
           description: Default 20, max 100.
@@ -2672,7 +2680,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/TrendsDescriptionRow"
         "400":
-          description: Invalid categoryId/sourceId/limit.
+          description: Invalid categoryId/sourceId/excludeCategoryIds/limit.
           content:
             application/json:
               schema:
