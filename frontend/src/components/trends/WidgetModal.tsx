@@ -116,6 +116,9 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
   const [topDescriptionsCategory, setTopDescriptionsCategory] = useState<string>(
     initial?.type === 'topDescriptions' ? (initial.categoryId == null ? ALL_CATEGORIES_VALUE : String(initial.categoryId)) : ALL_CATEGORIES_VALUE,
   )
+  const [topDescriptionsExcluded, setTopDescriptionsExcluded] = useState<string[]>(
+    initial?.type === 'topDescriptions' ? initial.excludeCategoryIds.map(String) : [],
+  )
   const [topDescriptionsLimit, setTopDescriptionsLimit] = useState<number>(
     initial?.type === 'topDescriptions' ? initial.limit : 10,
   )
@@ -142,6 +145,7 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
     setPotIds(initial?.type === 'potBalances' || initial?.type === 'potFlow' ? initial.potIds.map(String) : (pots[0] ? [String(pots[0].id)] : []))
     setSavingsRateYear(initial?.type === 'savingsRate' ? String(initial.year) : (years[years.length - 1] ? String(years[years.length - 1]) : null))
     setTopDescriptionsCategory(initial?.type === 'topDescriptions' ? (initial.categoryId == null ? ALL_CATEGORIES_VALUE : String(initial.categoryId)) : ALL_CATEGORIES_VALUE)
+    setTopDescriptionsExcluded(initial?.type === 'topDescriptions' ? initial.excludeCategoryIds.map(String) : [])
     setTopDescriptionsLimit(initial?.type === 'topDescriptions' ? initial.limit : 10)
     setSankeyYear(initial?.type === 'sankeyFlow' ? String(initial.year) : (years[years.length - 1] ? String(years[years.length - 1]) : null))
     setWidth(initialWidth ?? 1)
@@ -219,7 +223,8 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
       onSubmit({ type: 'categoryShare' }, width, height)
     } else if (type === 'topDescriptions') {
       const categoryId = topDescriptionsCategory === ALL_CATEGORIES_VALUE ? null : Number(topDescriptionsCategory)
-      onSubmit({ type: 'topDescriptions', categoryId, limit: topDescriptionsLimit }, width, height)
+      const excludeCategoryIds = categoryId == null ? topDescriptionsExcluded.map(Number) : []
+      onSubmit({ type: 'topDescriptions', categoryId, excludeCategoryIds, limit: topDescriptionsLimit }, width, height)
     } else {
       if (sankeyYear == null) return
       onSubmit({ type: 'sankeyFlow', year: Number(sankeyYear) }, width, height)
@@ -497,12 +502,23 @@ export default function WidgetModal({ opened, onClose, onSubmit, categories, inc
               onChange={(v) => v && setTopDescriptionsCategory(v)}
               allowDeselect={false}
             />
+            {topDescriptionsCategory === ALL_CATEGORIES_VALUE && (
+              <MultiSelect
+                label={t('trends.topDescriptionsExcludeLabel')}
+                description={t('trends.topDescriptionsExcludeHint')}
+                data={categories.map((c) => ({ value: String(c.id), label: categoryLabel(c, t) }))}
+                value={topDescriptionsExcluded}
+                onChange={setTopDescriptionsExcluded}
+                searchable
+                clearable
+              />
+            )}
             <NumberInput
               label={t('trends.topDescriptionsLimitLabel')}
               value={topDescriptionsLimit}
               onChange={(v) => setTopDescriptionsLimit(typeof v === 'number' ? v : Number(v) || 10)}
               min={3}
-              max={25}
+              max={50}
             />
           </>
         )}

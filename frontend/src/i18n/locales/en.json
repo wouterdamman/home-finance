@@ -129,6 +129,9 @@
     "topDescriptionsLimitLabel": "Number of rows",
     "topDescriptionsTitle": "{{category}} — top descriptions",
     "topDescriptionsTitleAll": "Top descriptions — all categories",
+    "topDescriptionsExcludeLabel": "Exclude categories",
+    "topDescriptionsExcludeHint": "For example insurance, savings and fixed costs, so only shops remain.",
+    "topDescriptionsTitleFiltered": "Top descriptions — filtered",
     "sankeyFlowTitle": "Money flow {{year}}",
     "incomeHubLabel": "Income",
     "sankeyMobileMessage": "This diagram needs more width — view on a larger screen to see the money flow."

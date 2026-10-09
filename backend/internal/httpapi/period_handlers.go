@@ -2373,6 +2373,17 @@ func (s *Server) handleTrendsDescriptions(w http.ResponseWriter, r *http.Request
 		}
 		sourceID = &v
 	}
+	excludeIDs := []int64{}
+	if ex := q.Get("excludeCategoryIds"); ex != "" {
+		for _, part := range strings.Split(ex, ",") {
+			v, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil {
+				Error(w, http.StatusBadRequest, "bad_request", "invalid excludeCategoryIds")
+				return
+			}
+			excludeIDs = append(excludeIDs, v)
+		}
+	}
 	limit := 20
 	if l := q.Get("limit"); l != "" {
 		v, err := strconv.Atoi(l)
@@ -2403,13 +2414,17 @@ func (s *Server) handleTrendsDescriptions(w http.ResponseWriter, r *http.Request
 			FROM transactions t
 			JOIN periods p ON p.id = t.period_id
 			JOIN category_rollup cr ON cr.member_id = t.category_id
-			WHERE cr.category_id=$1 AND btrim(t.description) <> ''`, *categoryID)
+			WHERE cr.category_id=$1 AND btrim(t.description) <> ''
+			  AND NOT EXISTS (SELECT 1 FROM category_rollup ex
+			                  WHERE ex.member_id = t.category_id AND ex.category_id = ANY($2))`, *categoryID, excludeIDs)
 	default:
 		rows, err = s.pool.Query(ctx, `
 			SELECT t.description, p.year, p.month, t.amount_cents
 			FROM transactions t
 			JOIN periods p ON p.id = t.period_id
-			WHERE btrim(t.description) <> ''`)
+			WHERE btrim(t.description) <> ''
+			  AND NOT EXISTS (SELECT 1 FROM category_rollup ex
+			                  WHERE ex.member_id = t.category_id AND ex.category_id = ANY($1))`, excludeIDs)
 	}
 	if err != nil {
 		dbError(w, "handleTrendsDescriptions", err)

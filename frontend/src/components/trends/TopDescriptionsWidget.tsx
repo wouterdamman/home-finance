@@ -9,6 +9,7 @@ import { useChartPalette } from '../../contexts/ChartPaletteContext'
 
 interface Props {
   categoryId: number | null
+  excludeCategoryIds: number[]
   limit: number
 }
 
@@ -21,11 +22,11 @@ function truncate(label: string): string {
 // Self-contained, like ItemizedIncomeWidget — the category and row limit are
 // the only configurable fields, so there's no page-level filter for this one
 // to hook into; it fetches its own ranked breakdown.
-function TopDescriptionsWidget({ categoryId, limit }: Props) {
+function TopDescriptionsWidget({ categoryId, excludeCategoryIds, limit }: Props) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.startsWith('nl') ? 'nl-NL' : 'en-US'
   const { palette } = useChartPalette()
-  const { data, isLoading, error } = useTrendsDescriptions({ categoryId: categoryId ?? undefined, limit })
+  const { data, isLoading, error } = useTrendsDescriptions({ categoryId: categoryId ?? undefined, excludeCategoryIds, limit })
 
   if (isLoading) return <Skeleton h="100%" />
   // A failed request is not the same as an empty result: without this the

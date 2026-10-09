@@ -418,6 +418,67 @@ func TestTrendsDescriptionsTrimCaseGrouping(t *testing.T) {
 	}
 }
 
+// TestTrendsDescriptionsExcludeCategories checks that excludeCategoryIds drops
+// a category's rows (and its children's, via category_rollup) while leaving
+// the rest of the result alone.
+func TestTrendsDescriptionsExcludeCategories(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	const year, month = 2087, 4
+	const keepName, dropName = "ZTest Exclude Keep 2087", "ZTest Exclude Drop 2087"
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM periods WHERE year=$1`, year)
+		pool.Exec(ctx, `DELETE FROM categories WHERE name IN ($1, $2)`, keepName, dropName)
+	})
+
+	create := func(name string) int64 {
+		resp := c.do(http.MethodPost, "/api/categories", map[string]any{
+			"name": name, "defaultAmountCents": 0, "isItemized": false, "includeInTemplate": true, "sortOrder": 0,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create category %s: want 201, got %d", name, resp.StatusCode)
+		}
+		var cat struct {
+			ID int64 `json:"id"`
+		}
+		c.decode(resp, &cat)
+		return cat.ID
+	}
+	keepID, dropID := create(keepName), create(dropName)
+
+	periodIDStr := strconv.FormatInt(createTestPeriod(t, c, year, month), 10)
+	for _, tx := range []struct {
+		cat  int64
+		desc string
+	}{{keepID, "ZTest Shop Keep"}, {dropID, "ZTest Shop Drop"}} {
+		resp := c.do(http.MethodPost, "/api/periods/"+periodIDStr+"/transactions", map[string]any{
+			"categoryId": tx.cat, "amountCents": 1000, "description": tx.desc,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create transaction: want 201, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	resp := c.do(http.MethodGet, "/api/trends/descriptions?limit=100&excludeCategoryIds="+strconv.FormatInt(dropID, 10), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("trends/descriptions: want 200, got %d", resp.StatusCode)
+	}
+	var rows []trendsDescriptionRow
+	c.decode(resp, &rows)
+	var sawKeep, sawDrop bool
+	for _, r := range rows {
+		sawKeep = sawKeep || r.Description == "ZTest Shop Keep"
+		sawDrop = sawDrop || r.Description == "ZTest Shop Drop"
+	}
+	if !sawKeep || sawDrop {
+		t.Fatalf("exclusion: sawKeep=%v sawDrop=%v, want true/false", sawKeep, sawDrop)
+	}
+}
+
 // TestTrendsDescriptionsRejectsBadParams checks the 400-style validation on
 // categoryId/sourceId/limit.
 func TestTrendsDescriptionsRejectsBadParams(t *testing.T) {
@@ -427,6 +488,7 @@ func TestTrendsDescriptionsRejectsBadParams(t *testing.T) {
 	for _, qs := range []string{
 		"?categoryId=not-a-number",
 		"?sourceId=not-a-number",
+		"?excludeCategoryIds=1,x",
 		"?limit=0",
 		"?limit=101",
 		"?limit=not-a-number",

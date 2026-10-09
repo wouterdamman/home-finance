@@ -129,6 +129,9 @@
     "topDescriptionsLimitLabel": "Aantal rijen",
     "topDescriptionsTitle": "{{category}} — top beschrijvingen",
     "topDescriptionsTitleAll": "Top beschrijvingen — alle categorieën",
+    "topDescriptionsExcludeLabel": "Categorieën uitsluiten",
+    "topDescriptionsExcludeHint": "Bijvoorbeeld verzekeringen, sparen en vaste lasten, zodat alleen winkels overblijven.",
+    "topDescriptionsTitleFiltered": "Top beschrijvingen — gefilterd",
     "sankeyFlowTitle": "Geldstroom {{year}}",
     "incomeHubLabel": "Inkomen",
     "sankeyMobileMessage": "Dit diagram heeft meer breedte nodig — bekijk op een groter scherm om de geldstroom te zien."

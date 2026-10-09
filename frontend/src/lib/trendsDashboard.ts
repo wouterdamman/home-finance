@@ -52,7 +52,7 @@ export type WidgetConfig =
   // (trends/descriptions?categoryId=&limit=), independent of the page's
   // global year filter, like itemizedIncome. categoryId null means "all
   // categories".
-  | { type: 'topDescriptions'; categoryId: number | null; limit: number }
+  | { type: 'topDescriptions'; categoryId: number | null; excludeCategoryIds: number[]; limit: number }
   // Self-contained three-layer Sankey (income sources -> Income hub ->
   // expense categories, plus a surplus branch to pots that received
   // allocations) for one year — own year field, like monthCompare/
@@ -138,7 +138,7 @@ function isCategoryId(v: unknown): v is number {
 // Reasonable bounds on the ranked-list row count — below 3 the widget barely
 // shows anything useful, above 25 the bars get too thin to label.
 const MIN_TOP_DESCRIPTIONS_LIMIT = 3
-const MAX_TOP_DESCRIPTIONS_LIMIT = 25
+const MAX_TOP_DESCRIPTIONS_LIMIT = 50
 const DEFAULT_TOP_DESCRIPTIONS_LIMIT = 10
 
 function clampLimit(v: unknown): number {
@@ -243,7 +243,10 @@ function sanitizeConfig(config: unknown): WidgetConfig | null {
     case 'topDescriptions': {
       const categoryId = c.categoryId === null ? null : (isCategoryId(c.categoryId) ? c.categoryId : undefined)
       if (categoryId === undefined) return null
-      return { type: 'topDescriptions', categoryId, limit: clampLimit(c.limit) }
+      // Absent on widgets saved before exclusions existed; anything malformed
+      // collapses to "exclude nothing" rather than dropping the widget.
+      const excludeCategoryIds = isNumberArray(c.excludeCategoryIds) && c.excludeCategoryIds.every(isCategoryId) ? c.excludeCategoryIds : []
+      return { type: 'topDescriptions', categoryId, excludeCategoryIds, limit: clampLimit(c.limit) }
     }
     case 'sankeyFlow':
       if (isYear(c.year)) {
