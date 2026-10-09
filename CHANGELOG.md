@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/wouterdamman/home-finance/compare/v1.22.0...v1.23.0) (2026-10-09)
+
+
+### Features
+
+* **trends:** let the top descriptions widget exclude categories ([#178](https://github.com/wouterdamman/home-finance/issues/178)) ([50c199c](https://github.com/wouterdamman/home-finance/commit/50c199cafd17b21ea20f8a279784a92257398caa))
+
 ## [1.22.0](https://github.com/wouterdamman/home-finance/compare/v1.21.0...v1.22.0) (2026-10-08)
 
 
