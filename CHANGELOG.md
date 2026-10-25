@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/wouterdamman/home-finance/compare/v1.23.0...v1.23.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/go-chi/chi/v5 to v5.4.0 [security] ([#194](https://github.com/wouterdamman/home-finance/issues/194)) ([bdc2a40](https://github.com/wouterdamman/home-finance/commit/bdc2a40c9221694923e71d6b87445d542329e54b))
+
 ## [1.23.0](https://github.com/wouterdamman/home-finance/compare/v1.22.0...v1.23.0) (2026-10-09)
 
 
