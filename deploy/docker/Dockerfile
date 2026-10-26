@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/server ./cmd/serv
 # sit here indefinitely on an ever-slower rebuild cadence. Both are pure static
 # bases (CA certs + tzdata, no libc) and the binaries are CGO_ENABLED=0, so the
 # switch is transparent to the app.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
 COPY --from=frontend /app/frontend/dist /app/dist
 COPY --from=backend /out/server /app/server
 COPY --from=backend /out/importer /app/importer
