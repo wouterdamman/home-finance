@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.2](https://github.com/wouterdamman/home-finance/compare/v1.23.1...v1.23.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/xuri/excelize/v2 to v2.11.1 [security] ([#200](https://github.com/wouterdamman/home-finance/issues/200)) ([66d771a](https://github.com/wouterdamman/home-finance/commit/66d771a3e90f1676ae89bf6b8aa7dc8de090d3fa))
+
 ## [1.23.1](https://github.com/wouterdamman/home-finance/compare/v1.23.0...v1.23.1) (2026-10-25)
 
 
