@@ -83,6 +83,21 @@ helm upgrade --install home-finance deploy/helm/home-finance \
 inside the app pod, not a separate CronJob — that's why sub-minute intervals work. Leave it unset
 and S3 is never touched at all.
 
+### Home Assistant / integrations
+
+No new environment variables or Helm values are needed. Create a token in **Settings > Integrations**
+(admin, with a fresh reauth) and grant it the `kids:read` scope.
+
+Point Home Assistant at the public HTTPS hostname (`https://<ingress.host>/api/integrations/v1/...`)
+so the bearer token travels over TLS.
+
+An in-cluster URL (`http://<release>.<namespace>.svc`) also works, as long as the Cilium network
+policy admits the caller. A Home Assistant pod running with `hostNetwork: true` is seen as host
+(remote-node) traffic: the default `fromEntities: [cluster]` and `gatewayIngress.hostNetwork: true`
+allow it, but a `namespaceLabel` or `podLabels` narrowing does not.
+
+Store the token in your secret manager, never in git.
+
 ## Database migrations
 
 Migrations live in `backend/migrations/` and run automatically on startup when `AUTO_MIGRATE=true`. To run manually:

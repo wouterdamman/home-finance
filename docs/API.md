@@ -63,6 +63,74 @@ POST /api/import/xlsx          (multipart: file, year, wipe, resetMaster, closeT
                                  wipe/resetMaster need a fresh reauth and are audit-logged)
 
 GET  /api/audit-log?limit=&before=&action=&entityType=&userEmail=&from=&to=     (admin)
+GET  /api/integration-tokens                                                     (admin)
+POST /api/integration-tokens   (body: {"name","scopes":["kids:read"]})           (admin, reauth)
+DEL  /api/integration-tokens/:id                                                 (admin)
 GET  /api/docs                                                                   (admin)
 GET  /api/openapi.yaml                                                           (admin)
+```
+
+## Integration API (bearer token)
+
+Read-only API for external tools such as Home Assistant. It is separate from the session-auth
+API above: no cookie and no CSRF header, and it never accepts a session.
+
+Admins create tokens in **Settings > Integrations**, choosing a name and scopes. Each token
+is shown once on creation and stored only as a SHA-256 hash, so it cannot be recovered later.
+Tokens look like `hf_...`. Creating and revoking a token are audit-logged.
+
+Send the token as a bearer header:
+
+```
+Authorization: Bearer hf_...
+```
+
+```
+GET /api/integrations/v1/info               (any valid token)
+GET /api/integrations/v1/kids/balances      (scope kids:read)
+```
+
+`info` returns the token's name and scopes:
+
+```json
+{"apiVersion":1,"tokenName":"Home Assistant","scopes":["kids:read"]}
+```
+
+`kids/balances` returns each kid's savings in cents, split by who contributed. `generatedAt` is
+the server time the response was built:
+
+```json
+{
+  "kids": [{"name":"Sam","totalCents":125000,"oursCents":100000,"theirsCents":25000}],
+  "generatedAt": "2026-11-08T12:00:00Z"
+}
+```
+
+Responses carry `Cache-Control: no-store`. Errors use the usual `{"error": {"code", "message"}}`
+body:
+
+| Status | Code | Meaning |
+|---|---|---|
+| 401 | `unauthorized` | Token missing, invalid, or revoked. Response includes `WWW-Authenticate: Bearer` |
+| 403 | `insufficient_scope` | Token is valid but lacks the scope the endpoint needs |
+
+The only scope today is `kids:read`. Future datasets (pots, periods, years) will be added as new
+scopes under `/api/integrations/v1`.
+
+### Home Assistant example
+
+Add a `rest:` integration to `configuration.yaml`, with the token in `secrets.yaml`
+(`home_finance_auth: "Bearer hf_..."`):
+
+```yaml
+rest:
+  - resource: https://budget.app.example.com/api/integrations/v1/kids/balances
+    headers:
+      Authorization: !secret home_finance_auth   # "Bearer hf_..."
+    scan_interval: 900
+    sensor:
+      - name: "Savings <kid name>"
+        value_template: "{{ (value_json.kids | selectattr('name','eq','<kid name>') | first).totalCents / 100 }}"
+        unit_of_measurement: "EUR"
+        device_class: monetary
 ```
