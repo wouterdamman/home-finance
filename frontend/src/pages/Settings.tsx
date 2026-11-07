@@ -126,7 +126,9 @@ export default function Settings() {
         value={menu.some(m => m.key === section && !m.external) ? section : defaultTab}
         onChange={v => v && setSearchParams({ section: v })}
       >
-        <Tabs.List>
+        {/* One scrollable row instead of wrapping: with ten admin tabs the
+            longer Dutch labels spilled onto a second line on narrower desktops. */}
+        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'thin' }}>
           {menu.filter(m => !m.external).map(m => (
             <Tabs.Tab key={m.key} value={m.key}>{m.label}</Tabs.Tab>
           ))}
