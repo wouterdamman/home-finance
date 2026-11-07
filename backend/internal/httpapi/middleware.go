@@ -81,3 +81,12 @@ func apiNotFound(w http.ResponseWriter, r *http.Request) {
 func apiMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	Error(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed for this endpoint")
 }
+
+// noStore keeps token-authenticated responses out of shared caches. The JSON
+// helper sets it too, but auth failures written before it runs do not.
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
