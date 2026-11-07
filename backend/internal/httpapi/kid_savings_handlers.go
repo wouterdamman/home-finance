@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -51,17 +52,20 @@ func (s *Server) handleListKids(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
-	type row struct {
-		KidID                int64   `json:"kidId"`
-		Name                 string  `json:"name"`
-		OursCents            int64   `json:"oursCents"`
-		TheirsCents          int64   `json:"theirsCents"`
-		TotalCents           int64   `json:"totalCents"`
-		ReportedBalanceCents *int64  `json:"reportedBalanceCents,omitempty"`
-		ReportedBalanceDate  *string `json:"reportedBalanceDate,omitempty"`
-	}
-	rows, err := s.pool.Query(r.Context(), `
+type kidBalanceRow struct {
+	KidID                int64   `json:"kidId"`
+	Name                 string  `json:"name"`
+	OursCents            int64   `json:"oursCents"`
+	TheirsCents          int64   `json:"theirsCents"`
+	TotalCents           int64   `json:"totalCents"`
+	ReportedBalanceCents *int64  `json:"reportedBalanceCents,omitempty"`
+	ReportedBalanceDate  *string `json:"reportedBalanceDate,omitempty"`
+}
+
+// queryKidBalances is shared by the session API and the integration API so
+// both always agree on what a kid's balance is.
+func (s *Server) queryKidBalances(ctx context.Context) ([]kidBalanceRow, error) {
+	rows, err := s.pool.Query(ctx, `
 		SELECT k.id, k.name,
 		       COALESCE(SUM(l.amount_cents) FILTER (WHERE l.owner = 'ours'), 0)::BIGINT AS ours_cents,
 		       COALESCE(SUM(l.amount_cents) FILTER (WHERE l.owner = 'theirs'), 0)::BIGINT AS theirs_cents,
@@ -73,17 +77,15 @@ func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
 		GROUP BY k.id, k.name, k.sort_order, k.reported_balance_cents, k.reported_balance_date
 		ORDER BY k.sort_order, k.id`)
 	if err != nil {
-		dbError(w, "getKidBalances", err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
-	out := make([]row, 0)
+	out := make([]kidBalanceRow, 0)
 	for rows.Next() {
-		var ro row
+		var ro kidBalanceRow
 		var rbd *time.Time
 		if err := rows.Scan(&ro.KidID, &ro.Name, &ro.OursCents, &ro.TheirsCents, &ro.TotalCents, &ro.ReportedBalanceCents, &rbd); err != nil {
-			dbError(w, "getKidBalances.scan", err)
-			return
+			return nil, err
 		}
 		if rbd != nil {
 			ds := rbd.Format("2006-01-02")
@@ -91,7 +93,12 @@ func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, ro)
 	}
-	if err := rows.Err(); err != nil {
+	return out, rows.Err()
+}
+
+func (s *Server) handleGetKidBalances(w http.ResponseWriter, r *http.Request) {
+	out, err := s.queryKidBalances(r.Context())
+	if err != nil {
 		dbError(w, "getKidBalances", err)
 		return
 	}
