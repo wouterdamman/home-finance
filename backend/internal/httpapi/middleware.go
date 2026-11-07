@@ -83,7 +83,8 @@ func apiMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 }
 
 // noStore keeps token-authenticated responses out of shared caches. The JSON
-// helper sets it too, but auth failures written before it runs do not.
+// helper sets it too, but the auth middleware's 401/403s bypass JSON, so
+// this must run before RequireIntegrationToken.
 func noStore(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

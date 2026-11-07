@@ -92,7 +92,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 		r.Route("/integrations/v1", func(r chi.Router) {
 			r.NotFound(apiNotFound)
 			r.MethodNotAllowed(apiMethodNotAllowed)
-			r.Use(auth.RequireIntegrationToken(pool), noStore)
+			r.Use(noStore, auth.RequireIntegrationToken(pool))
 			r.Get("/info", s.handleIntegrationInfo)
 			r.With(auth.RequireScope("kids:read")).Get("/kids/balances", s.handleIntegrationKidBalances)
 		})

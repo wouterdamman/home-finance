@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -93,6 +95,14 @@ func RequireIntegrationToken(pool *pgxpool.Pool) func(http.Handler) http.Handler
 				FROM integration_tokens
 				WHERE token_hash=$1 AND revoked_at IS NULL`, hash).
 				Scan(&tok.ID, &tok.Name, &tok.Scopes, &dbHash, &stale)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				// A DB outage is not a bad token: answering 401 would make an
+				// integration think its credential was revoked.
+				slog.Error("integration token lookup failed", "err", err)
+				w.Header().Set("Content-Type", "application/json")
+				http.Error(w, `{"error":{"code":"db_error","message":"internal error"}}`, http.StatusInternalServerError)
+				return
+			}
 			if err != nil || subtle.ConstantTimeCompare(hash, dbHash) != 1 {
 				integrationUnauthorized(w)
 				return
