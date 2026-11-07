@@ -2,7 +2,7 @@
 # Production deployment: deploy/helm/home-finance (uses external OIDC, CNPG secrets).
 services:
   db:
-    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    image: postgres:18-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
     environment:
       POSTGRES_USER: homefinance
       POSTGRES_PASSWORD: homefinance
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   dex:
-    image: dexidp/dex:v2.45.1@sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462
+    image: dexidp/dex:v2.46.1@sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab
     command: dex serve /etc/dex/config.yaml
     ports:
       - "5556:5556"
