@@ -22,6 +22,7 @@ See `README.md` for full stack details.
 - Auth: BFF pattern — HttpOnly session cookie, never expose tokens to the frontend
 - Errors: return `{"error": {"code": "...", "message": "..."}}` JSON, use appropriate HTTP status codes
 - Audit log: call `s.auditLog()` after any destructive or state-changing action (close, reopen, delete, pot entries)
+- Integrations: routes live under `/api/integrations/v1`, authenticate only with DB-backed bearer tokens (`auth.RequireIntegrationToken`) — never sessions, and never bypassed by `DEV_FAKE_AUTH`. They are read-only, and each dataset gets its own scope in `auth.KnownIntegrationScopes` + `auth.RequireScope`. Responses expose no internal ids
 
 ### Frontend
 - Mantine v9 components — do not mix with other UI libraries

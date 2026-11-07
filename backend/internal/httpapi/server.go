@@ -87,6 +87,19 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool, sm *scs.SessionManager, o
 		r.With(requireAuth, requireAdmin).Get("/users", s.handleListUsers)
 		r.With(requireAuth, requireAdmin).Patch("/users/{id}/role", s.handleUpdateUserRole)
 
+		// Read-only bearer-token API for integrations (Home Assistant etc.).
+		// Authenticates by token only, so it never touches the session.
+		r.Route("/integrations/v1", func(r chi.Router) {
+			r.NotFound(apiNotFound)
+			r.MethodNotAllowed(apiMethodNotAllowed)
+			r.Use(noStore, auth.RequireIntegrationToken(pool))
+			r.Get("/info", s.handleIntegrationInfo)
+			r.With(auth.RequireScope("kids:read")).Get("/kids/balances", s.handleIntegrationKidBalances)
+		})
+		r.With(requireAuth, requireAdmin).Get("/integration-tokens", s.handleListIntegrationTokens)
+		r.With(requireAuth, requireAdmin).Post("/integration-tokens", s.handleCreateIntegrationToken)
+		r.With(requireAuth, requireAdmin).Delete("/integration-tokens/{id}", s.handleRevokeIntegrationToken)
+
 		r.With(requireAuth).Group(func(r chi.Router) {
 			// Periods
 			r.Get("/periods", s.handleListPeriods)
