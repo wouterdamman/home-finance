@@ -243,7 +243,11 @@ postgres:
     clusterName: home-finance-pg
     instances: 1
     storageSize: 5Gi
-    imageName: ghcr.io/cloudnative-pg/postgresql:16
+    # Pinned by digest. If your cluster was created on an older major (the
+    # default used to be :16), set imageName to that image explicitly:
+    # changing the major version triggers CNPG's offline major upgrade —
+    # back up first.
+    imageName: ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533
     databaseName: homefinance
     ownerName: homefinance
     # Scheduled backups via CNPG barmanObjectStore. Disabled by default — fill
