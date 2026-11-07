@@ -113,6 +113,7 @@ body:
 |---|---|---|
 | 401 | `unauthorized` | Token missing, invalid, or revoked. Response includes `WWW-Authenticate: Bearer` |
 | 403 | `insufficient_scope` | Token is valid but lacks the scope the endpoint needs |
+| 500 | `db_error` | Server-side failure (e.g. database unreachable) — not a token problem, retry later |
 
 The only scope today is `kids:read`. Future datasets (pots, periods, years) will be added as new
 scopes under `/api/integrations/v1`.
