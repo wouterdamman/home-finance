@@ -262,3 +262,18 @@ export interface AuditLogEntry {
   entityId?: number
   details?: string
 }
+
+export interface IntegrationToken {
+  id: number
+  name: string
+  tokenPrefix: string
+  scopes: string[]
+  createdAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdByEmail: string | null
+}
+
+export interface CreatedIntegrationToken extends IntegrationToken {
+  token: string
+}

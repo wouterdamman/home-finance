@@ -3,7 +3,7 @@ import { useMediaQuery } from '@mantine/hooks'
 import { useSearchParams } from 'react-router-dom'
 import {
   IconTags, IconCoin, IconPigMoney, IconCalendar, IconChevronLeft, IconPalette,
-  IconFileSpreadsheet, IconUsers, IconUserCircle, IconApi, IconHistory,
+  IconFileSpreadsheet, IconUsers, IconUserCircle, IconApi, IconHistory, IconPlugConnected,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useMe } from '../api/hooks/useMe'
@@ -16,9 +16,10 @@ import ExportImportTab from '../components/settings/ExportImportTab'
 import ProfileTab from '../components/settings/ProfileTab'
 import UsersTab from '../components/settings/UsersTab'
 import AuditLogTab from '../components/settings/AuditLogTab'
+import IntegrationsTab from '../components/settings/IntegrationsTab'
 import PreferencesTab from '../components/settings/PreferencesTab'
 
-type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'users' | 'auditLog' | 'apiDocs' | 'profile' | 'preferences'
+type SettingsSection = 'categories' | 'sources' | 'pots' | 'years' | 'exportImport' | 'users' | 'auditLog' | 'integrations' | 'apiDocs' | 'profile' | 'preferences'
 
 interface SettingsMenuItem {
   key: SettingsSection
@@ -48,6 +49,7 @@ export default function Settings() {
     { key: 'exportImport', label: t('settings.exportImport'), icon: IconFileSpreadsheet, content: <ExportImportTab />, adminOnly: true },
     { key: 'users', label: t('settings.users'), icon: IconUsers, content: <UsersTab />, adminOnly: true },
     { key: 'auditLog', label: t('settings.auditLog'), icon: IconHistory, content: <AuditLogTab />, adminOnly: true },
+    { key: 'integrations', label: t('settings.integrations'), icon: IconPlugConnected, content: <IntegrationsTab />, adminOnly: true },
     { key: 'profile', label: t('settings.profile'), icon: IconUserCircle, content: <ProfileTab /> },
     { key: 'preferences', label: t('settings.preferences'), icon: IconPalette, content: <PreferencesTab /> },
     { key: 'apiDocs', label: t('nav.apiDocs'), icon: IconApi, content: null, adminOnly: true, external: '/api/docs' },
