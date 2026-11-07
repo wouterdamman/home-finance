@@ -1,7 +1,7 @@
 # All three base images are pinned tag@digest: a tag is mutable, so without the
 # digest a rebuild of an identical commit can silently pull different bits.
 # Renovate keeps both halves current (docker:pinDigests in renovate.json).
-FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS frontend
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS frontend
 WORKDIR /app/frontend
 # .npmrc comes along explicitly (package*.json doesn't glob it) so the image
 # build honours ignore-scripts=true exactly like CI and local installs do —
@@ -11,7 +11,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS backend
+FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS backend
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
