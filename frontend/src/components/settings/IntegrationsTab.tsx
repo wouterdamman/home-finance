@@ -208,7 +208,7 @@ export default function IntegrationsTab() {
               title={tok.name}
               subtitle={
                 <>
-                  {prefix(tok)} · {lastUsed(tok)}
+                  {prefix(tok)} · {t('settings.integrationsLastUsed')}: {lastUsed(tok)}
                 </>
               }
               trailing={
