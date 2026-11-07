@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.24.0](https://github.com/wouterdamman/home-finance/compare/v1.23.2...v1.24.0) (2026-11-07)
+
+
+### Features
+
+* **api:** read-only integration API with bearer tokens (Home Assistant, phase 1) ([#204](https://github.com/wouterdamman/home-finance/issues/204)) ([70965ae](https://github.com/wouterdamman/home-finance/commit/70965ae6dce2d26168d5c74f80fe9c24c1d66249))
+
+
+### Bug Fixes
+
+* **settings:** polish integrations tab (mobile date label, tab overflow) ([#206](https://github.com/wouterdamman/home-finance/issues/206)) ([879e1e6](https://github.com/wouterdamman/home-finance/commit/879e1e6361f270dbb4d02802267e5be53e59bd29))
+
 ## [1.23.2](https://github.com/wouterdamman/home-finance/compare/v1.23.1...v1.23.2) (2026-11-04)
 
 
