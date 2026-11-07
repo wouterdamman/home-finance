@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Title, Skeleton, Alert, Stack, SimpleGrid, Group, Select, ActionIcon, Tooltip, Button, Chip, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { Link } from 'react-router-dom'
 import { IconPencil, IconCheck, IconPlus, IconEye, IconArrowsLeftRight, IconTrash } from '@tabler/icons-react'
 import {
@@ -47,7 +48,7 @@ const ROW_UNIT_PX = 90
 // How many entity names a widget header lists before falling back to "+N".
 const TITLE_NAME_LIMIT = 2
 
-function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], sources: TrendsIncomeSourcesSource[], pots: TrendsPotBalancesPot[], t: (key: string, opts?: Record<string, unknown>) => string, monthNames: string[]): string {
+function widgetTitle(config: WidgetConfig, categories: CategoryTotalsCategory[], sources: TrendsIncomeSourcesSource[], pots: TrendsPotBalancesPot[], t: TFunction, monthNames: string[]): string {
   if (config.type === 'kpi') return t(`trends.metric_${config.metric}`)
   if (config.type === 'monthCompare') return t('trends.monthsTitle', { year: config.year })
   if (config.type === 'allTimeTrend') return t('trends.allTimeTrendTitle', { fromYear: config.fromYear, toYear: config.toYear })
