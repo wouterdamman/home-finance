@@ -23,11 +23,11 @@ staticClients:
 
 staticPasswords:
   - email: wouter@example.com
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8F4u"  # password
+    hash: "$2a$10$42kf0pmt17zzWrDrHQSk.OO.48x.WZY1y476TcPstZHiZ3wZ1e/t2"  # password
     username: wouter
     userID: wouter-id-001
   - email: ilse@example.com
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8F4u"  # password
+    hash: "$2a$10$42kf0pmt17zzWrDrHQSk.OO.48x.WZY1y476TcPstZHiZ3wZ1e/t2"  # password
     username: ilse
     userID: ilse-id-001
 
