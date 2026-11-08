@@ -128,7 +128,7 @@ describe('IntegrationsTab', () => {
     expect(screen.queryByDisplayValue('hf_ab12_secretvalue')).toBeNull()
   })
 
-  it('offers both scopes and sends both when both are checked', async () => {
+  it('offers every scope and sends the checked ones', async () => {
     fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
       if (init?.method === 'POST') return Promise.resolve(json({ ...active, token: 'hf_ab12_secretvalue' }, 201))
       return Promise.resolve(json([]))
@@ -138,12 +138,15 @@ describe('IntegrationsTab', () => {
     fireEvent.change(await screen.findByLabelText(/settings.integrationsName/), { target: { value: 'HA' } })
     expect(screen.getByLabelText('settings.scopeKidsRead')).toBeTruthy()
     expect(screen.getByLabelText('settings.scopePotsRead')).toBeTruthy()
+    expect(screen.getByLabelText('settings.scopePeriodsRead')).toBeTruthy()
+    expect(screen.getByLabelText('settings.scopeYearsRead')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('settings.scopeKidsRead'))
     fireEvent.click(screen.getByLabelText('settings.scopePotsRead'))
+    fireEvent.click(screen.getByLabelText('settings.scopeYearsRead'))
     fireEvent.click(screen.getByText('settings.integrationsCreate'))
     await screen.findByDisplayValue('hf_ab12_secretvalue')
     const post = fetchMock.mock.calls.find(c => c[1]?.method === 'POST')!
-    expect(JSON.parse(post[1].body).scopes).toEqual(['kids:read', 'pots:read'])
+    expect(JSON.parse(post[1].body).scopes).toEqual(['kids:read', 'pots:read', 'years:read'])
   })
 
   it('defaults the expiry to 1 year', async () => {

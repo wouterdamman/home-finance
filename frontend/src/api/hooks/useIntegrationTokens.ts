@@ -5,6 +5,8 @@ import type { IntegrationToken, CreatedIntegrationToken } from '../types'
 export const INTEGRATION_SCOPES = [
   { value: 'kids:read', labelKey: 'settings.scopeKidsRead' },
   { value: 'pots:read', labelKey: 'settings.scopePotsRead' },
+  { value: 'periods:read', labelKey: 'settings.scopePeriodsRead' },
+  { value: 'years:read', labelKey: 'settings.scopeYearsRead' },
 ] as const
 
 export function useIntegrationTokens() {
