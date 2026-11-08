@@ -1022,11 +1022,11 @@ after the other pots' percentages.
 `incomeCents` and `expenseCents` are *effective* amounts, the same numbers the app's month and
 year screens show:
 
-- An **itemized income source** counts the sum of its income transactions instead of its planned
-  amount.
-- A **tracked budget line** counts the sum of its transactions instead of its planned amount, with
-  child categories rolled into the parent line.
-- Everything else counts its planned amount.
+- An **itemized income source** counts the sum of its income transactions instead of the amount
+  on its row.
+- A **tracked budget line** counts the sum of its transactions instead of the amount on its row,
+  with child categories rolled into the parent line.
+- Every other line counts the amount entered on it. Budget targets never count.
 
 `surplusCents` is `incomeCents - expenseCents`, and it can be **negative** when a month or year is
 overspent. Do not clamp it, and do not assume it is positive in templates.
