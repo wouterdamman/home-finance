@@ -2333,6 +2333,10 @@ paths:
                   description: Known scopes only (currently `kids:read`); duplicates are ignored.
                   items:
                     type: string
+                expiresAt:
+                  type: [string, "null"]
+                  format: date-time
+                  description: When the token stops working. Optional; omitted or null means one year from now. Must be between 1 hour and 2 years from now (one minute of slack at each end), otherwise 400.
               required: [name, scopes]
       responses:
         "201":
@@ -3057,7 +3061,7 @@ components:
 
   responses:
     IntegrationUnauthorized:
-      description: Missing, malformed, unknown or revoked bearer token (code `unauthorized`); sent with `WWW-Authenticate Bearer`.
+      description: Missing, malformed, unknown, expired or revoked bearer token (code `unauthorized`); sent with `WWW-Authenticate Bearer`.
       content:
         application/json:
           schema:
@@ -4277,9 +4281,13 @@ components:
         revokedAt:
           type: [string, "null"]
           format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: From this moment the token is rejected with 401, exactly like a revoked or unknown one.
         createdByEmail:
           type: [string, "null"]
-      required: [id, name, tokenPrefix, scopes, createdAt, lastUsedAt, revokedAt, createdByEmail]
+      required: [id, name, tokenPrefix, scopes, createdAt, lastUsedAt, revokedAt, expiresAt, createdByEmail]
 
     KidBalance:
       type: object

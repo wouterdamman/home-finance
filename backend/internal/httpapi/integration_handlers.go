@@ -57,17 +57,18 @@ type integrationTokenView struct {
 	CreatedAt      time.Time  `json:"createdAt"`
 	LastUsedAt     *time.Time `json:"lastUsedAt"`
 	RevokedAt      *time.Time `json:"revokedAt"`
+	ExpiresAt      time.Time  `json:"expiresAt"`
 	CreatedByEmail *string    `json:"createdByEmail"`
 }
 
 // The token hash is never selected.
 const integrationTokenSelect = `
-	SELECT t.id, t.name, t.token_prefix, t.scopes, t.created_at, t.last_used_at, t.revoked_at, u.email
+	SELECT t.id, t.name, t.token_prefix, t.scopes, t.created_at, t.last_used_at, t.revoked_at, t.expires_at, u.email
 	FROM integration_tokens t
 	LEFT JOIN users u ON u.id = t.created_by`
 
 func (v *integrationTokenView) scan(row pgx.Row) error {
-	return row.Scan(&v.ID, &v.Name, &v.TokenPrefix, &v.Scopes, &v.CreatedAt, &v.LastUsedAt, &v.RevokedAt, &v.CreatedByEmail)
+	return row.Scan(&v.ID, &v.Name, &v.TokenPrefix, &v.Scopes, &v.CreatedAt, &v.LastUsedAt, &v.RevokedAt, &v.ExpiresAt, &v.CreatedByEmail)
 }
 
 func (s *Server) handleListIntegrationTokens(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +98,8 @@ func (s *Server) handleCreateIntegrationToken(w http.ResponseWriter, r *http.Req
 	var body struct {
 		Name   string   `json:"name"`
 		Scopes []string `json:"scopes"`
+		// RFC 3339; omitted or null means the default of one year.
+		ExpiresAt *string `json:"expiresAt"`
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		badRequest(w, err)
@@ -123,6 +126,20 @@ func (s *Server) handleCreateIntegrationToken(w http.ResponseWriter, r *http.Req
 			scopes = append(scopes, sc)
 		}
 	}
+	now := time.Now()
+	expiresAt := auth.IntegrationTokenDefaultExpiry(now)
+	if body.ExpiresAt != nil {
+		parsed, err := time.Parse(time.RFC3339, *body.ExpiresAt)
+		if err != nil {
+			Error(w, http.StatusBadRequest, "bad_request", "expiresAt must be an RFC 3339 timestamp")
+			return
+		}
+		if !auth.ValidIntegrationTokenExpiry(parsed, now) {
+			Error(w, http.StatusBadRequest, "bad_request", "expiresAt must be between 1 hour and 2 years from now")
+			return
+		}
+		expiresAt = parsed
+	}
 	// Minting a long-lived credential is as sensitive as deleting a period.
 	if !s.requireFreshReauth(w, r) {
 		return
@@ -139,8 +156,8 @@ func (s *Server) handleCreateIntegrationToken(w http.ResponseWriter, r *http.Req
 	}
 	var id int64
 	if err := s.pool.QueryRow(r.Context(),
-		`INSERT INTO integration_tokens (name, token_hash, token_prefix, scopes, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		name, hash, prefix, scopes, createdBy).Scan(&id); err != nil {
+		`INSERT INTO integration_tokens (name, token_hash, token_prefix, scopes, created_by, expires_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		name, hash, prefix, scopes, createdBy, expiresAt).Scan(&id); err != nil {
 		dbError(w, "createIntegrationToken", err)
 		return
 	}
@@ -151,7 +168,7 @@ func (s *Server) handleCreateIntegrationToken(w http.ResponseWriter, r *http.Req
 	}
 	// Never log the raw token.
 	s.auditLog(r.Context(), "integration_token.create", "integration_token", id,
-		map[string]any{"name": name, "scopes": scopes, "prefix": prefix})
+		map[string]any{"name": name, "scopes": scopes, "prefix": prefix, "expiresAt": expiresAt.UTC().Format(time.RFC3339)})
 	JSON(w, http.StatusCreated, struct {
 		integrationTokenView
 		Token string `json:"token"`
