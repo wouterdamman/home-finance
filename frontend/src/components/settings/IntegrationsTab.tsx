@@ -78,7 +78,15 @@ function NewTokenModal({ opened, onClose }: { opened: boolean; onClose: () => vo
 
   const submit = () => {
     const expiry = resolveExpiry(expiryPreset, customExpiry)
-    if (!expiry) return
+    if (!expiry) {
+      // Only reachable from the reauth retry: a custom moment that was valid
+      // when the form was submitted can slip under now+1h while the popup is
+      // open. Bring the form back (it shows the range error) instead of
+      // leaving the reauth modal waiting with no feedback.
+      closeReauth()
+      notifications.show({ color: 'red', title: t('common.error'), message: t('settings.integrationsExpiryOutOfRange') })
+      return
+    }
     // name/scopes/expiry live in this component's state, which survives the
     // reauth round trip (the form is only hidden), so the retry re-sends them.
     create.mutate({ name: trimmed, scopes, expiresAt: expiry.toISOString() }, {
