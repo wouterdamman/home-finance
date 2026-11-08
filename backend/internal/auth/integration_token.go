@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,26 @@ const integrationTokenPrefix = "hf_"
 // with. pots:read, periods:read and years:read are planned but deliberately
 // not listed until the endpoints that honour them exist.
 var KnownIntegrationScopes = []string{"kids:read"}
+
+// Integration token lifetime: every token expires. The default applies when
+// the client sends no expiry; min/max bound a custom one. Keep the frontend's
+// presets (IntegrationsTab) inside these bounds.
+const (
+	IntegrationTokenMinTTL = time.Hour
+	// integrationTokenSlack tolerates client clock skew and request latency
+	// at both ends of the allowed range.
+	integrationTokenSlack = time.Minute
+)
+
+func IntegrationTokenDefaultExpiry(now time.Time) time.Time { return now.AddDate(1, 0, 0) }
+func IntegrationTokenMaxExpiry(now time.Time) time.Time     { return now.AddDate(2, 0, 0) }
+
+// ValidIntegrationTokenExpiry reports whether exp is within now+1h and
+// now+2y, give or take a minute of slack.
+func ValidIntegrationTokenExpiry(exp, now time.Time) bool {
+	return !exp.Before(now.Add(IntegrationTokenMinTTL-integrationTokenSlack)) &&
+		!exp.After(IntegrationTokenMaxExpiry(now).Add(integrationTokenSlack))
+}
 
 func ValidIntegrationScope(s string) bool {
 	return slices.Contains(KnownIntegrationScopes, s)
@@ -93,7 +114,7 @@ func RequireIntegrationToken(pool *pgxpool.Pool) func(http.Handler) http.Handler
 				SELECT id, name, scopes, token_hash,
 				       last_used_at IS NULL OR last_used_at < now() - interval '1 minute'
 				FROM integration_tokens
-				WHERE token_hash=$1 AND revoked_at IS NULL`, hash).
+				WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at > now()`, hash).
 				Scan(&tok.ID, &tok.Name, &tok.Scopes, &dbHash, &stale)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				// A DB outage is not a bad token: answering 401 would make an

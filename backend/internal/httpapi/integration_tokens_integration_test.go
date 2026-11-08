@@ -22,6 +22,7 @@ type tokenResp struct {
 	Scopes      []string `json:"scopes"`
 	LastUsedAt  *string  `json:"lastUsedAt"`
 	RevokedAt   *string  `json:"revokedAt"`
+	ExpiresAt   string   `json:"expiresAt"`
 	Token       string   `json:"token"`
 }
 
@@ -222,7 +223,7 @@ func TestIntegrationScopeAndRouting(t *testing.T) {
 	// future scope) has to be inserted directly.
 	raw := "hf_scopetest" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	var id int64
-	if err := pool.QueryRow(ctx, `INSERT INTO integration_tokens (name, token_hash, token_prefix, scopes) VALUES ('itest noscope', sha256(convert_to($1,'UTF8')), 'hf_scope', '{pots:read}') RETURNING id`, raw).Scan(&id); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO integration_tokens (name, token_hash, token_prefix, scopes, expires_at) VALUES ('itest noscope', sha256(convert_to($1,'UTF8')), 'hf_scope', '{pots:read}', now() + interval '1 day') RETURNING id`, raw).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM integration_tokens WHERE id=$1`, id) })
@@ -290,5 +291,95 @@ func TestIntegrationTokenAdmin(t *testing.T) {
 	}
 	if !strings.Contains(body, `"tokenPrefix":"`+tok.TokenPrefix+`"`) {
 		t.Error("list missing our token")
+	}
+}
+
+func TestIntegrationTokenExpiry(t *testing.T) {
+	srv, pool := newIntegrationServer(t)
+	c := newAPIClient(t, srv)
+	ctx := context.Background()
+
+	// Default: one year from now.
+	def := createTestToken(t, c, pool, "itest default expiry", []string{"kids:read"})
+	got, err := time.Parse(time.RFC3339, def.ExpiresAt)
+	if err != nil {
+		t.Fatalf("expiresAt %q: %v", def.ExpiresAt, err)
+	}
+	if d := time.Until(got) - 365*24*time.Hour; d < -48*time.Hour || d > 48*time.Hour {
+		t.Errorf("default expiry %v not about one year out", got)
+	}
+
+	// An explicit valid value round-trips, in the create response and the list.
+	want := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
+	resp := c.do(http.MethodPost, "/api/integration-tokens", map[string]any{
+		"name": "itest explicit expiry", "scopes": []string{"kids:read"}, "expiresAt": want.Format(time.RFC3339),
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("explicit expiry: want 201, got %d", resp.StatusCode)
+	}
+	var explicit tokenResp
+	c.decode(resp, &explicit)
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM integration_tokens WHERE id=$1`, explicit.ID)
+		pool.Exec(ctx, `DELETE FROM audit_log WHERE entity_type='integration_token' AND entity_id=$1`, explicit.ID)
+	})
+	if g, _ := time.Parse(time.RFC3339, explicit.ExpiresAt); !g.Equal(want) {
+		t.Errorf("create expiresAt = %q, want %v", explicit.ExpiresAt, want)
+	}
+	var stored time.Time
+	pool.QueryRow(ctx, `SELECT expires_at FROM integration_tokens WHERE id=$1`, explicit.ID).Scan(&stored)
+	if !stored.Equal(want) {
+		t.Errorf("stored expires_at = %v, want %v", stored, want)
+	}
+	var details string
+	pool.QueryRow(ctx, `SELECT details::text FROM audit_log WHERE action='integration_token.create' AND entity_id=$1`, explicit.ID).Scan(&details)
+	if !strings.Contains(details, `"expiresAt"`) {
+		t.Errorf("audit details lack expiresAt: %s", details)
+	}
+	lr := c.do(http.MethodGet, "/api/integration-tokens", nil)
+	var list []tokenResp
+	c.decode(lr, &list)
+	found := false
+	for _, tk := range list {
+		if tk.ID == explicit.ID {
+			found = true
+			if g, _ := time.Parse(time.RFC3339, tk.ExpiresAt); !g.Equal(want) {
+				t.Errorf("list expiresAt = %q, want %v", tk.ExpiresAt, want)
+			}
+		}
+	}
+	if !found {
+		t.Error("explicit token missing from list")
+	}
+
+	// Out of range or unparseable.
+	for name, v := range map[string]any{
+		"30 minutes":  time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339),
+		"in the past": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+		"3 years":     time.Now().AddDate(3, 0, 0).UTC().Format(time.RFC3339),
+		"garbage":     "next tuesday",
+		"empty":       "",
+	} {
+		r := c.do(http.MethodPost, "/api/integration-tokens", map[string]any{
+			"name": "itest bad expiry", "scopes": []string{"kids:read"}, "expiresAt": v,
+		})
+		r.Body.Close()
+		if r.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: want 400, got %d", name, r.StatusCode)
+		}
+	}
+
+	// An expired token is indistinguishable from an unknown one.
+	if r := bearerGet(t, srv.URL, http.MethodGet, "/api/integrations/v1/kids/balances", def.Token); r.StatusCode != http.StatusOK {
+		t.Fatalf("before expiry: want 200, got %d", r.StatusCode)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE integration_tokens SET expires_at = now() - interval '1 minute' WHERE id=$1`, def.ID); err != nil {
+		t.Fatal(err)
+	}
+	r := bearerGet(t, srv.URL, http.MethodGet, "/api/integrations/v1/kids/balances", def.Token)
+	b, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != http.StatusUnauthorized || !strings.Contains(string(b), `"code":"unauthorized"`) {
+		t.Errorf("expired token: want 401 unauthorized, got %d %s", r.StatusCode, b)
 	}
 }
