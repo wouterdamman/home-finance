@@ -135,6 +135,13 @@ func (s *Server) ensureDevUser(ctx context.Context) {
 	if err != nil {
 		slog.Warn("ensureDevUser", "err", err)
 	}
+	// OVERRIDING SYSTEM VALUE doesn't advance the identity sequence, so on a
+	// fresh database the next real OIDC login would be handed id 1 too and
+	// fail on users_pkey. Keep the sequence past every existing id.
+	if _, err := s.pool.Exec(ctx,
+		`SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT max(id) FROM users), 1))`); err != nil {
+		slog.Warn("ensureDevUser setval", "err", err)
+	}
 }
 
 func pathInt64(r *http.Request, key string) (int64, bool) {
