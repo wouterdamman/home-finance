@@ -72,72 +72,21 @@ GET  /api/openapi.yaml                                                          
 
 ## Integration API (bearer token)
 
-Read-only API for external tools such as Home Assistant. It is separate from the session-auth
-API above: no cookie and no CSRF header, and it never accepts a session.
-
-Admins create tokens in **Settings > Integrations**, choosing a name and scopes. Each token
-is shown once on creation and stored only as a SHA-256 hash, so it cannot be recovered later.
-Tokens look like `hf_...`. Creating and revoking a token are audit-logged.
-
-Every token expires. `POST /api/integration-tokens` takes an optional `expiresAt` (RFC 3339);
-omitted or `null` means one year from now. A custom value must be between 1 hour and 2 years
-from now (one minute of slack at each end), otherwise the request fails with `400 bad_request`.
-`expiresAt` is returned on every token in the list and create responses. An expired token is
-rejected with `401 unauthorized`, indistinguishable from a revoked or unknown one.
-
-Send the token as a bearer header:
+A separate, read-only API for external tools such as Home Assistant: no cookie, no CSRF header, and
+it never accepts a session. Admins create tokens (`hf_...`, shown once, always expiring) in
+**Settings > Integrations**; clients send them as `Authorization: Bearer hf_...`. Responses carry
+`Cache-Control: no-store`, and errors use the usual `{"error": {"code", "message"}}` body
+(`401 unauthorized`, `403 insufficient_scope`, `404 not_found`, `500 db_error`).
 
 ```
-Authorization: Bearer hf_...
+GET /api/integrations/v1/info                       (any valid token)
+GET /api/integrations/v1/kids                       (scope kids:read)  all kids + household totals
+GET /api/integrations/v1/kids/balances              (scope kids:read)  legacy summary, no slugs
+GET /api/integrations/v1/kids/:slug                 (scope kids:read)  one kid, full detail
+GET /api/integrations/v1/kids/:slug/ours            (scope kids:read)  sub-pot "door ons gespaard"
+GET /api/integrations/v1/kids/:slug/theirs          (scope kids:read)  sub-pot "eigen geld"
 ```
 
-```
-GET /api/integrations/v1/info               (any valid token)
-GET /api/integrations/v1/kids/balances      (scope kids:read)
-```
-
-`info` returns the token's name and scopes:
-
-```json
-{"apiVersion":1,"tokenName":"Home Assistant","scopes":["kids:read"]}
-```
-
-`kids/balances` returns each kid's savings in cents, split by who contributed. `generatedAt` is
-the server time the response was built:
-
-```json
-{
-  "kids": [{"name":"Sam","totalCents":125000,"oursCents":100000,"theirsCents":25000}],
-  "generatedAt": "2026-11-08T12:00:00Z"
-}
-```
-
-Responses carry `Cache-Control: no-store`. Errors use the usual `{"error": {"code", "message"}}`
-body:
-
-| Status | Code | Meaning |
-|---|---|---|
-| 401 | `unauthorized` | Token missing, invalid, expired, or revoked. Response includes `WWW-Authenticate: Bearer` |
-| 403 | `insufficient_scope` | Token is valid but lacks the scope the endpoint needs |
-| 500 | `db_error` | Server-side failure (e.g. database unreachable) — not a token problem, retry later |
-
-The only scope today is `kids:read`. Future datasets (pots, periods, years) will be added as new
-scopes under `/api/integrations/v1`.
-
-### Home Assistant example
-
-Add a `rest:` integration to `configuration.yaml`, with the token in `secrets.yaml`
-(`home_finance_auth: "Bearer hf_..."`):
-
-```yaml
-rest:
-  - resource: https://budget.app.example.com/api/integrations/v1/kids/balances
-    headers:
-      Authorization: !secret home_finance_auth   # "Bearer hf_..."
-    scan_interval: 900
-    sensor:
-      - name: "Savings <kid name>"
-        value_template: "{{ (value_json.kids | selectattr('name','eq','<kid name>') | first).totalCents / 100 }}"
-        unit_of_measurement: "EUR"
-        device_class: monetary
-```
+The only scope today is `kids:read`. Token setup and rotation, the full endpoint reference with
+example responses and field tables, concepts, a Home Assistant cookbook and troubleshooting live in
+**[INTEGRATIONS.md](INTEGRATIONS.md)**, which is the single source of truth for this API.
