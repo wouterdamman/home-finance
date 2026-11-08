@@ -643,9 +643,7 @@ declaring `rest:` twice (YAML would keep only one of two duplicate keys).
 
 `900` (15 minutes) is a good default. The data only changes when someone adds a ledger entry or
 a reported balance, which happens at most a few times a month, so polling faster just adds load
-without making anything fresher. Each authenticated request also touches the token's "last used"
-timestamp, which the server throttles to once a minute at most, so there is no benefit in
-polling more often than that. Raising it to `3600` is fine too. With one resource per kid the
+without making anything fresher. Raising it to `3600` is fine too. With one resource per kid the
 number of requests is simply the number of kids per interval.
 
 ### Lovelace
