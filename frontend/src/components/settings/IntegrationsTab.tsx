@@ -21,6 +21,10 @@ import { ListSkeleton, LoadErrorAlert } from './common'
 
 const NAME_MAX = 100
 const DATE_FORMAT = 'DD-MM-YYYY HH:mm'
+// Mantine caps a Badge at its cell's width and ellipsizes the label, so in a
+// seven-column table the scope/status badges shrank to "KIDS SAVINGS …".
+// Uncapped, they keep their natural width and the table scrolls instead.
+const fullBadge = { root: { maxWidth: 'none', overflow: 'visible' }, label: { overflow: 'visible' } }
 
 // Server bounds live in auth.IntegrationTokenMinTTL / IntegrationTokenMaxExpiry:
 // every preset and the custom range must stay inside 1 hour .. 2 years.
@@ -253,10 +257,10 @@ export default function IntegrationsTab() {
   const inactive = (tok: IntegrationToken) => !!tok.revokedAt || isExpired(tok)
 
   const statusBadge = (tok: IntegrationToken, size?: 'sm') => tok.revokedAt
-    ? <Badge color="gray" size={size}>{t('settings.integrationsRevoked')}</Badge>
+    ? <Badge color="gray" size={size} styles={fullBadge}>{t('settings.integrationsRevoked')}</Badge>
     : isExpired(tok)
-      ? <Badge color="orange" size={size}>{t('settings.integrationsExpired')}</Badge>
-      : <Badge color="teal" size={size}>{t('settings.integrationsActive')}</Badge>
+      ? <Badge color="orange" size={size} styles={fullBadge}>{t('settings.integrationsExpired')}</Badge>
+      : <Badge color="teal" size={size} styles={fullBadge}>{t('settings.integrationsActive')}</Badge>
 
   const lastUsed = (tok: IntegrationToken) =>
     tok.lastUsedAt ? dayjs(tok.lastUsedAt).format(DATE_FORMAT) : t('settings.integrationsNever')
@@ -287,8 +291,12 @@ export default function IntegrationsTab() {
               disabled={inactive(tok)}
               title={tok.name}
               subtitle={
+                // Two lines: on one line the expiry date was cut off at phone
+                // widths. MobileListRow truncates its subtitle as a whole, so
+                // each line truncates on its own.
                 <>
-                  {prefix(tok)} · {t('settings.integrationsLastUsed')}: {lastUsed(tok)} · {t('settings.integrationsExpires')}: {dayjs(tok.expiresAt).format(DATE_FORMAT)}
+                  <Text size="xs" c="dimmed" truncate>{prefix(tok)} · {t('settings.integrationsLastUsed')}: {lastUsed(tok)}</Text>
+                  <Text size="xs" c="dimmed" truncate>{t('settings.integrationsExpires')}: {dayjs(tok.expiresAt).format(DATE_FORMAT)}</Text>
                 </>
               }
               trailing={
@@ -306,7 +314,9 @@ export default function IntegrationsTab() {
         </MobileList>
       ) : (
         <Table.ScrollContainer minWidth={860}>
-          <Table>
+          {/* nowrap: seven columns otherwise squeeze the scope/status badges
+              into ellipses at common desktop widths; let it scroll instead. */}
+          <Table style={{ whiteSpace: 'nowrap' }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>{t('settings.integrationsName')}</Table.Th>
@@ -326,7 +336,7 @@ export default function IntegrationsTab() {
                   <Table.Td>{prefix(tok)}</Table.Td>
                   <Table.Td>
                     <Group gap={4}>
-                      {tok.scopes.map(s => <Badge key={s} variant="light" size="sm">{scopeLabel(s)}</Badge>)}
+                      {tok.scopes.map(s => <Badge key={s} variant="light" size="sm" styles={fullBadge}>{scopeLabel(s)}</Badge>)}
                     </Group>
                   </Table.Td>
                   <Table.Td style={{ whiteSpace: 'nowrap' }}>{dayjs(tok.createdAt).format(DATE_FORMAT)}</Table.Td>
