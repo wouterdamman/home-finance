@@ -10,6 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// The release image is distroless/static without zoneinfo; the integration
+	// API computes calendar months in Europe/Amsterdam.
+	_ "time/tzdata"
 
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
