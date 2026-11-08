@@ -16,7 +16,7 @@ export function useIntegrationTokens() {
 export function useCreateIntegrationToken() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; scopes: string[] }) =>
+    mutationFn: (body: { name: string; scopes: string[]; expiresAt?: string }) =>
       api.post<CreatedIntegrationToken>('/api/integration-tokens', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['integration-tokens'] }),
   })

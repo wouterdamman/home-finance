@@ -271,6 +271,7 @@ export interface IntegrationToken {
   createdAt: string
   lastUsedAt: string | null
   revokedAt: string | null
+  expiresAt: string
   createdByEmail: string | null
 }
 
