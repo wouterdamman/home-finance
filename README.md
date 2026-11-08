@@ -92,4 +92,5 @@ release process.
 
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — environment variables, Kubernetes/Helm, object storage, releasing
 - **[docs/API.md](docs/API.md)** — full REST API reference
+- **[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)** — read-only token API and Home Assistant cookbook
 - **[AGENTS.md](AGENTS.md)** — conventions and architecture notes, for humans and AI coding agents alike
