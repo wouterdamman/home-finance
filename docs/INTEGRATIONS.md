@@ -16,7 +16,8 @@ integration without reading the code. For the session-authenticated app API, see
 - [8. Security notes](#8-security-notes)
 - [9. Roadmap](#9-roadmap)
 
-Example data in this guide uses invented kids ("Sam", "Noor", "Mila"). Amounts are always
+Example data in this guide uses invented kids ("Sam", "Noor", "Mila") and invented savings pots
+("Vacation", "New car", "Buffer"). Amounts are always
 **integer cents**, dates are `YYYY-MM-DD`, timestamps are RFC 3339 in UTC.
 
 ## 1. Overview
@@ -26,10 +27,11 @@ The Integration API lives under `/api/integrations/v1`. It is:
 - **Read-only.** There are no write endpoints.
 - **Token-authenticated.** Every request carries `Authorization: Bearer hf_...`. It never accepts
   a session cookie and needs no CSRF header.
-- **Scoped.** Each token has one or more scopes. Today there is one: `kids:read`, which grants
-  access to all kids' savings data (there is no per-kid restriction).
+- **Scoped.** Each token has one or more scopes. Today there are two: `kids:read`, which grants
+  access to all kids' savings data, and `pots:read`, which grants access to the household's
+  savings pots (there is no per-kid or per-pot restriction).
 - **Privacy-minimal.** Responses contain no internal ids and no ledger descriptions (those are
-  free text). Kid names are included.
+  free text). Kid and pot names are included.
 - **Uncached.** Every response carries `Cache-Control: no-store`.
 
 **Versioning promise.** Within `/v1` only *additive* changes happen: new endpoints, new fields in
@@ -42,7 +44,10 @@ alongside it for a transition period.
 1. Sign in to the app as an **admin** and open **Settings > Integrations**.
 2. Give the token a recognisable **name** (for example `Home Assistant`). The name is shown in the
    token list and in the audit log.
-3. Tick the **scope(s)**. For everything in this guide that is `kids:read`.
+3. Tick the **scope(s)**: `kids:read` for the kids' savings, `pots:read` for the savings pots, or
+   both. For everything in this guide that is both. A token's scopes cannot be changed after
+   creation, so to add a scope to an existing integration, create a new token with the scopes you
+   need and rotate to it (see below).
 4. Choose the **expiry**. Every token expires: the default is **1 year**, the minimum is **1 hour**
    and the maximum is **2 years** (via the API's `expiresAt`, RFC 3339; one minute of slack at each
    end). An expiry outside that range is rejected with `400 bad_request`.
@@ -88,18 +93,21 @@ export BASE='https://budget.app.example.com/api/integrations/v1'
 ## 4. Endpoint reference
 
 ```
-/api/integrations/v1                      (Bearer token; scope kids:read on everything below)
+/api/integrations/v1                      (Bearer token)
 ├── GET /info                             token name + scopes (any valid token)
-└── /kids
-    ├── GET /kids                         all active kids (summary) + household totals
-    ├── GET /kids/balances                legacy summary without slugs (kept unchanged)
-    └── /kids/{slug}
-        ├── GET /kids/{slug}              one kid, full detail (both sub-pots + combined)
-        ├── GET /kids/{slug}/ours         sub-pot "door ons gespaard"
-        └── GET /kids/{slug}/theirs       sub-pot "eigen geld"
+├── /kids                                 scope kids:read
+│   ├── GET /kids                         all active kids (summary) + household totals
+│   ├── GET /kids/balances                legacy summary without slugs (kept unchanged)
+│   └── /kids/{slug}
+│       ├── GET /kids/{slug}              one kid, full detail (both sub-pots + combined)
+│       ├── GET /kids/{slug}/ours         sub-pot "door ons gespaard"
+│       └── GET /kids/{slug}/theirs       sub-pot "eigen geld"
+└── /pots                                 scope pots:read
+    ├── GET /pots                         all active pots (summary) + household totals
+    └── GET /pots/{slug}                  one pot, full detail
 ```
 
-`{slug}` is the kid's name slug, see [Slugs](#slugs). An unknown or archived slug returns
+`{slug}` is the kid's or pot's name slug, see [Slugs](#slugs). An unknown or archived slug returns
 `404 not_found`. Any other path under `/api/integrations/v1` also returns a JSON 404, and a
 wrong method returns a JSON 405.
 
@@ -115,7 +123,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/info"
 {
   "apiVersion": 1,
   "tokenName": "Home Assistant",
-  "scopes": ["kids:read"]
+  "scopes": ["kids:read", "pots:read"]
 }
 ```
 
@@ -123,7 +131,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/info"
 |---|---|---|---|
 | `apiVersion` | integer | Major version of this API. | `1` |
 | `tokenName` | string | The name given to the token in Settings. | `"Home Assistant"` |
-| `scopes` | string[] | Scopes the token holds. | `["kids:read"]` |
+| `scopes` | string[] | Scopes the token holds. | `["kids:read", "pots:read"]` |
 
 ### GET /kids
 
@@ -437,6 +445,278 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/kids/sam/theirs"
 These endpoints contain no `bank` object, because the reported balance belongs to the kid as a
 whole. Use `GET /kids/{slug}` for that.
 
+### GET /pots
+
+Scope: `pots:read`. All active savings pots (ordered as in the app) with their balances and
+savings goals, plus household totals. Use it for a household total and to discover slugs.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/pots"
+```
+
+```json
+{
+  "pots": [
+    {
+      "slug": "vacation",
+      "name": "Vacation",
+      "kind": "normal",
+      "balanceCents": 195000,
+      "targetCents": 300000,
+      "progressPercent": 65
+    },
+    {
+      "slug": "new-car",
+      "name": "New car",
+      "kind": "normal",
+      "balanceCents": 120000,
+      "targetCents": 400000,
+      "progressPercent": 30
+    },
+    {
+      "slug": "buffer",
+      "name": "Buffer",
+      "kind": "normal",
+      "balanceCents": 250000,
+      "targetCents": null,
+      "progressPercent": null
+    },
+    {
+      "slug": "carryover",
+      "name": "Carryover",
+      "kind": "carryover",
+      "balanceCents": 15000,
+      "targetCents": null,
+      "progressPercent": null
+    }
+  ],
+  "totals": {
+    "balanceCents": 580000,
+    "targetCents": 700000
+  },
+  "generatedAt": "2026-11-08T14:00:59Z"
+}
+```
+
+**Response**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `pots` | PotSummary[] | | Active pots, in app order. | |
+| `totals` | PotTotals | | Sum over all listed pots. | |
+| `generatedAt` | string | RFC 3339, UTC | When the server built the response. | `"2026-11-08T14:00:59Z"` |
+
+**PotSummary**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `slug` | string | | URL key for the per-pot endpoint. See [Slugs](#slugs). | `"vacation"` |
+| `name` | string | | Display name. | `"Vacation"` |
+| `kind` | string | | `"normal"` or `"carryover"`. See [The carryover pot](#the-carryover-pot). | `"normal"` |
+| `balanceCents` | integer | cents | Current balance (sum of every ledger entry of the pot). | `195000` |
+| `targetCents` | integer or `null` | cents | The savings goal; `null` when the pot has none. | `300000` |
+| `progressPercent` | number or `null` | percent | `balanceCents / targetCents * 100`, rounded to 1 decimal, **not capped** at 100. `null` when there is no target or it is zero or less. | `65` |
+
+**PotTotals**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `balanceCents` | integer | cents | Sum of every listed pot's `balanceCents`. | `580000` |
+| `targetCents` | integer | cents | Sum of `targetCents` over the pots that have a target (pots without one do not count). | `700000` |
+
+### GET /pots/{slug}
+
+Scope: `pots:read`. Everything about one pot: the balance broken down by entry type, this month
+and this year, the savings goal, the split percentage and the most recent entry. This is the
+endpoint to poll from Home Assistant.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/pots/vacation"
+```
+
+```json
+{
+  "slug": "vacation",
+  "name": "Vacation",
+  "kind": "normal",
+  "balanceCents": 195000,
+  "flows": {
+    "openingBalanceCents": 50000,
+    "allocationsCents": 180000,
+    "depositsCents": 20000,
+    "withdrawalsCents": 50000,
+    "carryoverOutCents": 0,
+    "adjustmentsCents": -5000,
+    "thisMonth": {
+      "allocationsCents": 0,
+      "depositsCents": 5000,
+      "withdrawalsCents": 0,
+      "carryoverOutCents": 0,
+      "adjustmentsCents": 0,
+      "netCents": 5000
+    },
+    "thisYear": {
+      "allocationsCents": 150000,
+      "depositsCents": 15000,
+      "withdrawalsCents": 50000,
+      "carryoverOutCents": 0,
+      "adjustmentsCents": -5000,
+      "netCents": 110000
+    }
+  },
+  "target": {
+    "targetCents": 300000,
+    "targetDate": "2027-06-01",
+    "remainingCents": 105000,
+    "progressPercent": 65,
+    "reached": false,
+    "monthsLeft": 7,
+    "neededPerMonthCents": 15000
+  },
+  "split": {
+    "percentage": 25,
+    "periodYear": 2026,
+    "periodMonth": 11,
+    "periodStatus": "open"
+  },
+  "lastEntry": {
+    "date": "2026-11-02",
+    "type": "deposit",
+    "amountCents": 5000
+  },
+  "generatedAt": "2026-11-08T14:00:59Z"
+}
+```
+
+Key order in a real response may differ (JSON objects are unordered); do not depend on it.
+
+**PotDetail**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `slug` | string | | The slug you requested. | `"vacation"` |
+| `name` | string | | Display name. | `"Vacation"` |
+| `kind` | string | | `"normal"` or `"carryover"`. | `"normal"` |
+| `balanceCents` | integer | cents | Current balance: the sum of every ledger entry of the pot. | `195000` |
+| `flows` | PotFlows | | The balance broken down by entry type, plus this month and this year. | |
+| `target` | Target or `null` | | The savings goal; `null` when the pot has no target. | |
+| `split` | Split or `null` | | The pot's share of the monthly surplus; `null` when the pot has never had a split. | |
+| `lastEntry` | LastEntry or `null` | | The most recent ledger entry; `null` when the pot has no entries. | |
+| `generatedAt` | string | RFC 3339, UTC | When the server built the response. | `"2026-11-08T14:00:59Z"` |
+
+**PotFlows**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `openingBalanceCents` | integer | cents | Sum of `opening_balance` entries. | `50000` |
+| `allocationsCents` | integer | cents | Sum of allocations generated by month closes (positive). | `180000` |
+| `depositsCents` | integer | cents | Sum of manual deposits (positive). | `20000` |
+| `withdrawalsCents` | integer | cents | Sum of withdrawals as a **positive magnitude**. | `50000` |
+| `carryoverOutCents` | integer | cents | Sum of `carryover_out` entries as a **positive magnitude**. Only ever non-zero for the carryover pot. | `0` |
+| `adjustmentsCents` | integer | cents | Sum of adjustments. **Signed** (a correction can be negative). | `-5000` |
+| `thisMonth` | PotPeriod | | Entries belonging to the current calendar month (Europe/Amsterdam). See [Period bucketing](#period-bucketing-for-pots). | |
+| `thisYear` | PotPeriod | | Entries belonging to the current calendar year (Europe/Amsterdam). | |
+
+Invariant: `openingBalanceCents + allocationsCents + depositsCents - withdrawalsCents - carryoverOutCents + adjustmentsCents == balanceCents`.
+
+**PotPeriod**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `allocationsCents` | integer | cents | Allocations in the period (positive). | `0` |
+| `depositsCents` | integer | cents | Deposits in the period (positive). | `5000` |
+| `withdrawalsCents` | integer | cents | Withdrawals in the period, as a **positive magnitude**. | `0` |
+| `carryoverOutCents` | integer | cents | Carryover-out in the period, as a **positive magnitude**. | `0` |
+| `adjustmentsCents` | integer | cents | Adjustments in the period (signed). | `0` |
+| `netCents` | integer | cents | `allocationsCents + depositsCents - withdrawalsCents - carryoverOutCents + adjustmentsCents`. Can be negative. | `5000` |
+
+The opening balance is never part of a period.
+
+**Target**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `targetCents` | integer | cents | The savings goal. | `300000` |
+| `targetDate` | string or `null` | `YYYY-MM-DD` | The date the goal should be reached by; `null` when the goal has no date. | `"2027-06-01"` |
+| `remainingCents` | integer | cents | `max(targetCents - balanceCents, 0)`. | `105000` |
+| `progressPercent` | number or `null` | percent | As on PotSummary: 1 decimal, **not capped** (a pot at 120% of its goal shows `120`). `null` when `targetCents` is zero or less. | `65` |
+| `reached` | boolean | | `balanceCents >= targetCents`. | `false` |
+| `monthsLeft` | integer or `null` | months | Whole calendar months from the current month (Europe/Amsterdam) to the month of `targetDate`, never below 0. `null` without a date. | `7` |
+| `neededPerMonthCents` | integer or `null` | cents | What must be saved per month to make it: `ceil(remainingCents / max(monthsLeft, 1))`, and `0` when `reached`. `null` without a date. | `15000` |
+
+**Split**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `percentage` | number | percent | The share of the monthly surplus this pot receives in the reference period. | `25` |
+| `periodYear` | integer | | Year of the reference period. | `2026` |
+| `periodMonth` | integer | | Month (1-12) of the reference period. | `11` |
+| `periodStatus` | string | | `"open"` or `"closed"`. | `"open"` |
+
+Which period is used is explained under [Split reference period](#split-reference-period).
+
+**LastEntry**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `date` | string | `YYYY-MM-DD` | The entry date. Latest by date, then by creation order. | `"2026-11-02"` |
+| `type` | string | | `opening_balance`, `allocation`, `deposit`, `withdrawal`, `carryover_out` or `adjustment`. | `"deposit"` |
+| `amountCents` | integer | cents | **Signed** ledger amount: withdrawals and carryover-out are negative here (e.g. `-45000`), unlike the positive `withdrawalsCents` and `carryoverOutCents` magnitudes elsewhere. | `5000` |
+
+There is deliberately no description and no id.
+
+The carryover pot has the same shape. This is what a closed October looks like on it (the
+surplus share arrived as an allocation and the carryover into November left again):
+
+```json
+{
+  "slug": "carryover",
+  "name": "Carryover",
+  "kind": "carryover",
+  "balanceCents": 15000,
+  "flows": {
+    "openingBalanceCents": 0,
+    "allocationsCents": 60000,
+    "depositsCents": 0,
+    "withdrawalsCents": 0,
+    "carryoverOutCents": 45000,
+    "adjustmentsCents": 0,
+    "thisMonth": {
+      "allocationsCents": 0,
+      "depositsCents": 0,
+      "withdrawalsCents": 0,
+      "carryoverOutCents": 0,
+      "adjustmentsCents": 0,
+      "netCents": 0
+    },
+    "thisYear": {
+      "allocationsCents": 60000,
+      "depositsCents": 0,
+      "withdrawalsCents": 0,
+      "carryoverOutCents": 45000,
+      "adjustmentsCents": 0,
+      "netCents": 15000
+    }
+  },
+  "target": null,
+  "split": {
+    "percentage": 15,
+    "periodYear": 2026,
+    "periodMonth": 11,
+    "periodStatus": "open"
+  },
+  "lastEntry": {
+    "date": "2026-11-03",
+    "type": "carryover_out",
+    "amountCents": -45000
+  },
+  "generatedAt": "2026-11-08T14:00:59Z"
+}
+```
+
+Note that `thisMonth` is all zeros although the last entry is dated in November: that entry
+belongs to the October period (see [Period bucketing](#period-bucketing-for-pots)).
+
 ## 5. Concepts
 
 ### Two sub-pots per kid
@@ -476,9 +756,64 @@ is excluded**, so periods only describe real movement. They roll over at local m
 minus the balance reported from the bank. Zero means ledger and bank agree. It is `null` (not
 `0`) when no reported balance has been recorded, so treat `null` as "unknown".
 
+### Pot flows and the invariant
+
+For every pot:
+
+```
+openingBalanceCents + allocationsCents + depositsCents - withdrawalsCents - carryoverOutCents + adjustmentsCents == balanceCents
+```
+
+`withdrawalsCents` and `carryoverOutCents` are reported as **positive magnitudes** and are
+subtracted; adjustments are signed and added. The one place they show up negative is
+`lastEntry.amountCents`, the raw signed ledger amount. In `GET /pots`, the household
+`totals.balanceCents` is the sum of the listed pots' balances.
+
+### Period bucketing for pots
+
+`thisMonth` and `thisYear` for pots are bucketed differently from kids. A kid's entries are
+matched on their **entry date** only. A pot's ledger row that belongs to a **month period** counts
+in that period's year and month; only a row without a period (a manual deposit or withdrawal)
+falls back to its entry date. The practical effect: the allocation generated by closing October
+counts in **October**, even when the close happens on 3 November (and the row's entry date is in
+November). So in the first days of a month `thisMonth.allocationsCents` is typically `0`, and an
+allocation shows up in the month it was *earned*, not the month it was booked. "This month" and
+"this year" are the current Europe/Amsterdam calendar month and year, and the opening balance is
+excluded. This is the same convention as the app's Trends page.
+
+### Target maths
+
+For a pot with a target:
+
+- `remainingCents = max(targetCents - balanceCents, 0)`; `reached` is `balanceCents >= targetCents`.
+- `progressPercent` is not capped, so an over-achieved goal reads above 100. It is `null` when
+  the target is zero or less.
+- `monthsLeft` counts calendar months from the **current Amsterdam month** to the month of
+  `targetDate` (in November 2026, a goal dated `2027-06-01` has 7 months left). It is `0` in the
+  target month and for any date in the past, and `null` without a date.
+- `neededPerMonthCents = ceil(remainingCents / max(monthsLeft, 1))`: in the target month or past
+  it, the whole remainder is "needed this month". It is `0` once `reached`, and `null` without
+  a date.
+
+### Split reference period
+
+`split.percentage` is the pot's share of the monthly surplus. It is stored per month period, so
+the API has to choose one: the **latest open period** if the pot has a split there, otherwise the
+**latest period** (open or closed) in which the pot has a split. `periodYear`, `periodMonth` and
+`periodStatus` tell you which one was used. `split` is `null` when the pot has never had a split
+in any period.
+
+### The carryover pot
+
+At most one active pot has `kind` `carryover`. It receives its share of the surplus like any other
+pot, but closing a month moves that money on as income of the next month, which is booked as a
+`carryover_out` entry. That is why `carryoverOutCents` is only non-zero for this pot, and why its
+balance is usually small. Its split percentage is not user-editable: it is always the remainder
+after the other pots' percentages.
+
 ### Slugs
 
-The `{slug}` in a kid's URL is derived from the kid's name:
+The `{slug}` in a kid's or pot's URL is derived from the name:
 
 - lowercased, diacritics folded (`Zoë` becomes `zoe`, `ß` becomes `ss`, `ø` becomes `o`);
 - every run of characters outside `a-z0-9` becomes a single `-`, leading and trailing dashes are
@@ -486,16 +821,19 @@ The `{slug}` in a kid's URL is derived from the kid's name:
 - **collisions:** names are not unique. If two or more active kids produce the same slug, every
   one of them gets `<slug>-<id>` (for example `sam-12` and `sam-31`). The suffix is the kid's
   internal id, so it is stable;
-- the slug `balances` is reserved (it is a static route), so a kid named "Balances" gets
-  `balances-<id>`;
-- a name with no letters or digits at all gets `kid-<id>`.
+- the slug `balances` is reserved for kids (it is a static route), so a kid named "Balances" gets
+  `balances-<id>`; pots have no reserved slugs;
+- a name with no letters or digits at all gets `kid-<id>` (or `pot-<id>` for a pot).
+
+Kid slugs and pot slugs are independent: a kid and a pot may share a slug, because they live
+under different paths.
 
 A slug is only valid if it matches `^[a-z0-9-]{1,64}$`; anything else is a 404.
 
 **A rename changes the slug.** Renaming "Sam" to "Samuel" turns `/kids/sam` into a 404 and
-`/kids/samuel` starts working. Adding a second kid with the same name also changes both slugs to
-the suffixed form. **Archiving a kid removes the slug (404).** Integrations should therefore
-discover slugs from `GET /kids` rather than hard-coding them if renames are likely, and treat a
+`/kids/samuel` starts working (the same holds for pots). Adding a second kid with the same name also changes both slugs to
+the suffixed form. **Archiving a kid or pot removes the slug (404).** Integrations should therefore
+discover slugs from `GET /kids` or `GET /pots` rather than hard-coding them if renames are likely, and treat a
 sudden 404 as "renamed or archived".
 
 ## 6. Home Assistant cookbook
@@ -616,6 +954,86 @@ Notes:
 - If the slug changes (rename) the resource starts returning 404 and all of that kid's sensors
   become `unavailable`; update the URL.
 
+### One pot: one poll, many sensors
+
+Same pattern for a savings pot, on `/pots/<slug>`. This is the "Vacation" pot; repeat the whole
+resource for each pot with its own slug, names and `unique_id`s. Add it to the same `rest:` list
+as the kids (and use a token with `pots:read`).
+
+```yaml
+rest:
+  - resource: https://budget.app.example.com/api/integrations/v1/pots/vacation
+    headers:
+      Authorization: !secret home_finance_auth
+      Accept: application/json
+    scan_interval: 900
+    timeout: 20
+    sensor:
+      - name: "Vacation balance"
+        unique_id: home_finance_pot_vacation_balance
+        value_template: "{{ ((value_json.balanceCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      # A percentage, not money: no device_class. Unavailable for a pot without a target.
+      - name: "Vacation progress"
+        unique_id: home_finance_pot_vacation_progress
+        availability: "{{ value_json.target is mapping and value_json.target.progressPercent is number }}"
+        value_template: "{{ value_json.target.progressPercent | float(0) }}"
+        unit_of_measurement: "%"
+
+      - name: "Vacation remaining"
+        unique_id: home_finance_pot_vacation_remaining
+        availability: "{{ value_json.target is mapping }}"
+        value_template: "{{ ((value_json.target.remainingCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      # neededPerMonthCents is null for a goal without a date, so unavailable (not 0) then.
+      - name: "Vacation needed per month"
+        unique_id: home_finance_pot_vacation_needed_per_month
+        availability: "{{ value_json.target is mapping and value_json.target.neededPerMonthCents is number }}"
+        value_template: "{{ ((value_json.target.neededPerMonthCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      - name: "Vacation allocated this month"
+        unique_id: home_finance_pot_vacation_allocated_month
+        value_template: "{{ ((value_json.flows.thisMonth.allocationsCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      # split is null for a pot that never had a split.
+      - name: "Vacation split"
+        unique_id: home_finance_pot_vacation_split
+        availability: "{{ value_json.split is mapping }}"
+        value_template: "{{ value_json.split.percentage | float(0) }}"
+        unit_of_measurement: "%"
+
+    binary_sensor:
+      - name: "Vacation goal reached"
+        unique_id: home_finance_pot_vacation_goal_reached
+        availability: "{{ value_json.target is mapping }}"
+        value_template: "{{ value_json.target.reached }}"
+```
+
+Notes:
+
+- The same conventions as the kids sensors apply (`float(0)`, `unique_id`, `monetary` with
+  `state_class: total`).
+- `progressPercent` is a percentage and can exceed 100, so it has the unit `%` and **no**
+  `device_class`; `availability` hides it for a pot without a target.
+- "Allocated this month" is usually `0` until the month is closed, and the allocation then counts
+  for the month it was earned (see [Period bucketing](#period-bucketing-for-pots)).
+- Entity IDs: `sensor.vacation_balance`, `sensor.vacation_progress`, `sensor.vacation_remaining`,
+  `sensor.vacation_needed_per_month`, `sensor.vacation_allocated_this_month`,
+  `sensor.vacation_split`, `binary_sensor.vacation_goal_reached`.
+- A renamed or archived pot makes the resource return 404 and its sensors `unavailable`.
+
 ### Household total
 
 A separate resource for the household total from `GET /kids`:
@@ -636,15 +1054,33 @@ rest:
         state_class: total
 ```
 
-`rest:` is a list; put this entry in the same list as the per-kid resources rather than
-declaring `rest:` twice (YAML would keep only one of two duplicate keys).
+And the household total of all pots from `GET /pots`:
+
+```yaml
+rest:
+  - resource: https://budget.app.example.com/api/integrations/v1/pots
+    headers:
+      Authorization: !secret home_finance_auth
+      Accept: application/json
+    scan_interval: 900
+    sensor:
+      - name: "Savings pots total"
+        unique_id: home_finance_pots_total
+        value_template: "{{ ((value_json.totals.balanceCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+```
+
+`rest:` is a list; put these entries in the same list as the per-kid and per-pot resources rather
+than declaring `rest:` twice (YAML would keep only one of two duplicate keys).
 
 ### Choosing scan_interval
 
 `900` (15 minutes) is a good default. The data only changes when someone adds a ledger entry or
 a reported balance, which happens at most a few times a month, so polling faster just adds load
-without making anything fresher. Raising it to `3600` is fine too. With one resource per kid the
-number of requests is simply the number of kids per interval.
+without making anything fresher. Raising it to `3600` is fine too. With one resource per kid
+or pot the number of requests is simply the number of resources per interval.
 
 ### Lovelace
 
@@ -670,6 +1106,22 @@ entities:
     name: Last entry
 ```
 
+A gauge card for the progress towards a savings goal (percent, so 0 to 100; a pot over its goal
+simply pins the needle at the end):
+
+```yaml
+type: gauge
+entity: sensor.vacation_progress
+name: Vacation
+min: 0
+max: 100
+needle: true
+severity:
+  red: 0
+  yellow: 40
+  green: 80
+```
+
 Or a grid of tiles for a dashboard overview:
 
 ```yaml
@@ -688,6 +1140,13 @@ cards:
     entity: sensor.noor_savings_total
     name: Noor
     icon: mdi:piggy-bank
+  - type: tile
+    entity: sensor.savings_pots_total
+    name: All pots
+  - type: tile
+    entity: sensor.vacation_balance
+    name: Vacation
+    icon: mdi:beach
 ```
 
 ### Automations
@@ -739,7 +1198,27 @@ automation:
             Total is now {{ states('sensor.sam_savings_total') }} EUR.
 ```
 
-Both `automation:` blocks can live in one list in `automations.yaml`. A 15-minute poll means
+Notify when a savings goal is reached, using a template trigger on the binary sensor defined
+above (it turns `on` when `target.reached` becomes true):
+
+```yaml
+automation:
+  - alias: "Vacation goal reached"
+    triggers:
+      - trigger: template
+        value_template: "{{ is_state('binary_sensor.vacation_goal_reached', 'on') }}"
+    actions:
+      - action: notify.notify
+        data:
+          title: "Savings goal reached"
+          message: >-
+            The Vacation pot reached its goal. Balance is now {{ states('sensor.vacation_balance') }} EUR.
+```
+
+A template trigger fires on the change from false to true, so it does not repeat while the pot
+stays above its goal, and `unavailable` never counts as `on`.
+
+All `automation:` blocks can live in one list in `automations.yaml`. A 15-minute poll means
 notifications arrive up to 15 minutes after the entry is made.
 
 ## 7. Errors and troubleshooting
@@ -749,8 +1228,8 @@ Errors use the usual body `{"error": {"code": "...", "message": "..."}}`.
 | Status | Code | Cause | What to do |
 |---|---|---|---|
 | 401 | `unauthorized` | Header missing, not `Bearer <token>`, token unknown, **revoked** or **expired**. All look identical on purpose. The response carries `WWW-Authenticate: Bearer`. | Check the header and the secret; look at the token's status and expiry in Settings > Integrations; rotate if needed. |
-| 403 | `insufficient_scope` | The token is valid but lacks the endpoint's scope (`kids:read`). | Create a token with the scope. |
-| 404 | `not_found` | Unknown path, or `{slug}` unknown, malformed or belonging to an **archived** kid; often a renamed kid. | List slugs with `GET /kids`; update the URL. |
+| 403 | `insufficient_scope` | The token is valid but lacks the endpoint's scope (`kids:read` for `/kids...`, `pots:read` for `/pots...`). | Create a new token with the scope (scopes cannot be added to an existing token). |
+| 404 | `not_found` | Unknown path, or `{slug}` unknown, malformed or belonging to an **archived** kid or pot; often a renamed one. | List slugs with `GET /kids` or `GET /pots`; update the URL. |
 | 405 | `method_not_allowed` | Not a GET. | The API is read-only. |
 | 500 | `db_error` | Server-side failure such as an unreachable database. Not a token problem, and deliberately not a 401 so an integration does not think its token was revoked. | Retry later; check the app's logs. |
 
@@ -762,11 +1241,13 @@ Every response, including errors, has `Cache-Control: no-store`.
 # 1. Is the token valid? Expect 200 and your token name.
 curl -si -H "Authorization: Bearer $TOKEN" "$BASE/info"
 
-# 2. Does it have the scope? Expect 200 (403 means no kids:read).
+# 2. Does it have the scope? Expect 200 (403 means no kids:read / pots:read).
 curl -si -H "Authorization: Bearer $TOKEN" "$BASE/kids"
+curl -si -H "Authorization: Bearer $TOKEN" "$BASE/pots"
 
 # 3. Which slugs exist?
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/kids" | jq -r '.kids[].slug'
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/pots" | jq -r '.pots[].slug'
 ```
 
 A `401` with `WWW-Authenticate: Bearer` on step 1 means the token itself is wrong, revoked or
@@ -791,7 +1272,7 @@ resource returned an error body instead of the expected JSON.
 - **Revocation is immediate.** Revoke from Settings > Integrations; the next request fails with 401.
 - **Audit log.** Creating and revoking a token is recorded in the audit log. Creating one also
   needs a fresh step-up reauthentication.
-- **Read-only.** A leaked `kids:read` token can read kids' balances and names; it cannot change
+- **Read-only.** A leaked token can read kids' balances and names (`kids:read`) or pot balances, goals and names (`pots:read`); it cannot change
   anything, cannot reach the session API and cannot read ledger descriptions.
 - **Transport.** Use HTTPS for anything outside the cluster.
 
@@ -800,10 +1281,10 @@ resource returned an error body instead of the expected JSON.
 Planned, not yet available (they are deliberately not accepted as scopes until their endpoints
 exist):
 
-- Scopes `pots:read`, `periods:read` and `years:read`, for savings pots, monthly overviews and
-  yearly summaries, under the same `/api/integrations/v1` prefix.
+- Scopes `periods:read` and `years:read`, for monthly overviews and yearly summaries, under the
+  same `/api/integrations/v1` prefix. (Savings pots, `pots:read`, are done.)
 - A Home Assistant custom integration (HACS) with a config flow: enter the base URL and token,
-  validate it against `GET /info`, then create the kid sensors automatically from `GET /kids`.
+  validate it against `GET /info`, then create the kid and pot sensors automatically from `GET /kids` and `GET /pots`.
   Until then, the `rest:` cookbook above is the supported way.
 
 All of this arrives additively within `/v1`, per the versioning promise.

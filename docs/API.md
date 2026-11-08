@@ -64,7 +64,7 @@ POST /api/import/xlsx          (multipart: file, year, wipe, resetMaster, closeT
 
 GET  /api/audit-log?limit=&before=&action=&entityType=&userEmail=&from=&to=     (admin)
 GET  /api/integration-tokens                                                     (admin)
-POST /api/integration-tokens   (body: {"name","scopes":["kids:read"],"expiresAt"?})  (admin, reauth)
+POST /api/integration-tokens   (body: {"name","scopes":["kids:read","pots:read"],"expiresAt"?})  (admin, reauth)
 DEL  /api/integration-tokens/:id                                                 (admin)
 GET  /api/docs                                                                   (admin)
 GET  /api/openapi.yaml                                                           (admin)
@@ -85,8 +85,10 @@ GET /api/integrations/v1/kids/balances              (scope kids:read)  legacy su
 GET /api/integrations/v1/kids/:slug                 (scope kids:read)  one kid, full detail
 GET /api/integrations/v1/kids/:slug/ours            (scope kids:read)  sub-pot "door ons gespaard"
 GET /api/integrations/v1/kids/:slug/theirs          (scope kids:read)  sub-pot "eigen geld"
+GET /api/integrations/v1/pots                       (scope pots:read)  all savings pots + household totals
+GET /api/integrations/v1/pots/:slug                 (scope pots:read)  one pot, full detail
 ```
 
-The only scope today is `kids:read`. Token setup and rotation, the full endpoint reference with
+The scopes today are `kids:read` and `pots:read`. Token setup and rotation, the full endpoint reference with
 example responses and field tables, concepts, a Home Assistant cookbook and troubleshooting live in
 **[INTEGRATIONS.md](INTEGRATIONS.md)**, which is the single source of truth for this API.

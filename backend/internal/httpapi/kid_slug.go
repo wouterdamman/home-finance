@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -71,32 +72,39 @@ type slugInput struct {
 // "balances-<id>", and every kid in a group of colliding slugs gets
 // "<slug>-<id>". Result is keyed by kid id.
 func assignKidSlugs(kids []slugInput) map[int64]string {
-	base := make(map[int64]string, len(kids))
+	return assignSlugs(kids, []string{reservedKidSlug}, "kid")
+}
+
+// assignSlugs is the shared slug assignment: items whose slug is empty or
+// reserved get "<slug>-<id>" ("<emptyPrefix>-<id>" when empty), and every
+// item in a group of colliding slugs gets "<slug>-<id>". Result is keyed by id.
+func assignSlugs(items []slugInput, reserved []string, emptyPrefix string) map[int64]string {
+	base := make(map[int64]string, len(items))
 	count := map[string]int{}
-	for _, k := range kids {
+	for _, k := range items {
 		s := slugify(k.Name)
-		if s == "" || s == reservedKidSlug {
-			s = suffixSlug(s, k.ID, "kid")
+		if s == "" || slices.Contains(reserved, s) {
+			s = suffixSlug(s, k.ID, emptyPrefix)
 		} else {
 			count[s]++
 		}
 		base[k.ID] = s
 	}
-	out := make(map[int64]string, len(kids))
+	out := make(map[int64]string, len(items))
 	final := map[string]int{}
-	for _, k := range kids {
+	for _, k := range items {
 		s := base[k.ID]
 		if count[s] > 1 {
-			s = suffixSlug(s, k.ID, "kid")
+			s = suffixSlug(s, k.ID, emptyPrefix)
 		}
 		out[k.ID] = s
 		final[s]++
 	}
-	// Pathological: a suffixed slug equals another kid's slug (e.g. a kid
-	// literally named "Anna 7"). Fall back to the always-unique kid-<id>.
-	for _, k := range kids {
+	// Pathological: a suffixed slug equals another item's slug (e.g. a name
+	// literally "Anna 7"). Fall back to the always-unique <emptyPrefix>-<id>.
+	for _, k := range items {
 		if final[out[k.ID]] > 1 {
-			out[k.ID] = "kid-" + strconv.FormatInt(k.ID, 10)
+			out[k.ID] = emptyPrefix + "-" + strconv.FormatInt(k.ID, 10)
 		}
 	}
 	return out

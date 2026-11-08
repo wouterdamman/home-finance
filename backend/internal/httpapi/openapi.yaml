@@ -2430,6 +2430,93 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/integrations/v1/pots:
+    get:
+      operationId: getIntegrationPots
+      tags: [Integrations]
+      summary: Lists active savings pots with balance, goal progress and household totals. Bearer token with scope `pots:read`. Exposes no ids.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Pots and household totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pots:
+                    type: array
+                    description: Non-archived pots, ordered by sort order then id.
+                    items:
+                      $ref: "#/components/schemas/PotSummary"
+                  totals:
+                    type: object
+                    description: Sum over all listed pots.
+                    properties:
+                      balanceCents:
+                        type: integer
+                        format: int64
+                        description: Sum of all pot balances, in cents.
+                      targetCents:
+                        type: integer
+                        format: int64
+                        description: Sum of the targets of the pots that have one, in cents.
+                    required: [balanceCents, targetCents]
+                  generatedAt:
+                    type: string
+                    format: date-time
+                    description: Response time, RFC 3339 UTC.
+                required: [pots, totals, generatedAt]
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `pots:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/pots/{slug}:
+    get:
+      operationId: getIntegrationPot
+      tags: [Integrations]
+      summary: One savings pot in full detail (flows, this month/year, savings goal, split, last entry). Bearer token with scope `pots:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Pot slug as returned by `GET /pots` (`^[a-z0-9-]{1,64}$`). Derived from the name; changes when the pot is renamed.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pot detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PotDetail"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `pots:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: no active pot has this slug (unknown, renamed or archived), or the slug is malformed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/integration-tokens:
     get:
       operationId: listIntegrationTokens
@@ -2469,7 +2556,7 @@ paths:
                 scopes:
                   type: array
                   minItems: 1
-                  description: Known scopes only (currently `kids:read`); duplicates are ignored.
+                  description: Known scopes only (currently `kids:read` and `pots:read`); duplicates are ignored.
                   items:
                     type: string
                 expiresAt:
@@ -3296,6 +3383,203 @@ components:
           format: int64
           description: Balance of the "eigen geld" sub-pot (owner `theirs`), in cents.
       required: [slug, name, totalCents, oursCents, theirsCents]
+
+    PotSummary:
+      type: object
+      description: One pot in `GET /integrations/v1/pots`. No internal id is exposed.
+      properties:
+        slug:
+          type: string
+          description: "URL key: lowercase ASCII name with diacritics folded and other runs replaced by `-`, max 64 chars. Colliding names get `<slug>-<id>`; names without any letters or digits get `pot-<id>`. Changes when the pot is renamed."
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [normal, carryover]
+          description: The carryover pot receives the unallocated surplus and is emptied into the next month by a month close.
+        balanceCents:
+          type: integer
+          format: int64
+          description: Ledger balance in cents (sum of all ledger entries).
+        targetCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: Savings goal in cents; null when the pot has none.
+        progressPercent:
+          type: number
+          nullable: true
+          description: balance / target * 100, one decimal, not capped at 100. Null when there is no target or the target is zero or less.
+      required: [slug, name, kind, balanceCents, targetCents, progressPercent]
+
+    PotPeriod:
+      type: object
+      description: Flows of one calendar month or year (Europe/Amsterdam). A ledger row belongs to its period's year/month when it has a period, otherwise to its entry date - the same convention as the trends pot balances. The opening balance is excluded.
+      properties:
+        allocationsCents:
+          type: integer
+          format: int64
+          description: Allocations from month closes (positive), in cents.
+        depositsCents:
+          type: integer
+          format: int64
+          description: Deposits (positive), in cents.
+        withdrawalsCents:
+          type: integer
+          format: int64
+          description: Withdrawals as a positive magnitude, in cents.
+        carryoverOutCents:
+          type: integer
+          format: int64
+          description: Carryover-out entries (carryover pot only) as a positive magnitude, in cents.
+        adjustmentsCents:
+          type: integer
+          format: int64
+          description: Adjustments, signed, in cents.
+        netCents:
+          type: integer
+          format: int64
+          description: allocations + deposits - withdrawals - carryoverOut + adjustments, in cents.
+      required: [allocationsCents, depositsCents, withdrawalsCents, carryoverOutCents, adjustmentsCents, netCents]
+
+    PotFlows:
+      type: object
+      description: "Lifetime flows. Invariant: openingBalanceCents + allocationsCents + depositsCents - withdrawalsCents - carryoverOutCents + adjustmentsCents == balanceCents."
+      properties:
+        openingBalanceCents:
+          type: integer
+          format: int64
+          description: Opening-balance entries, in cents.
+        allocationsCents:
+          type: integer
+          format: int64
+          description: Allocations from month closes (positive), in cents.
+        depositsCents:
+          type: integer
+          format: int64
+          description: Deposits (positive), in cents.
+        withdrawalsCents:
+          type: integer
+          format: int64
+          description: Withdrawals as a positive magnitude, in cents.
+        carryoverOutCents:
+          type: integer
+          format: int64
+          description: Carryover-out entries (carryover pot only) as a positive magnitude, in cents.
+        adjustmentsCents:
+          type: integer
+          format: int64
+          description: Adjustments, signed, in cents.
+        thisMonth:
+          $ref: "#/components/schemas/PotPeriod"
+        thisYear:
+          $ref: "#/components/schemas/PotPeriod"
+      required: [openingBalanceCents, allocationsCents, depositsCents, withdrawalsCents, carryoverOutCents, adjustmentsCents, thisMonth, thisYear]
+
+    PotTarget:
+      type: object
+      description: Savings-goal progress. Present only when the pot has a target.
+      properties:
+        targetCents:
+          type: integer
+          format: int64
+          description: Goal in cents.
+        targetDate:
+          type: string
+          format: date
+          nullable: true
+          description: Date the goal should be met; null when not set.
+        remainingCents:
+          type: integer
+          format: int64
+          description: max(target - balance, 0), in cents.
+        progressPercent:
+          type: number
+          nullable: true
+          description: balance / target * 100, one decimal, not capped at 100. Null only when the target is zero or less.
+        reached:
+          type: boolean
+          description: balance >= target.
+        monthsLeft:
+          type: integer
+          nullable: true
+          description: Whole calendar months from the current Amsterdam month to the target date's month, minimum 0 (a date in the past gives 0). Null without a target date.
+        neededPerMonthCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: 0 when reached; otherwise ceil(remaining / max(monthsLeft, 1)) in cents. Null without a target date.
+      required: [targetCents, targetDate, remainingCents, progressPercent, reached, monthsLeft, neededPerMonthCents]
+
+    PotSplit:
+      type: object
+      description: "The pot's share of the monthly surplus. Reference period: the latest open period if the pot has a split row there; otherwise the latest period (any status) in which the pot has a split row. Present only when the pot has a split row in some period."
+      properties:
+        percentage:
+          type: number
+          description: Percentage (0-100) in the reference period.
+        periodYear:
+          type: integer
+        periodMonth:
+          type: integer
+        periodStatus:
+          type: string
+          enum: [open, closed]
+      required: [percentage, periodYear, periodMonth, periodStatus]
+
+    PotLastEntry:
+      type: object
+      description: Most recent ledger entry (by entry date, then insertion order). The free-text description is never exposed.
+      properties:
+        date:
+          type: string
+          format: date
+        type:
+          type: string
+          enum: [allocation, carryover_out, withdrawal, deposit, adjustment, opening_balance]
+        amountCents:
+          type: integer
+          format: int64
+          description: Signed ledger amount in cents (withdrawals and carryover_out are negative).
+      required: [date, type, amountCents]
+
+    PotDetail:
+      type: object
+      description: One pot in full detail. No pot id, period id or ledger description is exposed.
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [normal, carryover]
+        balanceCents:
+          type: integer
+          format: int64
+          description: Ledger balance in cents.
+        flows:
+          $ref: "#/components/schemas/PotFlows"
+        target:
+          allOf:
+            - $ref: "#/components/schemas/PotTarget"
+          nullable: true
+          description: Null when the pot has no target.
+        split:
+          allOf:
+            - $ref: "#/components/schemas/PotSplit"
+          nullable: true
+          description: Null when the pot has no split row in any period.
+        lastEntry:
+          allOf:
+            - $ref: "#/components/schemas/PotLastEntry"
+          nullable: true
+          description: Null when the pot has no ledger entries.
+        generatedAt:
+          type: string
+          format: date-time
+          description: Response time, RFC 3339 UTC.
+      required: [slug, name, kind, balanceCents, flows, target, split, lastEntry, generatedAt]
 
     Period:
       type: object
