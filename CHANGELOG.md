@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.26.0](https://github.com/wouterdamman/home-finance/compare/v1.25.0...v1.26.0) (2026-11-08)
+
+
+### Features
+
+* **api:** fine-grained kids-savings integration endpoints + integrations guide ([#212](https://github.com/wouterdamman/home-finance/issues/212)) ([787c593](https://github.com/wouterdamman/home-finance/commit/787c593a166f4c8b17058964e1914b76dcc0f17d))
+* **api:** month and year totals integration endpoints (periods:read, years:read) ([#216](https://github.com/wouterdamman/home-finance/issues/216)) ([a87b21f](https://github.com/wouterdamman/home-finance/commit/a87b21ffd94c73b512c8663285b09ffcb7bd376c))
+* **api:** savings-pot integration endpoints (pots:read) ([#215](https://github.com/wouterdamman/home-finance/issues/215)) ([7b5e806](https://github.com/wouterdamman/home-finance/commit/7b5e806e702a05f8604450b38a2aad340553e304))
+
 ## [1.25.0](https://github.com/wouterdamman/home-finance/compare/v1.24.0...v1.25.0) (2026-11-08)
 
 
