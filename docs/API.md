@@ -87,8 +87,13 @@ GET /api/integrations/v1/kids/:slug/ours            (scope kids:read)  sub-pot "
 GET /api/integrations/v1/kids/:slug/theirs          (scope kids:read)  sub-pot "eigen geld"
 GET /api/integrations/v1/pots                       (scope pots:read)  all savings pots + household totals
 GET /api/integrations/v1/pots/:slug                 (scope pots:read)  one pot, full detail
+GET /api/integrations/v1/periods/current            (scope periods:read)  totals of the current month
+GET /api/integrations/v1/periods/:yyyy-mm           (scope periods:read)  totals of one month
+GET /api/integrations/v1/years                      (scope years:read)  totals of every year
+GET /api/integrations/v1/years/current              (scope years:read)  totals of the current year
+GET /api/integrations/v1/years/:yyyy                (scope years:read)  totals of one year
 ```
 
-The scopes today are `kids:read` and `pots:read`. Token setup and rotation, the full endpoint reference with
+The scopes today are `kids:read`, `pots:read`, `periods:read` and `years:read`. Token setup and rotation, the full endpoint reference with
 example responses and field tables, concepts, a Home Assistant cookbook and troubleshooting live in
 **[INTEGRATIONS.md](INTEGRATIONS.md)**, which is the single source of truth for this API.

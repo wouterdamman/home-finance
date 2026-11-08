@@ -2517,6 +2517,180 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/integrations/v1/periods/current:
+    get:
+      operationId: getIntegrationPeriodCurrent
+      tags: [Integrations]
+      summary: Totals of the current month. Bearer token with scope `periods:read`. Exposes no ids.
+      description: |
+        Picks the period for the current Europe/Amsterdam calendar month; if that month has no period, the latest open period; if there is none, the latest period. `isCurrentMonth` tells which case applied. Totals are effective amounts (itemized income sources and tracked budget lines count through their transactions), identical to the year summary.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Month totals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodTotals"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `periods:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: there are no periods at all."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/periods/{ym}:
+    get:
+      operationId: getIntegrationPeriod
+      tags: [Integrations]
+      summary: Totals of one month. Bearer token with scope `periods:read`. Exposes no ids.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ym
+          in: path
+          required: true
+          description: Month as `yyyy-mm` (`^\d{4}-\d{2}$`, month 01-12), for example `2026-11`.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Month totals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodTotals"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `periods:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: the path is malformed (including a month outside 01-12) or that month has no period."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/years:
+    get:
+      operationId: getIntegrationYears
+      tags: [Integrations]
+      summary: Totals of every year, oldest first. Bearer token with scope `years:read`. Exposes no ids.
+      description: |
+        Lists every year that has a row in the years table or at least one period.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Year totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  years:
+                    type: array
+                    description: Every known year, oldest first.
+                    items:
+                      $ref: "#/components/schemas/YearTotals"
+                  generatedAt:
+                    type: string
+                    format: date-time
+                    description: Response time, RFC 3339 UTC.
+                required: [years, generatedAt]
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `years:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/years/current:
+    get:
+      operationId: getIntegrationYearCurrent
+      tags: [Integrations]
+      summary: Totals of the current Europe/Amsterdam calendar year. Bearer token with scope `years:read`. Exposes no ids.
+      description: |
+        Returns zeros (200, not 404) while the year has no data yet, for example on 1 January.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Year totals plus the response time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YearTotalsResponse"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `years:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/years/{yyyy}:
+    get:
+      operationId: getIntegrationYear
+      tags: [Integrations]
+      summary: Totals of one year. Bearer token with scope `years:read`. Exposes no ids.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: yyyy
+          in: path
+          required: true
+          description: Year (`^\d{4}$`, 2000-2100).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Year totals plus the response time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YearTotalsResponse"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `years:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: the path is malformed or out of range, or the year has neither a years row nor any period."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/integration-tokens:
     get:
       operationId: listIntegrationTokens
@@ -3542,6 +3716,90 @@ components:
           format: int64
           description: Signed ledger amount in cents (withdrawals and carryover_out are negative).
       required: [date, type, amountCents]
+
+    PeriodTotals:
+      type: object
+      description: Effective totals of one month. No period id is exposed.
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        status:
+          type: string
+          enum: [open, closed]
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the period was closed, RFC 3339 UTC. Null while open.
+        isCurrentMonth:
+          type: boolean
+          description: True when the period is the current Europe/Amsterdam calendar month. False means `/periods/current` fell back to the latest open or latest period.
+        incomeCents:
+          type: integer
+          format: int64
+          description: Effective income in cents. Itemized income sources count as the sum of their income transactions.
+        expenseCents:
+          type: integer
+          format: int64
+          description: Effective expenses in cents. Tracked budget lines count as the sum of their transactions, child categories rolled up into the parent.
+        surplusCents:
+          type: integer
+          format: int64
+          description: incomeCents minus expenseCents. Negative when overspent.
+        generatedAt:
+          type: string
+          format: date-time
+          description: Response time, RFC 3339 UTC.
+      required: [year, month, status, closedAt, isCurrentMonth, incomeCents, expenseCents, surplusCents, generatedAt]
+
+    YearTotals:
+      type: object
+      description: Effective totals of one year, summed over all its periods (open ones included).
+      properties:
+        year:
+          type: integer
+        locked:
+          type: boolean
+          description: True when the year is locked.
+        periodsOpen:
+          type: integer
+          description: Number of open periods in the year.
+        periodsClosed:
+          type: integer
+          description: Number of closed periods in the year.
+        incomeCents:
+          type: integer
+          format: int64
+          description: Effective income in cents over all periods of the year.
+        expenseCents:
+          type: integer
+          format: int64
+          description: Effective expenses in cents over all periods of the year.
+        surplusCents:
+          type: integer
+          format: int64
+          description: incomeCents minus expenseCents. Negative when overspent.
+        averageMonthlySurplusCents:
+          type: integer
+          format: int64
+          description: surplusCents divided by the number of periods (open plus closed), rounded half away from zero. 0 when the year has no periods.
+      required: [year, locked, periodsOpen, periodsClosed, incomeCents, expenseCents, surplusCents, averageMonthlySurplusCents]
+
+    YearTotalsResponse:
+      description: YearTotals plus the response time.
+      allOf:
+        - $ref: "#/components/schemas/YearTotals"
+        - type: object
+          properties:
+            generatedAt:
+              type: string
+              format: date-time
+              description: Response time, RFC 3339 UTC.
+          required: [generatedAt]
 
     PotDetail:
       type: object

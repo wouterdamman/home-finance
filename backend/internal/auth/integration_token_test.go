@@ -32,7 +32,7 @@ func TestNewIntegrationToken(t *testing.T) {
 }
 
 func TestValidIntegrationScope(t *testing.T) {
-	for s, want := range map[string]bool{"kids:read": true, "": false, "KIDS:READ": false, "pots:read": true, "years:read": false, "kids:write": false} {
+	for s, want := range map[string]bool{"kids:read": true, "": false, "KIDS:READ": false, "pots:read": true, "years:read": true, "periods:read": true, "kids:write": false} {
 		if got := ValidIntegrationScope(s); got != want {
 			t.Errorf("ValidIntegrationScope(%q) = %v, want %v", s, got, want)
 		}

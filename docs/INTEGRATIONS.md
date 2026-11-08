@@ -27,11 +27,13 @@ The Integration API lives under `/api/integrations/v1`. It is:
 - **Read-only.** There are no write endpoints.
 - **Token-authenticated.** Every request carries `Authorization: Bearer hf_...`. It never accepts
   a session cookie and needs no CSRF header.
-- **Scoped.** Each token has one or more scopes. Today there are two: `kids:read`, which grants
-  access to all kids' savings data, and `pots:read`, which grants access to the household's
-  savings pots (there is no per-kid or per-pot restriction).
+- **Scoped.** Each token has one or more scopes. Today there are four: `kids:read`, which grants
+  access to all kids' savings data, `pots:read`, which grants access to the household's
+  savings pots (there is no per-kid or per-pot restriction), `periods:read` for the monthly
+  totals and `years:read` for the yearly totals.
 - **Privacy-minimal.** Responses contain no internal ids and no ledger descriptions (those are
-  free text). Kid and pot names are included.
+  free text). Kid and pot names are included. The month and year totals contain only sums, no
+  names at all.
 - **Uncached.** Every response carries `Cache-Control: no-store`.
 
 **Versioning promise.** Within `/v1` only *additive* changes happen: new endpoints, new fields in
@@ -44,8 +46,9 @@ alongside it for a transition period.
 1. Sign in to the app as an **admin** and open **Settings > Integrations**.
 2. Give the token a recognisable **name** (for example `Home Assistant`). The name is shown in the
    token list and in the audit log.
-3. Tick the **scope(s)**: `kids:read` for the kids' savings, `pots:read` for the savings pots, or
-   both. For everything in this guide that is both. A token's scopes cannot be changed after
+3. Tick the **scope(s)** you need: `kids:read` for the kids' savings, `pots:read` for the savings
+   pots, `periods:read` for the monthly totals and `years:read` for the yearly totals. For
+   everything in this guide that is all four. A token's scopes cannot be changed after
    creation, so to add a scope to an existing integration, create a new token with the scopes you
    need and rotate to it (see below).
 4. Choose the **expiry**. Every token expires: the default is **1 year**, the minimum is **1 hour**
@@ -102,9 +105,16 @@ export BASE='https://budget.app.example.com/api/integrations/v1'
 │       ├── GET /kids/{slug}              one kid, full detail (both sub-pots + combined)
 │       ├── GET /kids/{slug}/ours         sub-pot "door ons gespaard"
 │       └── GET /kids/{slug}/theirs       sub-pot "eigen geld"
-└── /pots                                 scope pots:read
-    ├── GET /pots                         all active pots (summary) + household totals
-    └── GET /pots/{slug}                  one pot, full detail
+├── /pots                                 scope pots:read
+│   ├── GET /pots                         all active pots (summary) + household totals
+│   └── GET /pots/{slug}                  one pot, full detail
+├── /periods                              scope periods:read
+│   ├── GET /periods/current              totals of the current month (see how it is picked)
+│   └── GET /periods/{yyyy-mm}            totals of one month
+└── /years                                scope years:read
+    ├── GET /years                        totals of every year, oldest first
+    ├── GET /years/current                totals of the current year (zeros if no data yet)
+    └── GET /years/{yyyy}                 totals of one year
 ```
 
 `{slug}` is the kid's or pot's name slug, see [Slugs](#slugs). An unknown or archived slug returns
@@ -717,6 +727,202 @@ surplus share arrived as an allocation and the carryover into November left agai
 Note that `thisMonth` is all zeros although the last entry is dated in November: that entry
 belongs to the October period (see [Period bucketing](#period-bucketing-for-pots)).
 
+### GET /periods/current
+
+Scope: `periods:read`. The effective totals of "the current month". Which period that is when the
+current month has none is explained under [Picking the current period](#picking-the-current-period);
+`isCurrentMonth` tells you which case you got. This is the endpoint to poll from Home Assistant.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/periods/current"
+```
+
+```json
+{
+  "year": 2026,
+  "month": 11,
+  "status": "open",
+  "closedAt": null,
+  "isCurrentMonth": true,
+  "incomeCents": 485000,
+  "expenseCents": 312500,
+  "surplusCents": 172500,
+  "generatedAt": "2026-11-08T14:30:12Z"
+}
+```
+
+**PeriodTotals**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `year` | integer | | Year of the period. | `2026` |
+| `month` | integer | | Month of the period, 1-12. | `11` |
+| `status` | string | | `"open"` or `"closed"`. | `"open"` |
+| `closedAt` | string or `null` | RFC 3339, UTC | When the month was closed; `null` while it is open. | `null` |
+| `isCurrentMonth` | boolean | | `true` when the period is the current calendar month in Europe/Amsterdam. `false` means `/periods/current` fell back to another period. | `true` |
+| `incomeCents` | integer | cents | Effective income of the month. See [Effective totals](#effective-totals). | `485000` |
+| `expenseCents` | integer | cents | Effective expenses of the month. | `312500` |
+| `surplusCents` | integer | cents | `incomeCents - expenseCents`. **Can be negative.** | `172500` |
+| `generatedAt` | string | RFC 3339, UTC | When the server built the response. | `"2026-11-08T14:30:12Z"` |
+
+There is deliberately no period id.
+
+Errors: `404 not_found` when no periods exist at all, `403 insufficient_scope` without
+`periods:read`.
+
+### GET /periods/{yyyy-mm}
+
+Scope: `periods:read`. The same PeriodTotals object for one specific month, for example
+`2026-10`. The path must be exactly four digits, a dash and two digits, with the month in 01-12.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/periods/2026-10"
+```
+
+```json
+{
+  "year": 2026,
+  "month": 10,
+  "status": "closed",
+  "closedAt": "2026-11-03T08:12:44Z",
+  "isCurrentMonth": false,
+  "incomeCents": 480000,
+  "expenseCents": 441250,
+  "surplusCents": 38750,
+  "generatedAt": "2026-11-08T14:30:12Z"
+}
+```
+
+Fields are as in PeriodTotals above.
+
+Errors: `404 not_found` for a malformed path (`2026-1`, `2026-10-01`, `latest`), a month outside
+01-12 (`2026-13`) or a month that has no period; `403 insufficient_scope` without `periods:read`.
+
+### GET /years
+
+Scope: `years:read`. The totals of every year, oldest first: every year in the app's years list
+plus any year that has periods. Use it for a multi-year overview.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/years"
+```
+
+```json
+{
+  "years": [
+    {
+      "year": 2025,
+      "locked": true,
+      "periodsOpen": 0,
+      "periodsClosed": 12,
+      "incomeCents": 5640000,
+      "expenseCents": 5128500,
+      "surplusCents": 511500,
+      "averageMonthlySurplusCents": 42625
+    },
+    {
+      "year": 2026,
+      "locked": false,
+      "periodsOpen": 1,
+      "periodsClosed": 10,
+      "incomeCents": 5310000,
+      "expenseCents": 4688750,
+      "surplusCents": 621250,
+      "averageMonthlySurplusCents": 56477
+    },
+    {
+      "year": 2027,
+      "locked": false,
+      "periodsOpen": 0,
+      "periodsClosed": 0,
+      "incomeCents": 0,
+      "expenseCents": 0,
+      "surplusCents": 0,
+      "averageMonthlySurplusCents": 0
+    }
+  ],
+  "generatedAt": "2026-11-08T14:30:12Z"
+}
+```
+
+**Response**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `years` | YearTotals[] | | Every known year, oldest first. | |
+| `generatedAt` | string | RFC 3339, UTC | When the server built the response. | `"2026-11-08T14:30:12Z"` |
+
+**YearTotals**
+
+| Field | Type | Unit | Meaning | Example |
+|---|---|---|---|---|
+| `year` | integer | | The year. | `2026` |
+| `locked` | boolean | | `true` when the year is locked in the app (no more edits). | `false` |
+| `periodsOpen` | integer | | Number of open month periods in the year. | `1` |
+| `periodsClosed` | integer | | Number of closed month periods in the year. | `10` |
+| `incomeCents` | integer | cents | Effective income summed over all the year's periods, open ones included. | `5310000` |
+| `expenseCents` | integer | cents | Effective expenses summed over all the year's periods. | `4688750` |
+| `surplusCents` | integer | cents | `incomeCents - expenseCents`. **Can be negative.** | `621250` |
+| `averageMonthlySurplusCents` | integer | cents | `surplusCents / (periodsOpen + periodsClosed)`, rounded half away from zero; `0` with no periods. See [Year totals](#year-totals). | `56477` |
+
+Errors: `403 insufficient_scope` without `years:read`.
+
+### GET /years/current
+
+Scope: `years:read`. The YearTotals object of the current Europe/Amsterdam calendar year, with
+`generatedAt` added at the top level. Unlike `/years/{yyyy}` it never returns 404: a year without
+any data yet returns `200` with zeros. This is the endpoint to poll from Home Assistant.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/years/current"
+```
+
+```json
+{
+  "year": 2026,
+  "locked": false,
+  "periodsOpen": 1,
+  "periodsClosed": 10,
+  "incomeCents": 5310000,
+  "expenseCents": 4688750,
+  "surplusCents": 621250,
+  "averageMonthlySurplusCents": 56477,
+  "generatedAt": "2026-11-08T14:30:12Z"
+}
+```
+
+Fields are as in YearTotals above, plus `generatedAt`. On 1 January, before the new year has any
+data, the body is the same shape with `periodsOpen`, `periodsClosed`, `incomeCents`,
+`expenseCents`, `surplusCents` and `averageMonthlySurplusCents` all `0` and `locked` `false`.
+
+Errors: `403 insufficient_scope` without `years:read`.
+
+### GET /years/{yyyy}
+
+Scope: `years:read`. The same object as `/years/current` for one specific year, for example
+`2025`. The path must be exactly four digits in 2000-2100.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/years/2025"
+```
+
+```json
+{
+  "year": 2025,
+  "locked": true,
+  "periodsOpen": 0,
+  "periodsClosed": 12,
+  "incomeCents": 5640000,
+  "expenseCents": 5128500,
+  "surplusCents": 511500,
+  "averageMonthlySurplusCents": 42625,
+  "generatedAt": "2026-11-08T14:30:12Z"
+}
+```
+
+Errors: `404 not_found` for a malformed path (`25`, `latest`), a year outside 2000-2100 or a year
+that is neither in the years list nor has periods; `403 insufficient_scope` without `years:read`.
+
 ## 5. Concepts
 
 ### Two sub-pots per kid
@@ -810,6 +1016,46 @@ pot, but closing a month moves that money on as income of the next month, which 
 `carryover_out` entry. That is why `carryoverOutCents` is only non-zero for this pot, and why its
 balance is usually small. Its split percentage is not user-editable: it is always the remainder
 after the other pots' percentages.
+
+### Effective totals
+
+`incomeCents` and `expenseCents` are *effective* amounts, the same numbers the app's month and
+year screens show:
+
+- An **itemized income source** counts the sum of its income transactions instead of the amount
+  on its row.
+- A **tracked budget line** counts the sum of its transactions instead of the amount on its row,
+  with child categories rolled into the parent line.
+- Every other line counts the amount entered on it. Budget targets never count.
+
+`surplusCents` is `incomeCents - expenseCents`, and it can be **negative** when a month or year is
+overspent. Do not clamp it, and do not assume it is positive in templates.
+
+### Picking the current period
+
+`GET /periods/current` returns the first match of:
+
+1. the period for the current Europe/Amsterdam calendar month;
+2. otherwise the latest **open** period;
+3. otherwise the latest period of any status.
+
+`isCurrentMonth` is `true` only in the first case. A `false` means the current month has no period
+yet (for example before it is created in the app), so the numbers describe an earlier month; use
+`year`, `month` and `status` to show which one. When no periods exist at all the endpoint returns
+`404 not_found`.
+
+### Year totals
+
+- Year totals include **open** periods, so for the current year they are **year-to-date**.
+- `averageMonthlySurplusCents` is `surplusCents` divided by the number of periods
+  (`periodsOpen + periodsClosed`), rounded **half away from zero** (`-2.5` becomes `-3`, `2.5`
+  becomes `3`). It is `0` when the year has no periods, rather than an error or `null`. Note that
+  it divides by the periods that exist, not by 12.
+- The `GET /years` list is the app's years list plus any year that has periods, oldest first, so a
+  year that only exists through its periods still appears.
+- `GET /years/current` returns zeros with `200` for a year with no data yet (instead of 404), so a
+  Home Assistant sensor keeps working on 1 January. `GET /years/{yyyy}` does return 404 for a
+  year the app does not know.
 
 ### Slugs
 
@@ -1034,6 +1280,107 @@ Notes:
   `sensor.vacation_split`, `binary_sensor.vacation_goal_reached`.
 - A renamed or archived pot makes the resource return 404 and its sensors `unavailable`.
 
+### This month and this year (budget totals)
+
+Same pattern for the monthly totals on `/periods/current` (token with `periods:read`). Add it to
+the same `rest:` list. The amounts are in cents, hence the division by 100:
+
+```yaml
+rest:
+  - resource: https://budget.app.example.com/api/integrations/v1/periods/current
+    headers:
+      Authorization: !secret home_finance_auth
+      Accept: application/json
+    scan_interval: 900
+    timeout: 20
+    sensor:
+      - name: "Budget month income"
+        unique_id: home_finance_month_income
+        value_template: "{{ ((value_json.incomeCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      - name: "Budget month expenses"
+        unique_id: home_finance_month_expenses
+        value_template: "{{ ((value_json.expenseCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      # Can be negative when the month is overspent.
+      - name: "Budget month surplus"
+        unique_id: home_finance_month_surplus
+        value_template: "{{ ((value_json.surplusCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      # State is "open" or "closed"; isCurrentMonth tells whether /periods/current had to
+      # fall back to another month.
+      - name: "Budget month status"
+        unique_id: home_finance_month_status
+        value_template: "{{ value_json.status }}"
+        json_attributes:
+          - year
+          - month
+          - isCurrentMonth
+          - closedAt
+```
+
+And the year-to-date totals on `/years/current` (token with `years:read`):
+
+```yaml
+rest:
+  - resource: https://budget.app.example.com/api/integrations/v1/years/current
+    headers:
+      Authorization: !secret home_finance_auth
+      Accept: application/json
+    scan_interval: 900
+    timeout: 20
+    sensor:
+      - name: "Budget year income"
+        unique_id: home_finance_year_income
+        value_template: "{{ ((value_json.incomeCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      - name: "Budget year expenses"
+        unique_id: home_finance_year_expenses
+        value_template: "{{ ((value_json.expenseCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      - name: "Budget year surplus"
+        unique_id: home_finance_year_surplus
+        value_template: "{{ ((value_json.surplusCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+
+      - name: "Budget year average monthly surplus"
+        unique_id: home_finance_year_average_monthly_surplus
+        value_template: "{{ ((value_json.averageMonthlySurplusCents | float(0)) / 100) | round(2) }}"
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+```
+
+Notes:
+
+- The same conventions as above apply (`float(0)`, `unique_id`, `monetary` with
+  `state_class: total`).
+- The year figures are year-to-date because open periods count (see
+  [Year totals](#year-totals)). On 1 January they read `0` instead of going `unavailable`.
+- The month sensors follow `/periods/current`; check `Budget month status` and its
+  `isCurrentMonth` attribute if the numbers look like an old month.
+- Entity IDs: `sensor.budget_month_income`, `sensor.budget_month_expenses`,
+  `sensor.budget_month_surplus`, `sensor.budget_month_status`, `sensor.budget_year_income`,
+  `sensor.budget_year_expenses`, `sensor.budget_year_surplus`,
+  `sensor.budget_year_average_monthly_surplus`.
+
 ### Household total
 
 A separate resource for the household total from `GET /kids`:
@@ -1120,6 +1467,26 @@ severity:
   red: 0
   yellow: 40
   green: 80
+```
+
+An entities card for the budget totals:
+
+```yaml
+type: entities
+title: Budget
+entities:
+  - entity: sensor.budget_month_income
+    name: Income this month
+  - entity: sensor.budget_month_expenses
+    name: Expenses this month
+  - entity: sensor.budget_month_surplus
+    name: Surplus this month
+  - entity: sensor.budget_month_status
+    name: Month status
+  - entity: sensor.budget_year_surplus
+    name: Surplus this year
+  - entity: sensor.budget_year_average_monthly_surplus
+    name: Average monthly surplus
 ```
 
 Or a grid of tiles for a dashboard overview:
@@ -1218,6 +1585,25 @@ automation:
 A template trigger fires on the change from false to true, so it does not repeat while the pot
 stays above its goal, and `unavailable` never counts as `on`.
 
+Notify when the current month's surplus drops below zero (the month is overspent). It fires on
+the change from false to true, and `unavailable` evaluates as `0`, so it never triggers:
+
+```yaml
+automation:
+  - alias: "Budget month overspent"
+    triggers:
+      - trigger: template
+        value_template: "{{ states('sensor.budget_month_surplus') | float(0) < 0 }}"
+    actions:
+      - action: notify.notify
+        data:
+          title: "Budget overspent"
+          message: >-
+            This month's surplus is {{ states('sensor.budget_month_surplus') }} EUR
+            (income {{ states('sensor.budget_month_income') }} EUR, expenses
+            {{ states('sensor.budget_month_expenses') }} EUR).
+```
+
 All `automation:` blocks can live in one list in `automations.yaml`. A 15-minute poll means
 notifications arrive up to 15 minutes after the entry is made.
 
@@ -1228,8 +1614,8 @@ Errors use the usual body `{"error": {"code": "...", "message": "..."}}`.
 | Status | Code | Cause | What to do |
 |---|---|---|---|
 | 401 | `unauthorized` | Header missing, not `Bearer <token>`, token unknown, **revoked** or **expired**. All look identical on purpose. The response carries `WWW-Authenticate: Bearer`. | Check the header and the secret; look at the token's status and expiry in Settings > Integrations; rotate if needed. |
-| 403 | `insufficient_scope` | The token is valid but lacks the endpoint's scope (`kids:read` for `/kids...`, `pots:read` for `/pots...`). | Create a new token with the scope (scopes cannot be added to an existing token). |
-| 404 | `not_found` | Unknown path, or `{slug}` unknown, malformed or belonging to an **archived** kid or pot; often a renamed one. | List slugs with `GET /kids` or `GET /pots`; update the URL. |
+| 403 | `insufficient_scope` | The token is valid but lacks the endpoint's scope (`kids:read` for `/kids...`, `pots:read` for `/pots...`, `periods:read` for `/periods...`, `years:read` for `/years...`). | Create a new token with the scope (scopes cannot be added to an existing token). |
+| 404 | `not_found` | Unknown path, or `{slug}` unknown, malformed or belonging to an **archived** kid or pot; often a renamed one. For totals: a malformed or out-of-range `{yyyy-mm}` / `{yyyy}`, a missing period or year, or `/periods/current` when no periods exist. | List slugs with `GET /kids` or `GET /pots`; update the URL. For totals, check the path format and that the period exists in the app. |
 | 405 | `method_not_allowed` | Not a GET. | The API is read-only. |
 | 500 | `db_error` | Server-side failure such as an unreachable database. Not a token problem, and deliberately not a 401 so an integration does not think its token was revoked. | Retry later; check the app's logs. |
 
@@ -1241,9 +1627,12 @@ Every response, including errors, has `Cache-Control: no-store`.
 # 1. Is the token valid? Expect 200 and your token name.
 curl -si -H "Authorization: Bearer $TOKEN" "$BASE/info"
 
-# 2. Does it have the scope? Expect 200 (403 means no kids:read / pots:read).
+# 2. Does it have the scope? Expect 200 (403 means no kids:read / pots:read /
+#    periods:read / years:read).
 curl -si -H "Authorization: Bearer $TOKEN" "$BASE/kids"
 curl -si -H "Authorization: Bearer $TOKEN" "$BASE/pots"
+curl -si -H "Authorization: Bearer $TOKEN" "$BASE/periods/current"
+curl -si -H "Authorization: Bearer $TOKEN" "$BASE/years/current"
 
 # 3. Which slugs exist?
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/kids" | jq -r '.kids[].slug'
@@ -1272,19 +1661,20 @@ resource returned an error body instead of the expected JSON.
 - **Revocation is immediate.** Revoke from Settings > Integrations; the next request fails with 401.
 - **Audit log.** Creating and revoking a token is recorded in the audit log. Creating one also
   needs a fresh step-up reauthentication.
-- **Read-only.** A leaked token can read kids' balances and names (`kids:read`) or pot balances, goals and names (`pots:read`); it cannot change
+- **Read-only.** A leaked token can read kids' balances and names (`kids:read`) pot balances, goals and names (`pots:read`), or monthly and yearly income, expense and surplus totals (`periods:read`, `years:read`); it cannot change
   anything, cannot reach the session API and cannot read ledger descriptions.
 - **Transport.** Use HTTPS for anything outside the cluster.
 
 ## 9. Roadmap
 
-Planned, not yet available (they are deliberately not accepted as scopes until their endpoints
-exist):
+Done: phase 1 and 2 (kids, `kids:read`, and savings pots, `pots:read`) and phases 3 and 4 (monthly
+totals, `periods:read`, and yearly totals, `years:read`).
 
-- Scopes `periods:read` and `years:read`, for monthly overviews and yearly summaries, under the
-  same `/api/integrations/v1` prefix. (Savings pots, `pots:read`, are done.)
+Planned, not yet available:
+
 - A Home Assistant custom integration (HACS) with a config flow: enter the base URL and token,
-  validate it against `GET /info`, then create the kid and pot sensors automatically from `GET /kids` and `GET /pots`.
+  validate it against `GET /info`, then create the kid, pot and budget sensors automatically from
+  `GET /kids`, `GET /pots`, `GET /periods/current` and `GET /years/current`.
   Until then, the `rest:` cookbook above is the supported way.
 
 All of this arrives additively within `/v1`, per the versioning promise.

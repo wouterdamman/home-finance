@@ -20,9 +20,8 @@ import (
 const integrationTokenPrefix = "hf_"
 
 // KnownIntegrationScopes is the allowlist of scopes a token may be created
-// with. periods:read and years:read are planned but deliberately not listed
-// until the endpoints that honour them exist.
-var KnownIntegrationScopes = []string{"kids:read", "pots:read"}
+// with. A scope is only listed once an endpoint honours it.
+var KnownIntegrationScopes = []string{"kids:read", "pots:read", "periods:read", "years:read"}
 
 // Integration token lifetime: every token expires. The default applies when
 // the client sends no expiry; min/max bound a custom one. Keep the frontend's

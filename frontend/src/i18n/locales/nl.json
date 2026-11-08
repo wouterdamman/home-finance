@@ -365,7 +365,9 @@
     "integrationsUsage": "Stuur het mee als header bij elk verzoek:",
     "integrationsDone": "Klaar",
     "scopeKidsRead": "Spaarpotten kinderen (lezen)",
-    "scopePotsRead": "Spaarpotjes (lezen)"
+    "scopePotsRead": "Spaarpotjes (lezen)",
+    "scopePeriodsRead": "Maandtotalen (lezen)",
+    "scopeYearsRead": "Jaartotalen (lezen)"
   },
   "export": {
     "description": "Download inkomsten, uitgaven en transacties van een heel jaar of geselecteerde maanden als Excel-bestand.",
