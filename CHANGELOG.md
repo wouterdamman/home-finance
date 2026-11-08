@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.25.0](https://github.com/wouterdamman/home-finance/compare/v1.24.0...v1.25.0) (2026-11-08)
+
+
+### Features
+
+* **api:** expiry for integration tokens (default 1 year, 1 hour to 2 years) ([#209](https://github.com/wouterdamman/home-finance/issues/209)) ([bbb85db](https://github.com/wouterdamman/home-finance/commit/bbb85dbc83352d24fd5d76344206206dbb9c6aa8))
+
+
+### Bug Fixes
+
+* **dev:** repair local Dex login (test-user hash, users id sequence) ([#207](https://github.com/wouterdamman/home-finance/issues/207)) ([7b34735](https://github.com/wouterdamman/home-finance/commit/7b3473552c5b8e6e157daf0e6bdf5c8ed9245f18))
+
 ## [1.24.0](https://github.com/wouterdamman/home-finance/compare/v1.23.2...v1.24.0) (2026-11-07)
 
 
