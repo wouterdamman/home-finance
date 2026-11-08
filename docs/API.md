@@ -64,7 +64,7 @@ POST /api/import/xlsx          (multipart: file, year, wipe, resetMaster, closeT
 
 GET  /api/audit-log?limit=&before=&action=&entityType=&userEmail=&from=&to=     (admin)
 GET  /api/integration-tokens                                                     (admin)
-POST /api/integration-tokens   (body: {"name","scopes":["kids:read"]})           (admin, reauth)
+POST /api/integration-tokens   (body: {"name","scopes":["kids:read"],"expiresAt"?})  (admin, reauth)
 DEL  /api/integration-tokens/:id                                                 (admin)
 GET  /api/docs                                                                   (admin)
 GET  /api/openapi.yaml                                                           (admin)
@@ -78,6 +78,12 @@ API above: no cookie and no CSRF header, and it never accepts a session.
 Admins create tokens in **Settings > Integrations**, choosing a name and scopes. Each token
 is shown once on creation and stored only as a SHA-256 hash, so it cannot be recovered later.
 Tokens look like `hf_...`. Creating and revoking a token are audit-logged.
+
+Every token expires. `POST /api/integration-tokens` takes an optional `expiresAt` (RFC 3339);
+omitted or `null` means one year from now. A custom value must be between 1 hour and 2 years
+from now (one minute of slack at each end), otherwise the request fails with `400 bad_request`.
+`expiresAt` is returned on every token in the list and create responses. An expired token is
+rejected with `401 unauthorized`, indistinguishable from a revoked or unknown one.
 
 Send the token as a bearer header:
 
@@ -111,7 +117,7 @@ body:
 
 | Status | Code | Meaning |
 |---|---|---|
-| 401 | `unauthorized` | Token missing, invalid, or revoked. Response includes `WWW-Authenticate: Bearer` |
+| 401 | `unauthorized` | Token missing, invalid, expired, or revoked. Response includes `WWW-Authenticate: Bearer` |
 | 403 | `insufficient_scope` | Token is valid but lacks the scope the endpoint needs |
 | 500 | `db_error` | Server-side failure (e.g. database unreachable) — not a token problem, retry later |
 
