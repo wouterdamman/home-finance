@@ -3061,7 +3061,7 @@ components:
 
   responses:
     IntegrationUnauthorized:
-      description: Missing, malformed, unknown or revoked bearer token (code `unauthorized`); sent with `WWW-Authenticate Bearer`.
+      description: Missing, malformed, unknown, expired or revoked bearer token (code `unauthorized`); sent with `WWW-Authenticate Bearer`.
       content:
         application/json:
           schema:
