@@ -364,7 +364,8 @@
     "integrationsCopied": "Copied",
     "integrationsUsage": "Send it as a header on each request:",
     "integrationsDone": "Done",
-    "scopeKidsRead": "Kids savings balances (read)"
+    "scopeKidsRead": "Kids savings balances (read)",
+    "scopePotsRead": "Savings pots balances (read)"
   },
   "export": {
     "description": "Download income, expenses and transactions for a whole year or selected months as an Excel file.",
