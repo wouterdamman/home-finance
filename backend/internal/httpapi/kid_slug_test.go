@@ -77,3 +77,24 @@ func TestValidKidSlugPath(t *testing.T) {
 		}
 	}
 }
+
+func TestAssignSlugsPots(t *testing.T) {
+	got := assignSlugs([]slugInput{
+		{1, "Vakantie"}, {2, "Balances"}, {3, "???"}, {4, "Auto"}, {5, "auto"}, {6, "Vakantie 1"},
+	}, nil, "pot")
+	want := map[int64]string{1: "vakantie", 2: "balances", 3: "pot-3", 4: "auto-4", 5: "auto-5", 6: "vakantie-1"}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("pot %d: got %q, want %q", id, got[id], w)
+		}
+	}
+	// Suffixed slug equals another pot's slug -> pot-<id> fallback.
+	got = assignSlugs([]slugInput{{7, "Anna"}, {8, "Anna"}, {9, "Anna 7"}}, nil, "pot")
+	if got[9] == got[7] || got[7] == got[8] {
+		t.Errorf("collision not resolved: %v", got)
+	}
+	// Reserved words only apply when passed in.
+	if got := assignSlugs([]slugInput{{1, "Balances"}}, []string{"balances"}, "pot"); got[1] != "balances-1" {
+		t.Errorf("reserved: %v", got)
+	}
+}
