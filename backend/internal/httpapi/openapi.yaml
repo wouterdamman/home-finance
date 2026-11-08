@@ -2291,6 +2291,145 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/integrations/v1/kids:
+    get:
+      operationId: getIntegrationKids
+      tags: [Integrations]
+      summary: Lists non-archived kids with slug, balances and household totals. Bearer token with scope `kids:read`. Exposes no ids.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Kids and household totals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationKidList"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `kids:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/kids/{slug}:
+    get:
+      operationId: getIntegrationKid
+      tags: [Integrations]
+      summary: One kid in full detail (both sub-pots, combined flows, bank reconciliation, last entry). Bearer token with scope `kids:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Kid slug as returned by `GET /kids` (`^[a-z0-9-]{1,64}$`). Derived from the name; changes when the kid is renamed.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Kid detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KidDetail"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `kids:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: no active kid has this slug (unknown, renamed or archived), or the slug is malformed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/kids/{slug}/ours:
+    get:
+      operationId: getIntegrationKidOurs
+      tags: [Integrations]
+      summary: Sub-pot "door ons gespaard" (ledger owner `ours`) of one kid. Bearer token with scope `kids:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Kid slug as returned by `GET /kids` (`^[a-z0-9-]{1,64}$`). Derived from the name; changes when the kid is renamed.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The sub-pot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KidSubPotResponse"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `kids:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: no active kid has this slug (unknown, renamed or archived), or the slug is malformed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/integrations/v1/kids/{slug}/theirs:
+    get:
+      operationId: getIntegrationKidTheirs
+      tags: [Integrations]
+      summary: Sub-pot "eigen geld" (ledger owner `theirs`) of one kid. Bearer token with scope `kids:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Kid slug as returned by `GET /kids` (`^[a-z0-9-]{1,64}$`). Derived from the name; changes when the kid is renamed.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The sub-pot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KidSubPotResponse"
+        "401":
+          $ref: "#/components/responses/IntegrationUnauthorized"
+        "403":
+          description: "`insufficient_scope`: the token lacks `kids:read`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "`not_found`: no active kid has this slug (unknown, renamed or archived), or the slug is malformed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/integration-tokens:
     get:
       operationId: listIntegrationTokens
@@ -3104,6 +3243,215 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    IntegrationKidList:
+      type: object
+      properties:
+        kids:
+          type: array
+          description: Non-archived kids, ordered by sort order then id.
+          items:
+            $ref: "#/components/schemas/KidSummary"
+        totals:
+          type: object
+          description: Sum over all listed kids.
+          properties:
+            totalCents:
+              type: integer
+              format: int64
+              description: Ours plus theirs, in cents.
+            oursCents:
+              type: integer
+              format: int64
+              description: Sum of the `ours` sub-pots, in cents.
+            theirsCents:
+              type: integer
+              format: int64
+              description: Sum of the `theirs` sub-pots, in cents.
+          required: [totalCents, oursCents, theirsCents]
+        generatedAt:
+          type: string
+          format: date-time
+          description: Response time, RFC 3339 UTC.
+      required: [kids, totals, generatedAt]
+
+    KidSummary:
+      type: object
+      description: One kid in `GET /integrations/v1/kids`. No internal id is exposed.
+      properties:
+        slug:
+          type: string
+          description: "URL key: lowercase ASCII name with diacritics folded and other runs replaced by `-`, max 64 chars. Colliding names, names that slugify to the reserved `balances`, and names without any letters or digits get `<slug>-<id>` / `balances-<id>` / `kid-<id>`. Changes when the kid is renamed."
+        name:
+          type: string
+        totalCents:
+          type: integer
+          format: int64
+          description: Ledger balance, ours plus theirs, in cents.
+        oursCents:
+          type: integer
+          format: int64
+          description: Balance of the "door ons gespaard" sub-pot (owner `ours`), in cents.
+        theirsCents:
+          type: integer
+          format: int64
+          description: Balance of the "eigen geld" sub-pot (owner `theirs`), in cents.
+      required: [slug, name, totalCents, oursCents, theirsCents]
+
+    Period:
+      type: object
+      description: Flows within one calendar month or year in Europe/Amsterdam, matched on the ledger entry date. Opening balances are excluded.
+      properties:
+        depositsCents:
+          type: integer
+          format: int64
+          description: Sum of deposits in the period (positive).
+        withdrawalsCents:
+          type: integer
+          format: int64
+          description: Sum of withdrawals in the period as a positive magnitude.
+        adjustmentsCents:
+          type: integer
+          format: int64
+          description: Sum of adjustments in the period (signed).
+        netCents:
+          type: integer
+          format: int64
+          description: depositsCents - withdrawalsCents + adjustmentsCents.
+      required: [depositsCents, withdrawalsCents, adjustmentsCents, netCents]
+
+    Flows:
+      type: object
+      description: "Ledger flows. Invariant: openingBalanceCents + depositsCents - withdrawalsCents + adjustmentsCents equals the balance."
+      properties:
+        openingBalanceCents:
+          type: integer
+          format: int64
+          description: Sum of opening_balance entries.
+        depositsCents:
+          type: integer
+          format: int64
+          description: Sum of all deposits (positive).
+        withdrawalsCents:
+          type: integer
+          format: int64
+          description: Sum of all withdrawals as a positive magnitude (stored negative in the ledger).
+        adjustmentsCents:
+          type: integer
+          format: int64
+          description: Sum of all adjustments (signed).
+        thisMonth:
+          $ref: "#/components/schemas/Period"
+        thisYear:
+          $ref: "#/components/schemas/Period"
+      required: [openingBalanceCents, depositsCents, withdrawalsCents, adjustmentsCents, thisMonth, thisYear]
+
+    LastEntry:
+      type: object
+      description: Most recent ledger entry (latest entry date, then latest insertion). The description is never exposed.
+      properties:
+        date:
+          type: string
+          format: date
+          description: Entry date, YYYY-MM-DD.
+        type:
+          type: string
+          enum: [opening_balance, deposit, withdrawal, adjustment]
+        owner:
+          type: string
+          enum: [ours, theirs]
+        amountCents:
+          type: integer
+          format: int64
+          description: Signed as stored; withdrawals are negative.
+      required: [date, type, owner, amountCents]
+
+    SubPot:
+      type: object
+      description: One ledger owner of a kid. A pot without entries has all zeros and a null lastEntry.
+      allOf:
+        - $ref: "#/components/schemas/Flows"
+      properties:
+        owner:
+          type: string
+          enum: [ours, theirs]
+          description: "`ours` = door ons gespaard, `theirs` = eigen geld."
+        balanceCents:
+          type: integer
+          format: int64
+          description: Ledger balance of this sub-pot, in cents.
+        lastEntry:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LastEntry"
+      required: [owner, balanceCents, lastEntry]
+
+    KidSubPotResponse:
+      description: Response of `/kids/{slug}/ours` and `/kids/{slug}/theirs`.
+      allOf:
+        - $ref: "#/components/schemas/SubPot"
+        - type: object
+          properties:
+            slug:
+              type: string
+            name:
+              type: string
+            generatedAt:
+              type: string
+              format: date-time
+              description: Response time, RFC 3339 UTC.
+          required: [slug, name, generatedAt]
+
+    KidDetail:
+      type: object
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        totalCents:
+          type: integer
+          format: int64
+          description: Ours plus theirs, in cents.
+        combined:
+          allOf:
+            - $ref: "#/components/schemas/Flows"
+          description: Flows of both sub-pots added together.
+        pots:
+          type: object
+          properties:
+            ours:
+              $ref: "#/components/schemas/SubPot"
+            theirs:
+              $ref: "#/components/schemas/SubPot"
+          required: [ours, theirs]
+        bank:
+          type: object
+          description: Reported bank balance is stored per kid, not per sub-pot.
+          properties:
+            reportedBalanceCents:
+              type: integer
+              format: int64
+              nullable: true
+            reportedBalanceDate:
+              type: string
+              format: date
+              nullable: true
+            differenceCents:
+              type: integer
+              format: int64
+              nullable: true
+              description: totalCents - reportedBalanceCents; null when nothing is reported.
+          required: [reportedBalanceCents, reportedBalanceDate, differenceCents]
+        lastEntry:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LastEntry"
+        generatedAt:
+          type: string
+          format: date-time
+          description: Response time, RFC 3339 UTC.
+      required: [slug, name, totalCents, combined, pots, bank, lastEntry, generatedAt]
+
     Error:
       type: object
       properties:
