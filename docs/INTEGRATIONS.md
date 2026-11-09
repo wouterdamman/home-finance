@@ -1670,11 +1670,13 @@ resource returned an error body instead of the expected JSON.
 Done: phase 1 and 2 (kids, `kids:read`, and savings pots, `pots:read`) and phases 3 and 4 (monthly
 totals, `periods:read`, and yearly totals, `years:read`).
 
-Planned, not yet available:
+Also done: a Home Assistant custom integration, installable through HACS:
+[wouterdamman/ha-home-finance](https://github.com/wouterdamman/ha-home-finance). Its config flow
+asks for the base URL and token and validates them against `GET /info`. It then creates kid, pot
+and household devices with their sensors from `GET /kids`, `GET /pots`, `GET /periods/current`
+and `GET /years/current`, depending on the token's scopes. New kids and pots appear without a
+reload. It needs home-finance 1.26.0 or newer. Installation, the entity list and the known
+limitation around renames (slugs) are in its README. The `rest:` cookbook above keeps working for
+anyone who prefers YAML.
 
-- A Home Assistant custom integration (HACS) with a config flow: enter the base URL and token,
-  validate it against `GET /info`, then create the kid, pot and budget sensors automatically from
-  `GET /kids`, `GET /pots`, `GET /periods/current` and `GET /years/current`.
-  Until then, the `rest:` cookbook above is the supported way.
-
-All of this arrives additively within `/v1`, per the versioning promise.
+Future API changes arrive additively within `/v1`, per the versioning promise.
